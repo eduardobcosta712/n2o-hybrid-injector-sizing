@@ -1,0 +1,94 @@
+# n2o_saturation_table.csv
+#
+# Saturated properties of nitrous oxide (N2O), transcribed by hand by the
+# project author from:
+#   Jean-Philyppe, J. (2023). "A computational model for the design of a
+#   nitrous oxide-paraffin wax hybrid rocket engine." McGill Rocket Team.
+#   arXiv:2302.06725, Appendix A, Table A.1 and Table A.2.
+#
+# Table A.1 columns: T [K], nu_v [m3/kmol], u_l [kJ/mol], h_l [kJ/mol],
+#                     u_v [kJ/mol], h_v [kJ/mol], cvv [kJ/(mol-K)], cpv [kJ/(mol-K)]
+# NOTE (unit trap): u_l, h_l, u_v, h_v, cvv, cpv are in per-MOL units in the
+# source table (kJ/mol), NOT per-kmol like the rest of this project's SI
+# convention. n2o_properties.py must convert (x1000) when reading these
+# columns. nu_v is already in m3/kmol, consistent with rho_liquid_sat().
+#
+# Table A.2 columns: T [K], dnu_v/dT [m3/(kmol-K)], du_l/dT, dh_l/dT,
+#                     du_v/dT, dh_v/dT [J/(kmol-K)], dcvv/dT, dcpv/dT [J/(kmol-K^2)]
+# Table A.2 is transcribed here for completeness / future use, but is NOT
+# currently used by n2o_properties.py (only Table A.1 -- nu_v, h_l, h_v --
+# is used, for the HEM/Dyer two-phase injector model).
+#
+# KNOWN ANOMALY IN SOURCE (not a transcription error -- verified against
+# the original PDF table by the project author): in Table A.2, the
+# dcvv/dT column shows 1050.9 at T=245K and 742.1 at T=255K, both far out
+# of trend relative to their neighbors (148.5 -> 1050.9 -> 154 and
+# 146.5 -> ... -> 742.1 -> 162.8). This appears to be an error or artifact
+# in the original source table, not in this transcription. Not used by
+# the current model, so left as-is and flagged here rather than "corrected"
+# without a way to verify the true value.
+#
+# T is the only column shared between the two tables; they are kept as
+# two separate blocks below rather than merged, to mirror the source
+# document's own structure (Table A.1 / Table A.2) and make cross-checking
+# against the PDF straightforward.
+
+[TABLE_A1]
+T_K,nu_v_m3_per_kmol,u_l_kJ_per_mol,h_l_kJ_per_mol,u_v_kJ_per_mol,h_v_kJ_per_mol,cvv_kJ_per_molK,cpv_kJ_per_molK
+182.33,16.823,-0.18142,-0.17830,14.931,16.411,0.025545,0.034993
+185,14.503,0.020258,0.023954,14.984,16.481,0.025844,0.035439
+190,11.089,0.39840,0.40340,15.082,16.610,0.026427,0.036334
+195,8.6098,0.77745,0.78408,15.176,16.733,0.027038,0.037309
+200,6.7780,1.1577,1.1664,15.268,16.852,0.027674,0.038365
+205,5.4030,1.5396,1.5508,15.356,16.965,0.028331,0.039506
+210,4.3558,1.9234,1.9377,15.440,17.071,0.029006,0.040736
+215,3.5474,2.3094,2.3274,15.521,17.170,0.029694,0.042062
+220,2.9156,2.6982,2.7206,15.596,17.262,0.030395,0.043494
+225,2.4162,3.0899,3.1177,15.666,17.346,0.031105,0.045048
+230,2.0171,3.4852,3.5192,15.730,17.421,0.031824,0.046741
+235,1.6951,3.8844,3.9257,15.789,17.487,0.032552,0.048600
+240,1.4329,4.2881,4.3379,15.840,17.541,0.033289,0.050660
+245,1.2174,4.6969,4.7566,15.883,17.584,0.034037,0.052967
+250,1.0388,5.1115,5.1826,15.917,17.614,0.043798,0.055585
+255,0.88979,5.5326,5.6170,15.941,17.630,0.035577,0.058600
+260,0.76438,5.9614,6.0609,15.953,17.629,0.036377,0.062136
+265,0.65808,6.3990,6.5161,15.952,17.609,0.037205,0.066370
+270,0.56730,6.8471,6.9843,15.935,17.567,0.038072,0.071572
+275,0.48917,7.3078,7.4682,15.899,17.500,0.038988,0.078164
+280,0.42135,7.7841,7.9715,15.839,17.401,0.039971,0.086856
+285,0.36189,8.2804,8.4993,15.749,17.262,0.041046,0.098934
+290,0.30912,8.8039,9.0600,15.618,17.071,0.042252,0.11700
+295,0.26142,9.3670,9.6680,15.429,16.806,0.043653,0.14723
+300,0.21691,9.9960,10.354,15.145,16.422,0.045376,0.20883
+305,0.17210,10.768,11.205,14.661,15.791,0.047733,0.40691
+309.52,0.097371,12.745,13.450,12.745,13.450,,
+
+[TABLE_A2]
+T_K,dnu_v_dT_m3_per_kmolK,du_l_dT_J_per_kmolK,dh_l_dT_J_per_kmolK,du_v_dT_J_per_kmolK,dh_v_dT_J_per_kmolK,dcvv_dT_J_per_kmolK2,dcpv_dT_J_per_kmolK2
+182.33,-0.86891,75535,75751,19850,26217,111.99,167.04
+185,-0.6828,75628,75889,19600,25800,116.6,179
+190,-0.58932,75719,76013,19200,25200,119.4,187
+195,-0.4311,75930,76300,18600,24200,124.7,203.1
+200,-0.32068,76215,76672,18000,23200,129.3,219.7
+205,-0.24222,76570,77130,17200,21900,133.2,237.1
+210,-0.18556,76980,77660,16500,20500,136.3,255.6
+215,-0.14402,77480,78290,15600,19100,138.9,275.8
+220,-0.11312,78050,79030,14500,17600,141.1,298.6
+225,-0.08985,78700,79860,13400,15900,142.9,324.7
+230,-0.07211,79450,80800,12300,14100,144.7,355.2
+235,-0.05842,80290,81870,11000,12000,146.5,391.9
+240,-0.04777,81250,83090,9400,9700,148.5,436.7
+245,-0.03941,82340,84470,7700,7300,1050.9,492.5
+250,-0.032761,83570,86040,5800,4600,154,563.3
+255,-0.027442,84990,87830,3600,1500,742.1,655.1
+260,-0.023171,86640,89910,1100,-2100,162.8,777
+265,-0.019708,88570,92340,-1800,-6200,169.5,943.6
+270,-0.016891,90880,95210,-5300,-10900,178.3,1179.4
+275,-0.014595,93700,98720,-9600,-16600,189.9,1528.4
+280,-0.012728,97260,103110,-15000,-23800,205.8,2077
+285,-0.011223,101980,108850,-22100,-33000,228.1,3014.4
+290,-0.010047,108660,116870,-32000,-45600,260.7,4829.6
+295,-0.009221,119210,129400,-47300,-64900,312.4,9183
+300,-0.008932,140100,153700,-76800,-101500,408,25968
+305,-0.008962,154400,170200,-96800,-126200,471.4,39616
+309.52,-0.016533,437389,496681,-423894,-517920,,
