@@ -70,6 +70,20 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
                                            segments, roughness)
     P_injector_inlet = feed_line_result["P_final"]
 
+    # If the feed line itself produced flashing, the fluid arriving at
+    # the injector inlet is already two-phase -- outside the domain of
+    # both SPI and Dyer (both assume liquid at the orifice inlet, per
+    # Section 3.1/injector_two_phase.py's domain restriction). Return
+    # early with a clear flag; the injector model is not run.
+    if feed_line_result["flashing_detected"]:
+        return {
+            "feed_line_result": feed_line_result,
+            "P_injector_inlet": P_injector_inlet,
+            "spi_sufficient": None,
+            "m_dot_real": None,
+            "injector_result": None,
+        }
+
     sufficient = spi_sufficient(P_injector_inlet, T_tank, P_chamber)
 
     if sufficient:

@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Output and results
+results/*.png
+results/*.pdf
+results/*.csv
+
+# Streamlit
+.streamlit/
+
+# Temporary files
+*.tmp
+*.log

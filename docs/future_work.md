@@ -29,4 +29,4 @@ would let `feed_line.py` recompute density segment by segment using local pressu
 ## Other identified extensions
 
 - Transient regime at motor start-up (the current model assumes steady-state flow).
-- Calibration of $C_d$ and Dyer model parameters against the team's own experimental data, rather than literature reference values.
+- Calibration of Cd and Dyer model parameters against the team's own experimental data, rather than literature reference values.

@@ -10,15 +10,15 @@ Direct consequence: even if N₂O reaches the injector inlet perfectly liquid an
 
 From Section 1.5: $T_{crit}(\text{N}_2\text{O}) \approx 36.4\ ^\circ\text{C}$. The practical relevance of this proximity to ambient conditions is tied to the behavior of the **latent heat of vaporization**, $h_{fg}$ — the energy required to convert, at the same pressure/temperature, a unit mass of saturated liquid into saturated vapor.
 
-$h_{fg}$ decreases as temperature approaches $T_{crit}$, reaching zero at the critical point itself (where liquid and vapor become indistinguishable). At typical ambient temperatures (15–25 °C), already relatively close to $T_{crit}$, N₂O's $h_{fg}$ is significantly reduced compared to fluids operating well away from their critical point (contrast with water, $T_{crit} \approx 374\ ^\circ\text{C}$). A given pressure drop generates, for N₂O, a disproportionately larger vapor quality $x$ than it would for other, comparatively "well-behaved" fluids — this is the physical reason this effect cannot be treated as negligible for this specific propellant.
+$h_{fg}$ decreases as temperature approaches $T_{crit}$, reaching zero at the critical point itself (where liquid and vapor become indistinguishable). At typical ambient temperatures (15–25 °C), already relatively close to $T_{crit}$, N₂O's $h_{fg}$ is significantly reduced compared to fluids operating well away from their critical point (contrast with water, $T_{crit} \approx 374\ ^\circ\text{C}$). A given pressure drop generates, for N₂O, a disproportionately larger vapor quality x than it would for other, comparatively "well-behaved" fluids — this is the physical reason this effect cannot be treated as negligible for this specific propellant.
 
 ## 3.3 Two-phase choking and the drop in mass flow
 
-When a fraction of the liquid vaporizes inside the orifice, the mixture's average density, $\rho_{mixture}$, drops sharply — the specific volume of saturated N₂O vapor is substantially larger than that of the saturated liquid (potentially, depending on pressure, on the order of tens to hundreds of times larger), so even a small mass-based vapor quality $x$ already occupies most of the available volume in the orifice cross-section.
+When a fraction of the liquid vaporizes inside the orifice, the mixture's average density, ρ_mix, drops sharply — the specific volume of saturated N₂O vapor is substantially larger than that of the saturated liquid (potentially, depending on pressure, on the order of tens to hundreds of times larger), so even a small mass-based vapor quality $x$ already occupies most of the available volume in the orifice cross-section.
 
 Two consequences, which reinforce each other:
 
-1. **Direct reduction in $\dot m$** — for the same area $A$, a mixture with much lower density carries less mass per unit time, even at similar velocity, since $\dot m$ depends directly on $\rho$.
+1. **Direct reduction in $\dot m$** — for the same area A, a mixture with much lower density carries less mass per unit time, even at similar velocity, since ṁ depends directly on ρ.
 2. **Two-phase choking** — the liquid-vapor mixture is significantly compressible, unlike the pure liquid; there is a maximum speed at which pressure disturbances can propagate (analogous to a local speed of sound in the mixture). Once that limiting speed is reached in the orifice, further downstream pressure reductions stop increasing the flow rate — the pressure disturbance can no longer propagate upstream past the choking point. Flow rate becomes capped at a maximum value, regardless of further downstream pressure reductions.
 
 The combined effect of these two mechanisms explains why real mass flow, under significant vaporization, can fall far below what the SPI model predicts — a model that always assumes dense, incompressible liquid with no propagation speed limit. Discrepancies of several-fold between predicted and measured flow, documented in the literature (`references.md`), reflect a physical regime change, not a fine calibration error.
@@ -27,7 +27,7 @@ The combined effect of these two mechanisms explains why real mass flow, under s
 
 ### HEM — Homogeneous Equilibrium Model
 
-Assumes that, at every point in the flow, the liquid and vapor phases are in mutual thermal and mechanical equilibrium — same temperature, same pressure, treated as a single effective fluid whose properties (density, among others) depend on the local vapor quality $x$. It is relatively simple to implement computationally, but assumes instantaneous vaporization as soon as local pressure crosses $P_{sat}(T)$.
+Assumes that, at every point in the flow, the liquid and vapor phases are in mutual thermal and mechanical equilibrium — same temperature, same pressure, treated as a single effective fluid whose properties (density, among others) depend on the local vapor quality x. It is relatively simple to implement computationally, but assumes instantaneous vaporization as soon as local pressure crosses $P_{sat}(T)$.
 
 This instantaneous-equilibrium assumption is a known limitation in short orifices (like those of a rocket injector): vaporization is not instantaneous — it requires nucleation sites for bubble formation — and the fluid's residence time in a short orifice can be insufficient for full thermodynamic equilibrium to establish.
 

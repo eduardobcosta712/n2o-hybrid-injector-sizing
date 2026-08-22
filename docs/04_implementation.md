@@ -16,7 +16,7 @@ The saturation pressure correlation is:
 
 $$P_{sat}(T) = \exp\left[c_1 + \frac{c_2}{T} + c_3 \ln T + c_4 T^{c_5}\right]$$
 
-with $T$ in Kelvin, $P$ in Pa, valid for $T \in [182.33, 309.52]$ K (triple point to near the critical point), and coefficients $c_1 = 96.512$, $c_2 = -4045$, $c_3 = -12.277$, $c_4 = 2.886 \times 10^{-5}$, $c_5 = 2$.
+with T in Kelvin, P in Pa, valid for T ∈ [182.33, 309.52] K (triple point to near the critical point), and coefficients $c_1 = 96.512$, $c_2 = -4045$, $c_3 = -12.277$, $c_4 = 2.886 \times 10^{-5}$, $c_5 = 2$.
 
 The saturated liquid molar volume correlation is:
 
@@ -24,7 +24,7 @@ $$\nu_l(T) = \frac{c_2^{\,1 + (1 - T/c_3)^{c_4}}}{c_1}$$
 
 with coefficients $c_1 = 2.781$, $c_2 = 0.27244$, $c_3 = 309.57$, $c_4 = 0.2882$, converted to density via $\rho_l = M_{N_2O} / \nu_l$, with $M_{N_2O} = 44.013$ kg/kmol.
 
-Both correlations are implemented with an explicit valid-range check (`_check_range`): any call with $T$ outside $[182.33, 309.52]$ K raises an error rather than silently extrapolating, since the fit is not guaranteed valid there.
+Both correlations are implemented with an explicit valid-range check (`_check_range`): any call with T outside [182.33, 309.52] K raises an error rather than silently extrapolating, since the fit is not guaranteed valid there.
 
 ### Inverting $P_{sat}(T)$: Newton-Raphson with step damping
 
@@ -72,7 +72,7 @@ Implements Module 1 from the implementation plan (Section 3.5 synthesis): tracks
 ### Theory implemented
 
 - **Reynolds number**, $Re = \rho v D / \mu$, to classify the flow regime.
-- **Darcy friction factor** $f$: exact laminar solution $f = 64/Re$ for $Re < 2300$; the explicit **Swamee-Jain approximation** to the (implicit) Colebrook equation for $Re \geq 2300$,
+- **Darcy friction factor** f: exact laminar solution `f = 64/Re` for Re < 2300; the explicit **Swamee-Jain approximation** to the (implicit) Colebrook equation for Re ≥ 2300,
 $$f = \frac{0.25}{\left[\log_{10}\left(\dfrac{\varepsilon/D}{3.7} + \dfrac{5.74}{Re^{0.9}}\right)\right]^2}$$
 chosen over solving Colebrook directly because it is explicit (no iteration needed) while remaining within ~1% of the implicit solution for the range of interest. The 2300–4000 transitional regime is conservatively treated with the turbulent formula, documented as a deliberate simplification in the function's docstring.
 - **Darcy-Weisbach friction loss**, $\Delta P = f (L/D)(\rho v^2/2)$, and **fitting (minor) losses**, $\Delta P = K(\rho v^2/2)$.
@@ -165,3 +165,24 @@ Reusing `feed_line.py`'s Case B geometry with a 55 bar tank: the feed line loses
 ### File location
 
 `src/model/full_system.py`
+
+---
+*Next section: 4.6 `src/interface/` — the interactive Streamlit tool.*
+
+## 4.6 `src/interface/` — Interactive tool
+
+### Purpose
+
+A Streamlit web app (`app.py`) wrapping `full_system.py`: editable tank, feed line (dynamic pipe/fitting segment list), and injector inputs, updating live as inputs change. Reports flashing/SPI-sufficiency status and the real mass flow, and renders two diagrams (`plotting.py`): pressure along the feed line against $P_{sat}(T_{tank})$, and a $P$-$T$ diagram with the saturation curve and the tank/injector-inlet/chamber operating points.
+
+### Implementation notes
+
+Segment state is kept in `st.session_state`, since Streamlit re-runs the whole script on every interaction; without it, the segment list would reset on every slider move. All UI inputs are in display-friendly units (bar, °C, mm, g/s) and converted to SI at the UI boundary before calling into `full_system.py`, which continues to operate in SI throughout, per the project's units convention.
+
+### Running
+
+From the repository root: `streamlit run src/interface/app.py`. Requires `pip install streamlit matplotlib numpy`.
+
+### File location
+
+`src/interface/app.py`, `src/interface/plotting.py`

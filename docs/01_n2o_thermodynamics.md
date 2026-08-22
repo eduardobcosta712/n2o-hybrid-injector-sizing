@@ -2,9 +2,9 @@
 
 ## 1.1 Pure substances and what governs their state
 
-N₂O (nitrous oxide) is, for the purposes of this document, a pure substance — a single chemical compound, not a mixture. This matters because, for a pure substance, the thermodynamic state (liquid, vapor, or a mix of both) is fully determined by **only two independent properties**. Pressure $P$ and temperature $T$ are usually chosen, being the easiest to measure and control in a real system.
+N₂O (nitrous oxide) is, for the purposes of this document, a pure substance — a single chemical compound, not a mixture. This matters because, for a pure substance, the thermodynamic state (liquid, vapor, or a mix of both) is fully determined by **only two independent properties**. Pressure P and temperature T are usually chosen, being the easiest to measure and control in a real system.
 
-There is, however, an important exception to this rule, which is the starting point of this entire document: **when the substance is changing phase** (liquid to vapor, or vice versa), $P$ and $T$ stop being independent of each other.
+There is, however, an important exception to this rule, which is the starting point of this entire document: **when the substance is changing phase** (liquid to vapor, or vice versa), P and T stop being independent of each other.
 
 ## 1.2 Vapor pressure / saturation pressure
 
@@ -62,19 +62,19 @@ How close $T_{crit}$ is to ambient temperature (compare with water, $T_{crit} \a
 
 Consider subcooled liquid N₂O ($\Delta T_{sub} > 0$) flowing — for example, along a tube, from the tank toward the injector. In any flow with friction, or through a restriction (a valve, an area reduction, the injector orifice itself), fluid pressure drops along the path (energy conservation — see Section 2 for the formal derivation via Bernoulli's equation).
 
-In a sufficiently fast flow, there is no significant time or mechanism for heat exchange with the surroundings, so fluid temperature stays approximately constant while pressure drops. Since $T_{sat}(P)$ decreases with $P$ (the saturation curve is increasing in $P(T)$), the margin $\Delta T_{sub} = T_{sat}(P) - T$ **shrinks** as $P$ falls. If pressure drops enough, $P = P_{sat}(T)$ is reached — the margin vanishes — and any further pressure drop forces a fraction of the liquid to vaporize instantly, with no external heat input.
+In a sufficiently fast flow, there is no significant time or mechanism for heat exchange with the surroundings, so fluid temperature stays approximately constant while pressure drops. Since $T_{sat}(P)$ decreases with P (the saturation curve is increasing in P(T)), the margin $\Delta T_{sub} = T_{sat}(P) - T$ **shrinks** as $P$ falls. If pressure drops enough, P = P_sat(T) is reached — the margin vanishes — and any further pressure drop forces a fraction of the liquid to vaporize instantly, with no external heat input.
 
 This phenomenon is called **flashing** (sudden vaporization). The energy needed to vaporize that fraction (the latent heat) is drawn from the liquid itself, which cools slightly as it gives it up — which explains, for instance, the frost that forms on the outside of N₂O lines during testing (the internal fluid cools enough to condense moisture from the ambient air).
 
 ## 1.7 Two-phase flow and vapor quality
 
-Once flashing begins, the flow is no longer single-phase — liquid and vapor coexist simultaneously in the same flow: **two-phase flow**. The vaporized fraction is quantified through the **vapor quality**, $x$:
+Once flashing begins, the flow is no longer single-phase — liquid and vapor coexist simultaneously in the same flow: **two-phase flow**. The vaporized fraction is quantified through the **vapor quality**, x:
 
 $$x = \frac{m_{vapor}}{m_{vapor} + m_{liquid}}$$
 
-that is, the mass fraction in the vapor phase. $x = 0$ corresponds to pure saturated liquid; $x = 1$, to pure saturated vapor; intermediate values, to the two-phase mixture.
+that is, the mass fraction in the vapor phase. `x = 0` corresponds to pure saturated liquid; `x = 1`, to pure saturated vapor; intermediate values, to the two-phase mixture.
 
-$x > 0$ at any point in the feed system is the central criterion used in this project as a signal that the pure-liquid model is no longer valid at that point — with the consequences detailed in Section 3 (sharp reduction in mixture density, possible two-phase choking, and a drop in real mass flow relative to what a single-phase model would predict).
+`x > 0` at any point in the feed system is the central criterion used in this project as a signal that the pure-liquid model is no longer valid at that point — with the consequences detailed in Section 3 (sharp reduction in mixture density, possible two-phase choking, and a drop in real mass flow relative to what a single-phase model would predict).
 
 ## Summary
 
