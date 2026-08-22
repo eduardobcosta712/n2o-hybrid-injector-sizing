@@ -8,7 +8,7 @@ Direct consequence: even if N₂O reaches the injector inlet perfectly liquid an
 
 ## 3.2 Amplified sensitivity near the critical point
 
-From Section 1.5: $T_{crit}(\text{N}_2\text{O}) \approx 36.4\ ^\circ\text{C}$. The practical relevance of this proximity to ambient conditions is tied to the behavior of the **latent heat of vaporization**, $h_{fg}$ — the energy required to convert, at the same pressure/temperature, a unit mass of saturated liquid into saturated vapor.
+From Section 1.5: T_crit(N₂O) ≈ 36.4 °C. The practical relevance of this proximity to ambient conditions is tied to the behavior of the **latent heat of vaporization**, $h_{fg}$ — the energy required to convert, at the same pressure/temperature, a unit mass of saturated liquid into saturated vapor.
 
 $h_{fg}$ decreases as temperature approaches $T_{crit}$, reaching zero at the critical point itself (where liquid and vapor become indistinguishable). At typical ambient temperatures (15–25 °C), already relatively close to $T_{crit}$, N₂O's $h_{fg}$ is significantly reduced compared to fluids operating well away from their critical point (contrast with water, $T_{crit} \approx 374\ ^\circ\text{C}$). A given pressure drop generates, for N₂O, a disproportionately larger vapor quality x than it would for other, comparatively "well-behaved" fluids — this is the physical reason this effect cannot be treated as negligible for this specific propellant.
 
