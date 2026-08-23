@@ -173,7 +173,7 @@ Reusing `feed_line.py`'s Case B geometry with a 55 bar tank: the feed line loses
 
 ### Purpose
 
-A Streamlit web app (`app.py`) wrapping `full_system.py`: editable tank, feed line (dynamic pipe/fitting segment list), and injector inputs, updating live as inputs change. Reports flashing/SPI-sufficiency status and the real mass flow, and renders two diagrams (`plotting.py`): pressure along the feed line against $P_{sat}(T_{tank})$, and a $P$-$T$ diagram with the saturation curve and the tank/injector-inlet/chamber operating points.
+A Streamlit web app (`app.py`) wrapping `full_system.py`: editable tank, feed line (dynamic pipe/fitting segment list), and injector inputs, updating live as inputs change. Reports flashing/SPI-sufficiency status and the real mass flow, and renders two diagrams (`plotting.py`): pressure along the feed line against $P_{sat}(T_{tank})$, and a P-T diagram with the saturation curve and the tank/injector-inlet/chamber operating points.
 
 ### Implementation notes
 
