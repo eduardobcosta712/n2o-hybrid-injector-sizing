@@ -131,7 +131,7 @@ Implements the two-phase injector models from Section 3.4: HEM (full thermodynam
 
 ### Theory implemented
 
-Vapor quality at the orifice exit is obtained assuming an isenthalpic process and full equilibrium at the exit (exit sits on the saturation curve at $T_{downstream} = T_{sat}(P_{downstream})$):
+Vapor quality at the orifice exit is obtained assuming an isenthalpic process and full equilibrium at the exit (exit sits on the saturation curve at T(downstream) = T(sat)(P(downstream))):
 
 $$x = \frac{h_{upstream} - h_l(T_{downstream})}{h_{fg}(T_{downstream})}$$
 
