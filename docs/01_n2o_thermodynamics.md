@@ -44,7 +44,7 @@ The **degree of subcooling** is defined as:
 
 $$\Delta T_{sub} = T_{sat}(P) - T$$
 
-where $T_{sat}(P)$ is the saturation temperature corresponding to the fluid's current pressure (the inverse of $P_{sat}(T)$). If $\Delta T_{sub} > 0$, the liquid is subcooled, with margin; if $\Delta T_{sub} = 0$, it is exactly saturated, with no margin.
+where $T_{sat}(P)$ is the saturation temperature corresponding to the fluid's current pressure (the inverse of P_sat(T)). If $\Delta T_{sub} > 0$, the liquid is subcooled, with margin; if $\Delta T_{sub} = 0$, it is exactly saturated, with no margin.
 
 This is the central concept of the entire project: the problem of premature vaporization in the feed system essentially comes down to identifying at what point along the path the N₂O, which started out subcooled, lost that margin and crossed the saturation curve.
 
