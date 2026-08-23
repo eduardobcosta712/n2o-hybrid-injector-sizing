@@ -1,5 +1,7 @@
 # n2o-hybrid-injector-sizing
 
+![Tests](https://github.com/eduardobcosta712/n2o-hybrid-injector-sizing/actions/workflows/tests.yml/badge.svg)
+
 A physics-based tool and technical reference for predicting premature vaporisation (*flashing*) of N₂O in the feed systems of paraffin/N₂O hybrid rocket motors, and for sizing injector orifices that account for two-phase flow effects.
 
 > **Disclaimer:** This tool is provided for predictive and educational purposes only. It is an academic project under active development and has not been independently validated against a comprehensive experimental dataset. Results must not be used as the sole basis for engineering decisions or hardware fabrication. The author accepts no responsibility for any damages arising from the use of this tool.
