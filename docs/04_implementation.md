@@ -135,15 +135,19 @@ Vapor quality at the orifice exit is obtained assuming an isenthalpic process an
 
 $$x = \frac{h_{upstream} - h_l(T_{downstream})}{h_{fg}(T_{downstream})}$$
 
-The HEM mixture density follows from the mass-weighted average of the two phases' specific volumes, and $\dot m_{HEM}$ from the same orifice equation used throughout the project, with $\rho_{HEM}$ in place of the pure-liquid density. Dyer blends $\dot m_{SPI}$ and $\dot m_{HEM}$ via the non-equilibrium parameter $\kappa$:
+The HEM mixture density follows from the mass-weighted average of the two phases' specific volumes, and $\dot m_{HEM}$ from the same orifice equation used throughout the project, with $\rho_{HEM}$ in place of the pure-liquid density. Dyer blends $\dot m_{SPI}$ and $\dot m_{HEM}$ via the non-equilibrium parameter $\kappa$ (Solomon 2011; Waxman 2013, Eq. 9):
 
-$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\dot m_{SPI}}{1+\kappa} + \frac{\kappa}{1+\kappa}\dot m_{HEM}$$
+$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\kappa}{1+\kappa}\,\dot m_{SPI} + \frac{1}{1+\kappa}\,\dot m_{HEM}$$
+
+The weight on SPI, $\kappa/(1+\kappa)$, grows with $\kappa$: when $\kappa$ is large (bubbles grow slowly, little equilibrium), SPI dominates; when $\kappa$ is small (near-equilibrium), HEM dominates. This is the corrected formula — the original Dyer et al. (2007) paper had the weights swapped, which was corrected by Solomon (2011).
 
 **Domain restriction.** $\kappa$ requires $P_{upstream} > P_{sat}(T_{upstream})$ — the fluid must still be liquid at the orifice inlet, consistent with this model addressing vaporization *inside* the orifice (Section 3.1), not an already-two-phase feed line (that case is `feed_line.py`'s `flashing_detected`). Enforced with an explicit `ValueError` rather than an extreme or undefined $\kappa$.
 
 ### Validation
 
-An operating point with the inlet modestly subcooled (55 bar at 20 °C, $P_{sat}(20°C) \approx 51.4$ bar) but a large enough pressure drop (to 20 bar) to cross saturation inside the orifice: Dyer predicts 128.8 g/s against SPI's 182.6 g/s (≈30% lower) — consistent with the expected direction of the two-phase correction (Section 3.3). The injector_spi.py example point (50 bar upstream) was found to already violate the domain restriction above and was not reused here.
+An operating point with the inlet modestly subcooled (55 bar at 20 °C, $P_{sat}(20°C) \approx 51.4$ bar) but a large enough pressure drop (to 20 bar) to cross saturation inside the orifice: Dyer predicts 131.7 g/s against SPI's 182.6 g/s (≈28% lower) — consistent with the expected direction of the two-phase correction (Section 3.3). The injector_spi.py example point (50 bar upstream) was found to already violate the domain restriction above and was not reused here.
+
+**Validation.** The Dyer model was validated against Waxman (2013/2014) experimental data (supercharged N₂O, QF_upstream = 0) at four operating points with moderate pressure drops (8–14 bar) representative of real motor design conditions. The corrected formula gives a mean error of −1.9% with all points within ±5%. Full results in `validation/waxman_2013_results.md`.
 
 ### File location
 

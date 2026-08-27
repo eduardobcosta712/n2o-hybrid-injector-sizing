@@ -33,9 +33,19 @@ This instantaneous-equilibrium assumption is a known limitation in short orifice
 
 ### Dyer model (NHNE — Non-Homogeneous Non-Equilibrium, in its general formulation)
 
-Directly addresses the HEM limitation identified above. It is formulated essentially as a **weighted combination** between the flow rate predicted by the pure SPI model (the "no time to vaporize" limit — the fluid crosses the orifice too fast to respond to the pressure drop) and the flow rate predicted by the HEM model (the full-equilibrium limit). The relative weight of the combination depends on how close the upstream pressure already is to $P_{sat}(T)$ at the orifice inlet: the closer to saturation at the inlet, the more weight given to HEM; the more subcooled, the more weight given to SPI.
+Directly addresses the HEM limitation identified above. It is formulated as a **weighted combination** between the flow rate predicted by the pure SPI model (the "no time to vaporize" limit) and the flow rate predicted by the HEM model (the full-equilibrium limit):
 
-Because it reasonably captures observed behavior in short orifices, without the added complexity of more general fully non-homogeneous, non-equilibrium models, the Dyer model is the most widely adopted in the amateur/university rocketry literature for this specific problem, and is the reference model chosen for this project's implementation (Section 4).
+$$\dot{m}_{Dyer} = \frac{\kappa}{1+\kappa}\,\dot{m}_{SPI} + \frac{1}{1+\kappa}\,\dot{m}_{HEM}$$
+
+where the non-equilibrium parameter $\kappa$ is:
+
+$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}$$
+
+$\kappa$ is proportional to the ratio of bubble growth time to fluid residence time in the orifice ($\tau_{bubble}/\tau_{residence}$). A **large** $\kappa$ means bubbles grow slowly relative to the residence time — there is little time for equilibrium to establish, so the blend weights more heavily toward the SPI limit. A **small** $\kappa$ means bubbles grow fast, approaching equilibrium, so the blend weights more toward HEM. The weight on SPI, $\kappa/(1+\kappa)$, increases with $\kappa$ — consistent with this physical interpretation.
+
+> **Implementation note.** The original Dyer et al. (2007) paper contained a sign error in the weighting formula (the weights on SPI and HEM were swapped). This was corrected by Solomon (2011) and independently confirmed by Waxman (2013, Eq. 9). The formula above and its implementation in `injector_two_phase.py` reflect the corrected version.
+
+Because it reasonably captures observed behavior in short orifices, without the added complexity of more general fully non-homogeneous, non-equilibrium models, the Dyer model is the most widely adopted in the amateur/university rocketry literature for this specific problem, and is the reference model chosen for this project's implementation (Section 4). Validation against Waxman (2013/2014) experimental data gives a mean error of −1.9% (all four test points within ±5%) at moderate pressure drops representative of real motor design conditions — see `validation/waxman_2013_results.md`.
 
 ## 3.5 Synthesis for implementation
 

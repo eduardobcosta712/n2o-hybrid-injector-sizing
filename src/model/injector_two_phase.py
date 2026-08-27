@@ -15,7 +15,7 @@ SPI prediction (injector_spi.py), weighted by how close the upstream
 pressure already is to saturation.
 
     m_dot_HEM  = Cd * A * sqrt(2 * rho_HEM * delta_P)
-    m_dot_Dyer = m_dot_SPI / (1 + kappa) + (kappa / (1 + kappa)) * m_dot_HEM
+    m_dot_Dyer = (kappa / (1 + kappa)) * m_dot_SPI + (1 / (1 + kappa)) * m_dot_HEM
 
 Units: SI throughout (Pa, K, kg/m^3, m^2, kg/s), except vapor quality x
 and the Dyer weighting parameter kappa, which are dimensionless.
@@ -220,7 +220,17 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     HEM limits (Section 3.4), using dyer_non_equilibrium_parameter as the
     weight:
 
-        m_dot_Dyer = m_dot_SPI / (1 + kappa) + kappa / (1 + kappa) * m_dot_HEM
+        m_dot_Dyer = (kappa / (1 + kappa)) * m_dot_SPI + (1 / (1 + kappa)) * m_dot_HEM
+
+    Physical interpretation of the weights (Waxman 2013, p.6):
+        kappa ~ tau_bubble / tau_residence.
+        Large kappa: bubbles grow slowly relative to fluid residence time
+            -> less equilibrium -> more weight on SPI (the "no vaporisation"
+            limit). w_SPI = kappa/(1+kappa) increases with kappa. Correct.
+        Small kappa: full bubble growth, near-equilibrium -> weight on HEM.
+
+    Reference: Waxman (2013) Eq. (9); Solomon (2011); corrects the sign
+    error in the original Dyer et al. (2007) formulation.
 
     This is the reference model adopted for injector sizing in this
     project (Section 3.4/3.5).
@@ -253,7 +263,9 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
                                 rho_v_downstream)
     m_dot_HEM = hem_result["m_dot_HEM"]
 
-    m_dot_Dyer = m_dot_SPI / (1.0 + kappa) + (kappa / (1.0 + kappa)) * m_dot_HEM
+    # Correct NHNE formula (Waxman 2013 Eq.9 / Solomon 2011):
+    # large kappa -> more weight on SPI (less equilibrium); small kappa -> HEM.
+    m_dot_Dyer = (kappa / (1.0 + kappa)) * m_dot_SPI + (1.0 / (1.0 + kappa)) * m_dot_HEM
 
     return {
         "m_dot_Dyer": m_dot_Dyer,
