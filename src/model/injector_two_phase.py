@@ -162,6 +162,88 @@ def hem_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     }
 
 
+def hem_mass_flow_two_phase_inlet(Cd, A, T_tank, x_inlet,
+                                   P_upstream, P_downstream,
+                                   rho_l_downstream, rho_v_downstream):
+    """
+    HEM mass flow rate when the fluid arrives at the injector inlet already
+    partially vaporised (x_inlet > 0), as happens when flashing occurs in
+    the feed line before the injector.
+
+    This extends hem_mass_flow() by replacing the pure-liquid upstream
+    enthalpy with the enthalpy of a two-phase mixture at the feed line exit:
+
+        h_upstream = h_l(T_tank) + x_inlet * h_fg(T_tank)
+
+    Everything downstream of the inlet (x_exit, rho_HEM, m_dot_HEM) is
+    computed identically to hem_mass_flow().
+
+    Note on the Dyer model in this regime: when x_inlet > 0 the fluid is
+    at saturation at the orifice inlet, so P_upstream ~ P_sat(T_tank) and
+    the Dyer kappa denominator (P_sat - P_downstream) -> 0, giving
+    kappa -> infinity and w_SPI -> 1 (Dyer collapses to SPI). That is
+    physically wrong: a saturated two-phase inlet means there is NO
+    non-equilibrium margin -- HEM is the appropriate model, not SPI.
+    This function therefore returns HEM only, and full_system.py uses it
+    directly without applying the Dyer blend.
+
+    Parameters
+    ----------
+    Cd : float
+        Discharge coefficient (dimensionless).
+    A : float
+        Total orifice area, m^2.
+    T_tank : float
+        Tank temperature (= temperature at feed line inlet), K.
+        Used to evaluate h_l(T_tank) and h_fg(T_tank).
+    x_inlet : float
+        Vapour quality at the injector inlet (from feed_line.py), [0, 1].
+    P_upstream : float
+        Pressure at the injector inlet (= feed line exit pressure), Pa.
+    P_downstream : float
+        Downstream pressure (chamber pressure), Pa.
+    rho_l_downstream : float
+        Saturated liquid density at T_sat(P_downstream), kg/m^3.
+    rho_v_downstream : float
+        Saturated vapour density at T_sat(P_downstream), kg/m^3.
+
+    Returns
+    -------
+    dict
+        "m_dot_HEM_2phase": HEM mass flow rate with two-phase inlet, kg/s.
+        "x_exit": vapour quality at the orifice exit, dimensionless.
+        "rho_HEM": effective mixture density at exit, kg/m^3.
+        "x_inlet": vapour quality at the inlet (passed through for reporting).
+    """
+    delta_P = P_upstream - P_downstream
+    if delta_P < 0:
+        raise ValueError(
+            f"delta_P = {delta_P:.1f} Pa is negative -- P_upstream must "
+            "exceed P_downstream."
+        )
+
+    # Two-phase upstream enthalpy: liquid enthalpy + vapour fraction contribution
+    h_up = h_liquid_sat(T_tank) + x_inlet * h_fg(T_tank)
+
+    # Downstream state: T_sat(P_downstream)
+    T_downstream = T_sat(P_downstream)
+
+    # Exit quality: isenthalpic expansion from h_up to downstream saturation
+    x_exit = vapor_quality_isenthalpic(h_up, T_downstream)
+
+    # HEM mixture density at exit
+    rho_HEM = hem_mixture_density(x_exit, rho_l_downstream, rho_v_downstream)
+
+    m_dot = Cd * A * math.sqrt(2.0 * rho_HEM * delta_P)
+
+    return {
+        "m_dot_HEM_2phase": m_dot,
+        "x_exit": x_exit,
+        "rho_HEM": rho_HEM,
+        "x_inlet": x_inlet,
+    }
+
+
 def dyer_non_equilibrium_parameter(P_upstream, T_upstream, P_downstream):
     """
     Dyer's non-equilibrium weighting parameter, kappa (Section 3.4):

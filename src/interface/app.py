@@ -468,20 +468,43 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None):
 # ── Result cards ──────────────────────────────────────────────────────────────
 def render_result_cards(result):
     if result["feed_line_result"]["flashing_detected"]:
-        r1, r2, r3 = st.columns(3)
+        ir   = result.get("injector_result", {}) or {}
+        m_2p = result.get("m_dot_real")
+        x_in = result["feed_line_result"].get("x_inlet", 0.0)
+        r1, r2, r3, r4 = st.columns(4)
         with r1:
             st.markdown('<div class="result-card"><div class="label">Flashing in line</div>'
                         '<div class="value" style="color:#8a2020">YES</div></div>',
                         unsafe_allow_html=True)
         with r2:
-            st.markdown('<div class="result-card"><div class="label">SPI sufficient</div>'
-                        '<div class="value" style="color:#2a3040">N/A</div></div>',
+            st.markdown(f'<div class="result-card"><div class="label">Inlet vapour quality</div>'
+                        f'<div class="value" style="color:#7a6020">{x_in:.3f}</div>'
+                        f'<div class="sub">x at injector inlet</div></div>',
                         unsafe_allow_html=True)
         with r3:
-            st.markdown('<div class="result-card"><div class="label">Real mass flow</div>'
-                        '<div class="value" style="color:#2a3040">N/A</div></div>',
-                        unsafe_allow_html=True)
-        return False
+            if m_2p is not None:
+                st.markdown(f'<div class="result-card"><div class="label">Real mass flow</div>'
+                            f'<div class="value">{m_2p*1000:.1f}</div>'
+                            f'<div class="sub">g/s — HEM (two-phase inlet)</div></div>',
+                            unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="result-card"><div class="label">Real mass flow</div>'
+                            '<div class="value" style="color:#2a3040">N/A</div></div>',
+                            unsafe_allow_html=True)
+        with r4:
+            x_exit = ir.get("x_exit")
+            if x_exit is not None:
+                st.markdown(f'<div class="result-card"><div class="label">Exit vapour quality</div>'
+                            f'<div class="value" style="color:#7a6020">{x_exit:.3f}</div>'
+                            f'<div class="sub">x at orifice exit</div></div>',
+                            unsafe_allow_html=True)
+        if x_in > 0:
+            st.caption(
+                f"Two-phase inlet: x_inlet = {x_in:.4f} · "
+                f"exit quality x = {ir.get('x_exit', 0):.3f} · "
+                f"HEM with two-phase enthalpy applied"
+            )
+        return True
     spi_ok = result["spi_sufficient"]
     m_dot = result["m_dot_real"]
     ir = result["injector_result"]
@@ -512,7 +535,7 @@ def render_result_cards(result):
                         '<div class="value" style="color:#2d6a4f">0%</div>'
                         '<div class="sub">SPI valid here</div></div>',
                         unsafe_allow_html=True)
-    if ir:
+    if ir and ir.get("kappa") is not None:
         st.caption(f"Dyer: kappa = {ir['kappa']:.3f}  |  "
                    f"exit vapour quality x = {ir['x_exit']:.3f}  |  "
                    f"HEM prediction: {ir['m_dot_HEM']*1000:.1f} g/s")
@@ -754,6 +777,7 @@ elif st.session_state.page == "design":
             st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
             if fl["flashing_detected"]:
+                x_in = fl.get("x_inlet", 0.0)
                 r1, r2, r3 = st.columns(3)
                 with r1:
                     st.markdown('<div class="result-card">'
@@ -761,15 +785,21 @@ elif st.session_state.page == "design":
                                 '<div class="value" style="color:#8a2020">YES</div>'
                                 '</div>', unsafe_allow_html=True)
                 with r2:
-                    st.markdown('<div class="result-card">'
-                                '<div class="label">SPI area</div>'
-                                '<div class="value" style="color:#2a3040">N/A</div>'
-                                '</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="result-card">'
+                                f'<div class="label">Inlet vapour quality</div>'
+                                f'<div class="value" style="color:#7a6020">{x_in:.3f}</div>'
+                                f'<div class="sub">x at injector inlet</div>'
+                                f'</div>', unsafe_allow_html=True)
                 with r3:
                     st.markdown('<div class="result-card">'
-                                '<div class="label">Dyer area</div>'
+                                '<div class="label">Area sizing</div>'
                                 '<div class="value" style="color:#2a3040">N/A</div>'
+                                '<div class="sub">Fix line first</div>'
                                 '</div>', unsafe_allow_html=True)
+                st.caption(
+                    f"Two-phase inlet detected (x = {x_in:.4f}). "
+                    "Area sizing requires a liquid inlet. Correct the feed line first."
+                )
                 render_diagnostics(T_tank, P_tank, P_chamber, Cd)
             else:
                 dP_inj = P_inlet - P_chamber

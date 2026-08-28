@@ -23,7 +23,8 @@ Units: SI throughout (Pa, kg/m^3, m, m/s, Pa.s, kg/s).
 """
 
 import math
-from n2o_properties import P_sat, T_sat, rho_liquid_sat, degree_of_subcooling
+from n2o_properties import (P_sat, T_sat, rho_liquid_sat, degree_of_subcooling,
+                             h_liquid_sat, h_fg)
 
 # Approximate dynamic viscosity of saturated liquid N2O near room
 # temperature (Pa.s). Treated as a constant for this version of the model;
@@ -228,10 +229,29 @@ def evaluate_feed_line(m_dot, T_tank, P_tank, segments, roughness=1.5e-6,
             "delta_T_sub_K": delta_T_sub,
         })
 
+    # If flashing occurred, estimate the vapour quality at the injector inlet
+    # via an isenthalpic flash from tank conditions to the final pressure.
+    # The feed line is adiabatic (module docstring), so enthalpy is conserved:
+    #   h_upstream = h_l(T_tank)  (liquid at tank exit)
+    #   x_inlet = (h_l(T_tank) - h_l(T_sat(P_final))) / h_fg(T_sat(P_final))
+    # This is the same isenthalpic quality calculation used inside the orifice,
+    # applied here to the feed line exit point.
+    # If no flashing, x_inlet = 0.0 (pure liquid throughout).
+    if flashing_detected and P > 0 and P < P_sat(T_tank):
+        T_flash = T_sat(P)
+        h_up    = h_liquid_sat(T_tank)
+        hfg_f   = h_fg(T_flash)
+        hl_f    = h_liquid_sat(T_flash)
+        x_inlet = (h_up - hl_f) / hfg_f if hfg_f > 0 else 0.0
+        x_inlet = max(0.0, min(1.0, x_inlet))
+    else:
+        x_inlet = 0.0
+
     return {
         "P_final": P,
         "delta_T_sub_final": degree_of_subcooling(T_tank, P) if P > 0 else float("nan"),
         "flashing_detected": flashing_detected,
+        "x_inlet": x_inlet,
         "trace": trace,
     }
 

@@ -32,6 +32,11 @@ A      = 4 * math.pi * (0.55e-3) ** 2  # 4 holes, 1.1 mm
 # ---------------------------------------------------------------------------
 
 class TestFlashingInLine:
+    """
+    When flashing is detected in the feed line, the model now uses HEM with
+    a two-phase inlet (hem_mass_flow_two_phase_inlet) instead of returning None.
+    The fluid arrives partially vaporised; x_inlet > 0 is computed isentalpically.
+    """
 
     def setup_method(self):
         # Tank exactly at saturation → zero initial margin → immediate flashing
@@ -42,17 +47,33 @@ class TestFlashingInLine:
     def test_flashing_detected(self):
         assert self.result["feed_line_result"]["flashing_detected"] is True
 
-    def test_spi_sufficient_is_none(self):
-        assert self.result["spi_sufficient"] is None
+    def test_x_inlet_positive(self):
+        # With flashing, x_inlet must be > 0 (some vapour formed in the line).
+        assert self.result["feed_line_result"]["x_inlet"] > 0.0
 
-    def test_m_dot_real_is_none(self):
-        assert self.result["m_dot_real"] is None
+    def test_x_inlet_below_one(self):
+        # x_inlet must be physically bounded [0, 1].
+        assert self.result["feed_line_result"]["x_inlet"] < 1.0
 
-    def test_injector_result_is_none(self):
-        assert self.result["injector_result"] is None
+    def test_m_dot_real_positive(self):
+        # HEM with two-phase inlet must produce a positive mass flow.
+        assert self.result["m_dot_real"] is not None
+        assert self.result["m_dot_real"] > 0.0
+
+    def test_regime_is_hem_two_phase(self):
+        assert self.result["regime"] == "HEM_two_phase_inlet"
+
+    def test_injector_result_has_x_exit(self):
+        # The injector result dict must contain x_exit in [0, 1].
+        ir = self.result["injector_result"]
+        assert ir is not None
+        assert 0.0 <= ir["x_exit"] <= 1.0
+
+    def test_spi_sufficient_is_false(self):
+        # Two-phase inlet: SPI is not sufficient (never valid here).
+        assert self.result["spi_sufficient"] is False
 
     def test_p_injector_inlet_is_present(self):
-        # Feed line result is still returned even when flashing occurs.
         assert self.result["P_injector_inlet"] is not None
 
 

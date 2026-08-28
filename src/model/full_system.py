@@ -17,7 +17,7 @@ Units: SI throughout (Pa, K, kg/m^3, m^2, kg/s).
 from n2o_properties import rho_liquid_sat, nu_vapor_sat, T_sat
 from feed_line import evaluate_feed_line
 from injector_spi import spi_mass_flow, spi_sufficient
-from injector_two_phase import dyer_mass_flow
+from injector_two_phase import dyer_mass_flow, hem_mass_flow_two_phase_inlet
 
 M_N2O = 44.013  # kg/kmol, molar mass of N2O (n2o_properties.py convention)
 
@@ -70,18 +70,31 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
                                            segments, roughness)
     P_injector_inlet = feed_line_result["P_final"]
 
-    # If the feed line itself produced flashing, the fluid arriving at
-    # the injector inlet is already two-phase -- outside the domain of
-    # both SPI and Dyer (both assume liquid at the orifice inlet, per
-    # Section 3.1/injector_two_phase.py's domain restriction). Return
-    # early with a clear flag; the injector model is not run.
+    # If the feed line produced flashing, the fluid arrives two-phase at
+    # the injector inlet (x_inlet > 0). SPI and Dyer assume liquid at the
+    # inlet and are invalid here. Instead, use HEM with the two-phase inlet
+    # enthalpy computed from the isenthalpic flash in feed_line.py.
+    # The Dyer model is not applied: with P_upstream ~ P_sat, kappa -> inf
+    # and Dyer collapses to SPI (wrong direction). HEM is the correct model.
     if feed_line_result["flashing_detected"]:
+        x_inlet = feed_line_result["x_inlet"]
+
+        T_downstream = T_sat(P_chamber)
+        rho_l_down   = rho_liquid_sat(T_downstream)
+        rho_v_down   = M_N2O / nu_vapor_sat(T_downstream)
+
+        injector_result = hem_mass_flow_two_phase_inlet(
+            Cd, A_injector, T_tank, x_inlet,
+            P_injector_inlet, P_chamber,
+            rho_l_down, rho_v_down)
+
         return {
             "feed_line_result": feed_line_result,
             "P_injector_inlet": P_injector_inlet,
-            "spi_sufficient": None,
-            "m_dot_real": None,
-            "injector_result": None,
+            "spi_sufficient": False,
+            "m_dot_real": injector_result["m_dot_HEM_2phase"],
+            "injector_result": injector_result,
+            "regime": "HEM_two_phase_inlet",
         }
 
     sufficient = spi_sufficient(P_injector_inlet, T_tank, P_chamber)
@@ -108,6 +121,7 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
         "spi_sufficient": sufficient,
         "m_dot_real": m_dot_real,
         "injector_result": injector_result,
+        "regime": "SPI" if sufficient else "Dyer",
     }
 
 
