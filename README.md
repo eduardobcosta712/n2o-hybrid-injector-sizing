@@ -73,12 +73,21 @@ The Dyer model is a weighted combination of the SPI limit ("no time to vaporise"
 
 ---
 
+## Validation
+
+The Dyer/NHNE model has been validated against experimental data from Waxman (2013/2014) for supercharged N₂O injectors — the correct domain for the model (subcooled liquid at the injector inlet, QF_upstream = 0). Four operating points at moderate pressure drops (8–14 bar), representative of real motor design conditions, give a **mean error of −1.9%** with all points within ±5%. Full report in [`validation/waxman_2013_results.md`](validation/waxman_2013_results.md).
+
+**On validation coverage.** This is the only open-access experimental dataset identified that matches the model's domain (supercharged N₂O, tabulated operating points at design-relevant pressure drops). Other published datasets either use self-pressurized conditions (QF_upstream > 0 from tank vapour space — outside the SPI/Dyer domain) or are behind institutional paywalls. The Waxman dataset is considered sufficient validation for the injector sizing use case. The two-phase inlet path (flashing in the feed line) is physically implemented but has not been validated against published data, as no suitable open-access dataset was found; this is noted as a known limitation.
+
+---
+
 ## Scope and known limitations
 
 - Tank temperature is a **direct user input** — thermal balance with the environment (solar radiation, convection) is not modelled. See [`docs/future_work.md`](docs/future_work.md).
 - Feed line assumed **adiabatic** and **steady-state** — no transient start-up effects.
-- When flashing is detected in the feed line, the injector models are not evaluated (fluid arrives two-phase at the orifice inlet, outside their domain). A qualitative diagnostic and the SPI reference value are shown instead.
-- Discharge coefficients and Dyer model parameters use **literature reference values**, not team-calibrated data.
+- When flashing is detected in the feed line, the model estimates the vapour quality at the injector inlet via isenthalpic flash and applies HEM with a two-phase inlet enthalpy. The Dyer blend is not used in this regime (it collapses to SPI when P_upstream ≈ P_sat, which is physically incorrect — HEM is the appropriate limit).
+- Discharge coefficients use **literature reference values**, not team-calibrated data.
+- The Dyer model is validated for moderate pressure drops (design regime, ΔP = 20–50 bar). It does not capture two-phase choking at extreme ΔP. See [`docs/future_work.md`](docs/future_work.md).
 
 ---
 
@@ -88,29 +97,40 @@ The Dyer model is a weighted combination of the SPI limit ("no time to vaporise"
 n2o-hybrid-injector-sizing/
 ├── README.md
 ├── docs/
-│   ├── 01_n2o_thermodynamics.md     — N₂O saturation properties and flashing
-│   ├── 02_spi_model.md              — SPI model derivation and assumptions
-│   ├── 03_two_phase_flow.md         — HEM and Dyer models
-│   ├── 04_implementation.md         — Module-by-module implementation notes
-│   ├── future_work.md               — Identified extensions out of current scope
-│   ├── user_manual.md               — Step-by-step guide to the interactive tool
-│   └── references.md                — Sources and citations
+│   ├── 01_n2o_thermodynamics.md
+│   ├── 02_spi_model.md
+│   ├── 03_two_phase_flow.md
+│   ├── 04_implementation.md
+│   ├── future_work.md
+│   ├── user_manual.md
+│   └── references.md
 ├── src/
 │   ├── model/
-│   │   ├── n2o_properties.py        — Saturated N₂O thermophysical properties
-│   │   ├── n2o_saturation_table.csv — Tabulated data (Table A.1, arXiv:2302.06725)
-│   │   ├── feed_line.py             — Feed line pressure drop (Darcy-Weisbach)
-│   │   ├── injector_spi.py          — SPI injector model
-│   │   ├── injector_two_phase.py    — HEM and Dyer two-phase models
-│   │   └── full_system.py           — Full path orchestration
+│   │   ├── n2o_properties.py
+│   │   ├── n2o_saturation_table.csv
+│   │   ├── feed_line.py
+│   │   ├── injector_spi.py
+│   │   ├── injector_two_phase.py
+│   │   └── full_system.py
 │   └── interface/
-│       ├── app.py                   — Streamlit interactive tool
-│       ├── plotting.py              — Plotly interactive charts
-│       └── export.py                — PDF report generation
+│       ├── app.py
+│       ├── plotting.py
+│       └── export.py
+├── validation/
+│   ├── waxman_2013_results.md
+│   ├── waxman_2013_validation.py
+│   └── waxman_2013_experimental_data.csv
+├── tests/
+│   ├── conftest.py
+│   ├── test_n2o_properties.py
+│   ├── test_feed_line.py
+│   ├── test_injector_spi.py
+│   ├── test_injector_two_phase.py
+│   └── test_full_system.py
 └── examples/
-    ├── example_01_sizing.md         — Sizing mode: predict mass flow for known geometry
-    ├── example_02_design.md         — Design mode: find orifice area for target flow
-    └── example_03_flashing.md       — Flashing case: diagnosis and design correction
+    ├── example_01_sizing.md
+    ├── example_02_design.md
+    └── example_03_flashing.md
 ```
 
 ---
