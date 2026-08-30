@@ -23,7 +23,7 @@ This project gives a hybrid propulsion team a way to predict, before testing, wh
 | Component | Description |
 |---|---|
 | **Theory docs** (`docs/`) | N₂O thermodynamics, SPI model derivation, HEM and Dyer two-phase models — written from first principles, no prior two-phase flow knowledge required |
-| **Calculation model** (`src/model/`) | Python implementation of the full tank → feed line → injector path: Darcy-Weisbach friction losses, SPI/HEM/Dyer injector models, validated against published data |
+| **Calculation model** (`src/model/`) | Coupled iterative solver for the full tank → feed line → injector path: Darcy-Weisbach friction losses, SPI/HEM/Dyer injector models, self-consistent operating point, validated against published data |
 | **Interactive tool** (`src/interface/`) | Streamlit web app — two modes (Sizing and Design), live diagrams, combustion stability check, sensitivity analysis, PDF report export |
 | **Practical examples** (`examples/`) | Worked cases showing how to use the tool for real sizing scenarios |
 
@@ -59,25 +59,32 @@ See [`docs/user_manual.md`](docs/user_manual.md) for a full walkthrough.
 
 ## Model overview
 
-The tool chains three physics blocks:
+The tool uses a **coupled iterative solver** that finds the self-consistent operating point where feed-line losses and injector flow are mutually consistent:
 
 ```
-Tank
-  └─→ Feed line (Darcy-Weisbach friction + fitting losses)
-        └─→ Injector sufficiency check (SPI criterion)
-              ├─→ [SPI valid] Single-phase Bernoulli prediction
-              └─→ [Two-phase] Dyer/NHNE model (blend of SPI and HEM limits)
+Initial mass-flow guess
+         ↓
+   Feed-line model  ──→  Injector inlet pressure
+         ↑                        ↓
+         └──────  Injector model (SPI / Dyer / HEM)
+                          ↓
+                     Converged?  →  Result
 ```
 
-The Dyer model is a weighted combination of the SPI limit ("no time to vaporise") and the HEM limit ("full thermodynamic equilibrium"), with the weight determined by how close the upstream pressure already is to saturation. It is the standard two-phase injector model in the university rocketry literature for this class of problem.
+Three injector regimes are handled automatically:
+- **SPI** — single-phase throughout the orifice
+- **Dyer/NHNE** — liquid at the inlet, two-phase inside the orifice
+- **HEM two-phase inlet** — fluid arrives partially vaporised (flashing in the feed line)
+
+The Dyer model is a weighted combination of the SPI limit ("no time to vaporise") and the HEM limit ("full thermodynamic equilibrium"), with the weight determined by how close the upstream pressure already is to saturation.
 
 ---
 
 ## Validation
 
-The Dyer/NHNE model has been validated against experimental data from Waxman (2013/2014) for supercharged N₂O injectors — the correct domain for the model (subcooled liquid at the injector inlet, QF_upstream = 0). Four operating points at moderate pressure drops (8–14 bar), representative of real motor design conditions, give a **mean error of −1.9%** with all points within ±5%. Full report in [`validation/waxman_2013_results.md`](validation/waxman_2013_results.md).
+The Dyer/NHNE model has been validated against experimental data from Waxman (2013/2014) for supercharged N₂O injectors — the correct domain for the model (subcooled liquid at the injector inlet, QF_upstream = 0). Four operating points at moderate pressure drops (8–14 bar), representative of real motor design conditions, give a **mean error of −1.9%** with all points within ±5%. Full report in [`validation/waxman_2013_validation.md`](validation/waxman_2013_validation.md).
 
-**On validation coverage.** This is the only open-access experimental dataset identified that matches the model's domain (supercharged N₂O, tabulated operating points at design-relevant pressure drops). Other published datasets either use self-pressurized conditions (QF_upstream > 0 from tank vapour space — outside the SPI/Dyer domain) or are behind institutional paywalls. The Waxman dataset is considered sufficient validation for the injector sizing use case. The two-phase inlet path (flashing in the feed line) is physically implemented but has not been validated against published data, as no suitable open-access dataset was found; this is noted as a known limitation.
+**On validation coverage.** This is the only open-access experimental dataset identified that matches the model's domain (supercharged N₂O, tabulated operating points at design-relevant pressure drops). Other published datasets either use self-pressurized conditions or are behind institutional paywalls. The Waxman dataset is considered sufficient validation for the injector sizing use case. The two-phase inlet path (flashing in the feed line) is physically implemented but has not been validated against published data, as no suitable open-access dataset was found; this is noted as a known limitation.
 
 ---
 

@@ -1,44 +1,118 @@
 # Future Work
 
-Extensions identified during this project's development, deliberately left out of the current version's scope to guarantee a validated deliverable within the available timeframe.
-
-## Estimating tank temperature from ambient conditions
-
-**Motivation.** N₂O tank temperature is, in the current version, a direct user input. In practice, that temperature results from a thermal balance between the tank and its environment (incident solar radiation, convection with ambient air, insulation, orientation, exposure), which varies with geographic location, time of day, and weather conditions. Since N₂O operates dangerously close to its critical point (≈36.4 °C — see `01_n2o_thermodynamics.md`), this environmental variation could be enough to significantly shift the subcooling margin available at the start of the path, even before any losses along the line or the injector.
-
-**Why it isn't included in this version.** Correctly modeling this thermal balance requires:
-
-- A model of incident solar radiation as a function of location, time, season, and tank orientation;
-- A model of convection with ambient air, dependent on wind speed and tank geometry;
-- A transient energy balance (dependent on exposure time, not just instantaneous conditions), including the effect of N₂O's own internal phase change on tank temperature.
-
-This is a thermal modeling problem of comparable scope and complexity to the flow model that forms the core of this project, so including it at this stage would risk compromising the validation and robustness of the flow model itself.
-
-**Proposed future implementation.** Retrieval of weather data (air temperature, solar irradiance) via a public API (e.g. Open-Meteo, no API key required), combined with a simplified tank-ambient thermal equilibrium model as a first approximation — explicitly assuming no transient effects and no direct solar radiation in that first iteration — before a full transient model is justified.
-
-## Pressure-dependent liquid density (compressibility correction)
-
-**Motivation.** The current model treats saturated liquid density as a function of temperature only, $\rho_{sat}(T)$, consistent with the incompressible-liquid assumption underlying the SPI model (Section 2.4). In reality, liquid density depends weakly on pressure too, through the isothermal compressibility $\kappa_T = -\frac{1}{\nu}\left(\frac{\partial \nu}{\partial P}\right)_T$. For feed lines with large pressure excursions, a first-order correction
-
-$$\rho(T, P) \approx \rho_{sat}(T)\left[1 + \kappa_T \cdot (P - P_{sat}(T))\right]$$
-
-would let `feed_line.py` recompute density segment by segment using local pressure, rather than a single value fixed at the tank temperature.
-
-**Why it isn't included in this version.** The comparison between Case A and Case B in `04_implementation.md` (Section 4.2) shows the constant-density approximation does not distort the central flashing-detection conclusion for the pressure ranges tested. A correlation for $\kappa_T(T)$ specific to liquid N₂O would also need to be sourced separately from the saturation correlations already in use (see `references.md`). This is judged a second-order refinement relative to the two-phase injector modeling (Sections 3–4), which remains the project's core focus.
-
-## Other identified extensions
-
-- Transient regime at motor start-up (the current model assumes steady-state flow).
-- Calibration of Cd and Dyer model parameters against the team's own experimental data, rather than literature reference values.
-
-## Two-phase choking limit in the Dyer/HEM model
-
-**Motivation.** The current Dyer and HEM formulas use $\dot{m} = C_d A \sqrt{2 \rho \Delta P}$, which grows indefinitely with $\Delta P$. Real two-phase critical flow reaches a physical maximum when the mixture velocity equals the two-phase speed of sound (analogous to choking in compressible gas flow). At large pressure drops (ΔP >> 50 bar), the model over-predicts without bound.
-
-**Why it isn't included in this version.** Finding the true HEM critical flow requires locating the maximum of $\dot{m}_{HEM}(P_2)$ along a constant-entropy path — which requires entropy data for N₂O not available in the current Perry/McGill dataset. This would need either CoolProp/REFPROP integration or a separate isentropic property table for N₂O.
-
-**Proposed future implementation.** Integrate CoolProp (open source, no licence required) for thermodynamic properties, enabling the isentropic maximum search (Waxman 2013, Eq. 5) and replacing the Perry/McGill correlations where accuracy near the critical point matters most.
+Extensions identified during this project's development, ordered by
+technical importance per the project roadmap document.
 
 ---
 
-*Items above marked as implemented have been moved to `docs/04_implementation.md`.*
+## Implemented (removed from future work)
+
+- Two-phase inlet via isenthalpic flash (x_inlet from feed line)  ✅
+- HEM with two-phase inlet enthalpy  ✅
+- Coupled feed-line / injector solver (iterative, damped fixed-point)  ✅
+- Sensitivity tornado plot  ✅
+- Dyer formula weight correction (Solomon 2011)  ✅
+
+---
+
+## Priority 2 — Physically consistent two-phase feed-line model
+
+**Motivation.** Once flashing is detected in the feed line, the current model
+continues to use liquid-phase properties (density, viscosity) for the
+remaining pressure-drop calculation. After the flashing onset, the fluid is
+a two-phase mixture with different density and pressure-gradient behaviour.
+
+**Why not yet.** Implementing a correct two-phase pressure-drop model
+(HEM homogeneous, or Lockhart-Martinelli type) requires knowing the local
+void fraction at each point after the onset — which in turn requires the
+coupled solver (now implemented) to track x(s) along the line, not just at
+the inlet. This is the natural next step now that the coupled solver exists.
+
+**Proposed approach.** Extend `feed_line.py` to track enthalpy (and
+therefore x) segment by segment after the flashing onset, and use the
+HEM two-phase friction multiplier (Φ²_lo) for pressure-drop in the two-phase
+region.
+
+---
+
+## Priority 3 — Two-phase choking limit
+
+**Motivation.** The Dyer and HEM formulas use
+$\dot{m} = C_d A \sqrt{2 \rho \Delta P}$, which grows without bound with
+$\Delta P$. Real two-phase critical flow reaches a physical maximum when
+the mixture velocity equals the two-phase speed of sound. At large pressure
+drops ($\Delta P \gg 50$ bar), the model over-predicts without bound.
+
+**Why not yet.** The HEM critical flow requires finding the maximum of
+$\dot{m}_{HEM}(P_2)$ along a constant-entropy path — which requires
+entropy data for N₂O not present in the current Perry/McGill dataset.
+
+**Proposed approach.** Integrate CoolProp (open source) for entropy data,
+enabling the isentropic maximum search (Waxman 2013, Eq. 5). Alternatively,
+implement the Henry-Fauske critical flow model, which does not require
+entropy data.
+
+---
+
+## Priority 4 — Full-system experimental validation
+
+**Current state.** The Dyer injector model is validated against Waxman
+(2013/2014) with mean error −1.9% at moderate pressure drops. The coupled
+solver is new and not yet validated against full-system data.
+
+**What is needed.** Experimental data covering the full path
+(tank → line → injector) with known geometry, discharge coefficient,
+and measured mass flow. The validation should be re-run after the coupled
+solver since the one-pass results used previously may differ slightly.
+
+---
+
+## Priority 7 — Quantitative uncertainty analysis (Monte Carlo)
+
+**Motivation.** The current sensitivity tornado shows which input matters
+most. A Monte Carlo analysis would quantify the output uncertainty given
+realistic input distributions, producing a confidence interval on mass flow.
+
+**Proposed approach.** Sample input distributions (normal for temperature
+and pressure, uniform for Cd and geometry), run the coupled solver for
+each sample, and report the 5th–95th percentile of the mass-flow distribution.
+
+---
+
+## Priority 8 — Improved N₂O thermophysical properties
+
+**Motivation.** The Perry/McGill correlations have ~2–3% error near the
+critical point vs. REFPROP. CoolProp (open source, no licence) provides
+REFPROP-quality properties and would improve accuracy in the critical region.
+
+**Why deferred.** The current property implementation is sufficient for
+design-regime accuracy. CoolProp integration would also enable the
+isentropic maximum search needed for choking (Priority 3).
+
+---
+
+## Priority 9 — Tank thermal model
+
+**Motivation.** Tank temperature is currently a direct user input. A
+thermal model would predict T_tank from ambient conditions, solar irradiance,
+and tank geometry.
+
+**Proposed approach.** Retrieve weather data via Open-Meteo API (free, no
+key required) and implement a simplified steady-state tank-ambient heat
+balance as a first approximation before a full transient model.
+
+---
+
+## Priority 10 — Transient / blowdown model
+
+**Motivation.** The current model is steady-state. A transient model would
+predict how mass flow, tank pressure, and temperature evolve over the burn.
+
+**Why deferred.** Requires a reliable steady-state coupled solver (now
+implemented) as the inner loop, plus a tank thermodynamic model (Priority 9).
+
+---
+
+*Items implemented in this version are listed at the top. New items are added
+here as they are identified. See `roadmap/Future_Improvements_Roadmap.md`
+for the full priority order and rationale.*
