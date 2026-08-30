@@ -65,63 +65,81 @@ def _check_range(T):
 
 def _load_saturation_table():
     """
-    Parse n2o_saturation_table.csv and return Table A.1 as parallel lists,
-    ready for interpolation. Result is cached in _table_cache after the
-    first call, so the file is only read from disk once per program run.
+    Parse n2o_saturation_table.csv and return Table A.1 and Table A.3
+    as parallel lists, ready for interpolation. Result is cached in
+    _table_cache after the first call.
 
-    The CSV file has a non-trivial structure: comment lines starting with
-    '#', then a '[TABLE_A1]' section header, then the Table A.1 header row
-    and data rows, then a '[TABLE_A2]' section (not parsed here -- Table
-    A.2 is not used by the current model, see the CSV header for why).
+    The CSV has three sections:
+      [TABLE_A1] — thermodynamic properties (McGill/Perry)
+      [TABLE_A2] — derivatives of Table A.1 (not parsed)
+      [TABLE_A3] — saturated vapour dynamic viscosity mu_v (NIST WebBook,
+                   Lemmon & Span 2006 EOS + Millat et al. 1991 viscosity)
 
     Returns
     -------
     dict
-        Keys "T_K", "nu_v", "h_l", "h_v", each mapping to a list of floats,
-        in the same row order as the source table (ascending T).
+        "T_K"   : list of float, K  (Table A.1 temperatures)
+        "nu_v"  : list of float, m^3/kmol
+        "h_l"   : list of float, kJ/kmol
+        "h_v"   : list of float, kJ/kmol
+        "T_K_muv" : list of float, K  (Table A.3 temperatures)
+        "mu_v"  : list of float, Pa·s (converted from μPa·s)
     """
     global _table_cache
     if _table_cache is not None:
         return _table_cache
 
     T_list, nu_v_list, h_l_list, h_v_list = [], [], [], []
+    T_muv_list, mu_v_list = [], []
 
     with open(_TABLE_PATH, "r") as f:
         lines = f.readlines()
 
-    # Find where Table A.1's data starts: the line right after the
-    # "[TABLE_A1]" marker is the header row (column names); every line
-    # after that, until "[TABLE_A2]", is a data row.
-    in_table_a1 = False
+    # --- Parse TABLE_A1 ---
+    in_a1 = False
     header_skipped = False
     for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#"):
+        s = line.strip()
+        if not s or s.startswith("#"):
             continue
-        if line == "[TABLE_A1]":
-            in_table_a1 = True
-            header_skipped = False
-            continue
-        if line == "[TABLE_A2]":
-            break  # Table A.1 block is over; A.2 is not needed here.
-        if in_table_a1:
+        if s == "[TABLE_A1]":
+            in_a1 = True; header_skipped = False; continue
+        if s in ("[TABLE_A2]", "[TABLE_A3]"):
+            in_a1 = False; continue
+        if in_a1:
             if not header_skipped:
-                header_skipped = True  # this line is the column-name row
-                continue
-            fields = next(csv.reader([line]))
+                header_skipped = True; continue
+            fields = next(csv.reader([s]))
             T_list.append(float(fields[0]))
             nu_v_list.append(float(fields[1]))
-            # h_l and h_v are columns 3 and 5 (0-indexed: 3 and 5), in
-            # kJ/mol in the source file -- convert to kJ/kmol (x1000) to
-            # stay consistent with this module's SI-with-kmol convention.
+            # h_l and h_v are in kJ/mol in source; convert to kJ/kmol (×1000)
             h_l_list.append(float(fields[3]) * 1000.0)
             h_v_list.append(float(fields[5]) * 1000.0)
 
+    # --- Parse TABLE_A3 (mu_v from NIST) ---
+    in_a3 = False
+    header_skipped_a3 = False
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s == "[TABLE_A3]":
+            in_a3 = True; header_skipped_a3 = False; continue
+        if in_a3:
+            if not header_skipped_a3:
+                header_skipped_a3 = True; continue
+            fields = next(csv.reader([s]))
+            T_muv_list.append(float(fields[0]))
+            # NIST gives mu_v in μPa·s; convert to Pa·s (SI)
+            mu_v_list.append(float(fields[1]) * 1e-6)
+
     _table_cache = {
-        "T_K": T_list,
-        "nu_v": nu_v_list,
-        "h_l": h_l_list,
-        "h_v": h_v_list,
+        "T_K":    T_list,
+        "nu_v":   nu_v_list,
+        "h_l":    h_l_list,
+        "h_v":    h_v_list,
+        "T_K_muv": T_muv_list,
+        "mu_v":   mu_v_list,
     }
     return _table_cache
 
@@ -387,6 +405,82 @@ def h_fg(T):
         Latent heat of vaporization in kJ/kmol.
     """
     return h_vapor_sat(T) - h_liquid_sat(T)
+
+
+# ---------------------------------------------------------------------------
+# Dynamic viscosity of saturated N2O (liquid and vapour)
+# ---------------------------------------------------------------------------
+
+# Saturated liquid viscosity: constant approximation.
+# Source: Hoge (1945) as cited by NIST WebBook. At 220-300 K, mu_l varies
+# from ~130 to ~60 uPa.s. The constant 1.5e-4 Pa.s is a conservative
+# mid-range estimate used for the friction factor in feed_line.py.
+# TODO (future_work.md Priority 2): replace with T-dependent liquid
+# viscosity from the NIST WebBook liquid saturation table.
+MU_LIQUID_N2O = 1.5e-4   # Pa.s, dynamic viscosity of saturated liquid N2O
+
+
+def mu_vapor_sat(T):
+    """
+    Dynamic viscosity of saturated N2O vapour at temperature T, Pa.s.
+
+    Interpolated linearly from Table A.3 of n2o_saturation_table.csv,
+    which contains NIST WebBook data (Lemmon & Span 2006 equation of state;
+    viscosity from Millat, Vesovic & Wakeham 1991).
+
+    NIST uncertainty: ~2% at T > 150 K (dilute gas limit); higher near
+    the critical point (T > 295 K).
+
+    Valid range: 182.33 K (triple point) to 307.33 K (near critical).
+
+    Physical note: vapour viscosity INCREASES with T (unlike liquids).
+    At design conditions (220-300 K): 11-18 uPa.s. For comparison,
+    MU_LIQUID_N2O ~ 60-130 uPa.s -- roughly 10x larger. In the two-phase
+    feed-line model, mu_mix is dominated by the liquid fraction except
+    at very high vapour quality.
+
+    Parameters
+    ----------
+    T : float
+        Temperature, K.
+
+    Returns
+    -------
+    float
+        Dynamic viscosity of saturated vapour, Pa.s.
+    """
+    _check_range(T)
+    tbl = _load_saturation_table()
+    return _interp(T, tbl["T_K_muv"], tbl["mu_v"])
+
+
+def mu_mixture(x, T=None, mu_l=MU_LIQUID_N2O):
+    """
+    Dynamic viscosity of a two-phase liquid-vapour N2O mixture, Pa.s.
+
+    Uses the McAdams mixing rule (linear in mass quality):
+        mu_mix = (1 - x) * mu_l + x * mu_v
+
+    This is the standard mixing rule for the HEM (homogeneous equilibrium)
+    two-phase flow model, where both phases share the same velocity and T.
+
+    Parameters
+    ----------
+    x : float
+        Vapour quality (mass fraction of vapour), [0, 1].
+    T : float or None
+        Temperature, K. If provided, mu_v = mu_vapor_sat(T).
+        If None, uses a mid-range estimate of 13e-6 Pa.s (at ~250 K).
+    mu_l : float
+        Liquid dynamic viscosity, Pa.s. Default: MU_LIQUID_N2O.
+
+    Returns
+    -------
+    float
+        Mixture dynamic viscosity, Pa.s.
+    """
+    mu_v = mu_vapor_sat(T) if T is not None else 13e-6
+    return (1.0 - x) * mu_l + x * mu_v
 
 
 def degree_of_subcooling(T, P):

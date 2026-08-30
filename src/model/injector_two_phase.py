@@ -248,23 +248,19 @@ def dyer_non_equilibrium_parameter(P_upstream, T_upstream, P_downstream):
     """
     Dyer's non-equilibrium weighting parameter, kappa (Section 3.4):
 
-        kappa = sqrt[(P_upstream - P_downstream) / (P_sat(T_upstream) - P_downstream)]
+    kappa = sqrt[(P_upstream - P_downstream) / (P_sat(T_upstream) - P_downstream)]
 
-    The numerator is the total pressure drop across the orifice; the
-    denominator is how much subcooling margin (in pressure terms) the
-    fluid had at the orifice inlet before the flow even begins. A large
-    kappa means the inlet was already close to saturation (little margin
-    to lose), so the flow behaves closer to the full-equilibrium HEM
-    limit; a small kappa means the inlet was comfortably subcooled, so
-    the flow behaves closer to the "no time to vaporize" SPI limit.
+The numerator is the total pressure drop across the orifice; the
+denominator is the pressure drop required to reach saturation. 
 
-    This function requires P_upstream > P_sat(T_upstream) -- i.e. the
-    fluid must still be liquid (saturated or subcooled) AT the orifice
-    inlet, per Section 1.4. If P_upstream <= P_sat(T_upstream), the fluid
-    has already crossed the saturation curve before reaching the orifice
-    at all: this is a modeling error (the two-phase feed line problem,
-    not the two-phase orifice problem this module addresses), so it is
-    flagged loudly rather than producing a meaningless or infinite kappa.
+A large kappa means the inlet was comfortably subcooled (large margin 
+above P_sat), so the fluid spends little time in a flashing state inside 
+the orifice. Thus, the flow behaves closer to the single-phase SPI limit 
+("no time to vaporize"). 
+
+A small kappa (close to 1) means the inlet was already close to saturation 
+(little subcooling margin), so vaporization occurs rapidly and the flow 
+behaves closer to the full-equilibrium HEM limit.
 
     Parameters
     ----------
