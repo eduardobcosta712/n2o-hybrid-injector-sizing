@@ -30,3 +30,15 @@ would let `feed_line.py` recompute density segment by segment using local pressu
 
 - Transient regime at motor start-up (the current model assumes steady-state flow).
 - Calibration of Cd and Dyer model parameters against the team's own experimental data, rather than literature reference values.
+
+## Two-phase choking limit in the Dyer/HEM model
+
+**Motivation.** The current Dyer and HEM formulas use $\dot{m} = C_d A \sqrt{2 \rho \Delta P}$, which grows indefinitely with $\Delta P$. Real two-phase critical flow reaches a physical maximum when the mixture velocity equals the two-phase speed of sound (analogous to choking in compressible gas flow). At large pressure drops (ΔP >> 50 bar), the model over-predicts without bound.
+
+**Why it isn't included in this version.** Finding the true HEM critical flow requires locating the maximum of $\dot{m}_{HEM}(P_2)$ along a constant-entropy path — which requires entropy data for N₂O not available in the current Perry/McGill dataset. This would need either CoolProp/REFPROP integration or a separate isentropic property table for N₂O.
+
+**Proposed future implementation.** Integrate CoolProp (open source, no licence required) for thermodynamic properties, enabling the isentropic maximum search (Waxman 2013, Eq. 5) and replacing the Perry/McGill correlations where accuracy near the critical point matters most.
+
+---
+
+*Items above marked as implemented have been moved to `docs/04_implementation.md`.*

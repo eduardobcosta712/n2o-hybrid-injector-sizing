@@ -52,8 +52,14 @@ def _make_pressure_chart(trace, P_tank, T_tank, segments):
     """Matplotlib version of the pressure-along-line chart for PDF export."""
     from n2o_properties import P_sat
     fig, ax = plt.subplots(figsize=(4.5, 2.8))
-    fig.patch.set_facecolor("#f8fafc")
-    ax.set_facecolor("#f0f4f8")
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#CBD5E1")
+    ax.spines["bottom"].set_color("#CBD5E1")
+    ax.tick_params(colors="#64748B", labelsize=7)
+    ax.grid(axis="y", color="#F1F5F9", linewidth=0.8, zorder=0)
 
     x_positions = [0.0]
     x_cur = 0.0
@@ -65,14 +71,14 @@ def _make_pressure_chart(trace, P_tank, T_tank, segments):
     P_bar = [P_tank / 1e5] + [s["pressure_after_Pa"] / 1e5 for s in trace]
     P_sat_val = P_sat(T_tank) / 1e5
 
-    ax.plot(x_positions, P_bar, marker="o", color="#2c5f8a",
+    ax.plot(x_positions, P_bar, marker="o", color="#2563EB",
             linewidth=1.8, markersize=5, zorder=3)
-    ax.axhline(P_sat_val, color="#7a2020", linestyle="--",
+    ax.axhline(P_sat_val, color="#DC2626", linestyle="--",
                linewidth=1.2, label=f"P_sat = {P_sat_val:.1f} bar")
     ax.fill_between(x_positions,
                     [P_sat_val] * len(x_positions), P_bar,
                     where=[p > P_sat_val for p in P_bar],
-                    color="#2c5f8a", alpha=0.08)
+                    color="#2563EB", alpha=0.08)
     ax.set_xlabel("Position along line (m)", fontsize=8)
     ax.set_ylabel("Pressure (bar)", fontsize=8)
     ax.set_title("Pressure along feed line", fontsize=9, fontweight="bold")
@@ -87,24 +93,24 @@ def _make_pt_chart(T_tank, P_tank, P_inlet, P_chamber):
     """Matplotlib version of the P-T diagram for PDF export."""
     from n2o_properties import P_sat, T_sat, T_MIN, T_MAX
     fig, ax = plt.subplots(figsize=(4.5, 2.8))
-    fig.patch.set_facecolor("#f8fafc")
-    ax.set_facecolor("#f0f4f8")
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
 
     T_curve = np.linspace(T_MIN, T_MAX, 200)
     P_curve = [P_sat(T) / 1e5 for T in T_curve]
     T_c = T_curve - 273.15
 
     ax.plot(T_c, P_curve, color="#1a2030", linewidth=1.8, label="Saturation curve")
-    ax.fill_between(T_c, P_curve, 80, color="#2c5f8a", alpha=0.07)
+    ax.fill_between(T_c, P_curve, 80, color="#2563EB", alpha=0.07)
     ax.fill_between(T_c, 0, P_curve, color="#c06020", alpha=0.06)
 
     T_tc = T_tank - 273.15
     T_chc = T_sat(P_chamber) - 273.15
-    ax.scatter([T_tc], [P_tank / 1e5], color="#2c5f8a", s=50,
+    ax.scatter([T_tc], [P_tank / 1e5], color="#2563EB", s=50,
                zorder=5, label=f"Tank ({P_tank/1e5:.1f} bar)", marker="s")
     ax.scatter([T_tc], [P_inlet / 1e5], color="#2d6a4f", s=50,
                zorder=5, label=f"Injector inlet ({P_inlet/1e5:.1f} bar)", marker="^")
-    ax.scatter([T_chc], [P_chamber / 1e5], color="#7a2020", s=50,
+    ax.scatter([T_chc], [P_chamber / 1e5], color="#DC2626", s=50,
                zorder=5, label=f"Chamber ({P_chamber/1e5:.1f} bar)", marker="v")
 
     ax.set_ylim(0, 80)
@@ -121,8 +127,8 @@ def _make_pt_chart(T_tank, P_tank, P_inlet, P_chamber):
 def _make_comparison_chart(m_spi, m_hem, m_dyer, m_target):
     """Matplotlib bar chart for model comparison in Design mode PDF."""
     fig, ax = plt.subplots(figsize=(4.5, 2.8))
-    fig.patch.set_facecolor("#f8fafc")
-    ax.set_facecolor("#f0f4f8")
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
 
     labels = ["SPI", "HEM", "Dyer", "Target"]
     vals = [m_spi * 1000, m_hem * 1000, m_dyer * 1000, m_target * 1000]
@@ -279,42 +285,54 @@ def generate_pdf(mode, inputs, results, segments_ui, model_segments):
 
     # ── Results ───────────────────────────────────────────────────────────────
     story.append(Paragraph("Results", section_style))
-    fl = results.get("feed_line_result", {})
+    fl       = results.get("feed_line_result", {})
     flashing = fl.get("flashing_detected", False)
+    regime   = results.get("regime", "—")
+    x_inlet  = fl.get("x_inlet", 0.0)
+    ir       = results.get("injector_result") or {}
 
     if mode == "sizing":
         res_data = [["Metric", "Value"]]
-        res_data.append(["Flashing in feed line",
-                          "YES — injector models not evaluated" if flashing else "NO"])
-        if not flashing:
-            res_data.append(["Injector inlet pressure",
-                              f"{results.get('P_injector_inlet', 0)/1e5:.2f} bar"])
-            res_data.append(["Model used",
-                              "SPI" if results.get("spi_sufficient") else "Dyer (two-phase)"])
-            res_data.append(["Real mass flow",
-                              f"{results.get('m_dot_real', 0)*1000:.1f} g/s"])
-            ir = results.get("injector_result")
-            if ir:
-                over = (ir["m_dot_SPI"] - results["m_dot_real"]) / ir["m_dot_SPI"] * 100
-                res_data.append(["SPI prediction (reference)",
-                                  f"{ir['m_dot_SPI']*1000:.1f} g/s"])
-                res_data.append(["SPI over-prediction",
-                                  f"{over:.1f}%"])
-                res_data.append(["Dyer kappa",
-                                  f"{ir['kappa']:.3f}"])
-                res_data.append(["Exit vapour quality x",
-                                  f"{ir['x_exit']:.3f}"])
+        # Feed line
+        fl_text = ("YES — two-phase inlet (HEM applied)"
+                   if flashing else "NO")
+        res_data.append(["Flashing in feed line", fl_text])
+        if flashing:
+            res_data.append(["Inlet vapour quality x_in",
+                              f"{x_inlet:.4f}"])
+        # Injector
+        res_data.append(["Injector inlet pressure",
+                          f"{results.get('P_injector_inlet', 0)/1e5:.2f} bar"])
+        res_data.append(["Model applied", regime])
+        res_data.append(["Real mass flow",
+                          f"{results.get('m_dot_real', 0)*1000:.1f} g/s"
+                          if results.get('m_dot_real') is not None else "N/A"])
+        # Model details
+        if regime == "Dyer" and ir:
+            over = (ir["m_dot_SPI"] - results["m_dot_real"]) / ir["m_dot_SPI"] * 100
+            res_data.append(["SPI prediction (reference)",
+                              f"{ir['m_dot_SPI']*1000:.1f} g/s"])
+            res_data.append(["SPI over-prediction", f"{over:.1f}%"])
+            res_data.append(["Dyer kappa", f"{ir['kappa']:.3f}"])
+            res_data.append(["Exit vapour quality x", f"{ir['x_exit']:.3f}"])
+        elif regime == "HEM_two_phase_inlet" and ir:
+            res_data.append(["HEM exit vapour quality x",
+                              f"{ir.get('x_exit', 0):.3f}"])
+        elif regime == "SPI":
+            res_data.append(["Note", "Single-phase — SPI valid, no correction needed"])
     else:
         res_data = [["Metric", "Value"]]
-        res_data.append(["Flashing in feed line",
-                          "YES — design not valid" if flashing else "NO"])
+        fl_text = "YES — fix line before sizing" if flashing else "NO"
+        res_data.append(["Flashing in feed line", fl_text])
+        if flashing:
+            res_data.append(["Inlet vapour quality x_in", f"{x_inlet:.4f}"])
         if not flashing:
             res_data.append(["SPI total area",
-                              f"{results.get('A_spi', 0)*1e6:.4f} mm2"])
+                              f"{results.get('A_spi', 0)*1e6:.4f} mm²"])
             res_data.append(["SPI hole diameter",
                               f"{results.get('d_spi', 0):.4f} mm"])
             res_data.append(["Dyer total area (recommended)",
-                              f"{results.get('A_dyer', 0)*1e6:.4f} mm2"])
+                              f"{results.get('A_dyer', 0)*1e6:.4f} mm²"])
             res_data.append(["Dyer hole diameter (recommended)",
                               f"{results.get('d_dyer', 0):.4f} mm"])
             res_data.append(["Dyer vs SPI area increase",
@@ -334,8 +352,8 @@ def generate_pdf(mode, inputs, results, segments_ui, model_segments):
     ]))
     story.append(tr)
 
-    # ── Charts ────────────────────────────────────────────────────────────────
-    if not flashing and fl.get("trace"):
+    # ── Charts — show when trace is available (including two-phase inlet regime)
+    if fl.get("trace"):
         story.append(Paragraph("Diagrams", section_style))
         fig1 = _make_pressure_chart(
             fl["trace"], results.get("_P_tank", 55e5),

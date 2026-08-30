@@ -19,6 +19,7 @@ from injector_two_phase import dyer_mass_flow
 from full_system import evaluate_full_system
 from plotting import (plot_pressure_along_line, plot_PT_diagram, plot_model_comparison,
                       plot_line_profile, plot_subcooling_margin, plot_sensitivity,
+                      plot_tornado,
                       plot_segment_losses)
 from export import generate_pdf
 
@@ -468,42 +469,39 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None):
 # ── Result cards ──────────────────────────────────────────────────────────────
 def render_result_cards(result):
     if result["feed_line_result"]["flashing_detected"]:
-        ir   = result.get("injector_result", {}) or {}
-        m_2p = result.get("m_dot_real")
-        x_in = result["feed_line_result"].get("x_inlet", 0.0)
+        ir     = result.get("injector_result") or {}
+        m_2p   = result.get("m_dot_real")
+        x_in   = result["feed_line_result"].get("x_inlet", 0.0)
         r1, r2, r3, r4 = st.columns(4)
         with r1:
             st.markdown('<div class="result-card"><div class="label">Flashing in line</div>'
-                        '<div class="value" style="color:#8a2020">YES</div></div>',
+                        '<div class="value" style="color:#e05252">YES</div></div>',
                         unsafe_allow_html=True)
         with r2:
             st.markdown(f'<div class="result-card"><div class="label">Inlet vapour quality</div>'
-                        f'<div class="value" style="color:#7a6020">{x_in:.3f}</div>'
+                        f'<div class="value" style="color:#e0a840">{x_in:.3f}</div>'
                         f'<div class="sub">x at injector inlet</div></div>',
                         unsafe_allow_html=True)
         with r3:
             if m_2p is not None:
                 st.markdown(f'<div class="result-card"><div class="label">Real mass flow</div>'
                             f'<div class="value">{m_2p*1000:.1f}</div>'
-                            f'<div class="sub">g/s — HEM (two-phase inlet)</div></div>',
+                            f'<div class="sub">g/s — HEM two-phase inlet</div></div>',
                             unsafe_allow_html=True)
             else:
                 st.markdown('<div class="result-card"><div class="label">Real mass flow</div>'
-                            '<div class="value" style="color:#2a3040">N/A</div></div>',
+                            '<div class="value" style="color:#3d4a5c">N/A</div></div>',
                             unsafe_allow_html=True)
         with r4:
             x_exit = ir.get("x_exit")
             if x_exit is not None:
                 st.markdown(f'<div class="result-card"><div class="label">Exit vapour quality</div>'
-                            f'<div class="value" style="color:#7a6020">{x_exit:.3f}</div>'
+                            f'<div class="value" style="color:#e0a840">{x_exit:.3f}</div>'
                             f'<div class="sub">x at orifice exit</div></div>',
                             unsafe_allow_html=True)
         if x_in > 0:
-            st.caption(
-                f"Two-phase inlet: x_inlet = {x_in:.4f} · "
-                f"exit quality x = {ir.get('x_exit', 0):.3f} · "
-                f"HEM with two-phase enthalpy applied"
-            )
+            st.caption(f"Two-phase inlet: x_in = {x_in:.4f} · "
+                       f"exit x = {ir.get('x_exit', 0):.3f} · HEM applied")
         return True
     spi_ok = result["spi_sufficient"]
     m_dot = result["m_dot_real"]
@@ -539,6 +537,8 @@ def render_result_cards(result):
         st.caption(f"Dyer: kappa = {ir['kappa']:.3f}  |  "
                    f"exit vapour quality x = {ir['x_exit']:.3f}  |  "
                    f"HEM prediction: {ir['m_dot_HEM']*1000:.1f} g/s")
+    elif ir and ir.get("x_exit") is not None:
+        st.caption(f"HEM two-phase inlet: exit vapour quality x = {ir['x_exit']:.3f}")
     return True
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -711,6 +711,18 @@ if st.session_state.page == "sizing":
                         use_container_width=True,
                         config={"scrollZoom": True})
 
+                with st.expander("Sensitivity tornado — all inputs", expanded=False):
+                    st.caption(
+                        "One-at-a-time sensitivity: each input is varied "
+                        "±5 K / ±5% / ±0.05 Cd / ±0.05 mm / ±20% line length, "
+                        "all others fixed. Widest bar = most critical to measure."
+                    )
+                    st.plotly_chart(
+                        plot_tornado(T_tank, P_tank, P_chamber,
+                                     model_segments, Cd, A_total, roughness),
+                        use_container_width=True,
+                        config={"scrollZoom": True})
+
                 # PDF export
                 st.markdown('<div class="section-label" '
                             'style="margin-top:1rem">Export</div>',
@@ -782,24 +794,21 @@ elif st.session_state.page == "design":
                 with r1:
                     st.markdown('<div class="result-card">'
                                 '<div class="label">Flashing in line</div>'
-                                '<div class="value" style="color:#8a2020">YES</div>'
+                                '<div class="value" style="color:#e05252">YES</div>'
                                 '</div>', unsafe_allow_html=True)
                 with r2:
                     st.markdown(f'<div class="result-card">'
                                 f'<div class="label">Inlet vapour quality</div>'
-                                f'<div class="value" style="color:#7a6020">{x_in:.3f}</div>'
+                                f'<div class="value" style="color:#e0a840">{x_in:.3f}</div>'
                                 f'<div class="sub">x at injector inlet</div>'
                                 f'</div>', unsafe_allow_html=True)
                 with r3:
                     st.markdown('<div class="result-card">'
                                 '<div class="label">Area sizing</div>'
-                                '<div class="value" style="color:#2a3040">N/A</div>'
+                                '<div class="value" style="color:#3d4a5c">N/A</div>'
                                 '<div class="sub">Fix line first</div>'
                                 '</div>', unsafe_allow_html=True)
-                st.caption(
-                    f"Two-phase inlet detected (x = {x_in:.4f}). "
-                    "Area sizing requires a liquid inlet. Correct the feed line first."
-                )
+                st.caption(f"Two-phase inlet (x = {x_in:.4f}) — fix the feed line to enable area sizing.")
                 render_diagnostics(T_tank, P_tank, P_chamber, Cd)
             else:
                 dP_inj = P_inlet - P_chamber
@@ -894,6 +903,17 @@ elif st.session_state.page == "design":
                         plot_subcooling_margin(
                             result_check["feed_line_result"]["trace"],
                             P_tank, T_tank, model_segments),
+                        use_container_width=True,
+                        config={"scrollZoom": True})
+
+                with st.expander("Sensitivity tornado — all inputs", expanded=False):
+                    st.caption(
+                        "One-at-a-time sensitivity at the Dyer design point. "
+                        "Widest bar = most critical input to measure accurately."
+                    )
+                    st.plotly_chart(
+                        plot_tornado(T_tank, P_tank, P_chamber,
+                                     model_segments, Cd, A_dyer, roughness),
                         use_container_width=True,
                         config={"scrollZoom": True})
 

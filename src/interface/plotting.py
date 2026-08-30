@@ -14,24 +14,50 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from n2o_properties import P_sat, T_sat as T_sat_func, T_MIN, T_MAX
 
-# Shared colour palette — consistent across all figures
-C_LIQUID   = "#4A90D9"   # blue  — liquid / subcooled
-C_VAPOR    = "#E8894A"   # orange — vapour / two-phase
-C_SAT      = "#1a1a2e"   # near-black — saturation curve
-C_TANK     = "#4A90D9"   # blue  — tank state
-C_INLET    = "#27AE60"   # green — injector inlet
-C_CHAMBER  = "#E74C3C"   # red   — chamber
-C_GRID     = "rgba(200,200,200,0.15)"
+# ---------------------------------------------------------------------------
+# Colour system — dark theme, production quality
+# Backgrounds are transparent so figures blend with the app (no "island" effect)
+# Data colours are deliberate and consistent across all figures
+# ---------------------------------------------------------------------------
+C_LIQUID  = "#60A5FA"    # blue-400  — liquid / subcooled state
+C_VAPOR   = "#F87171"    # red-400   — vapour / flashing / warning
+C_SAT     = "#94A3B8"    # slate-400 — saturation curve (reference, not data)
+C_TANK    = "#60A5FA"    # same as liquid — tank operating point
+C_INLET   = "#34D399"    # emerald-400 — injector inlet / safe margin
+C_CHAMBER = "#F87171"    # same as vapour — chamber (downstream)
+C_GRID    = "rgba(148,163,184,0.12)"   # barely-there grid
+C_TEXT    = "#E2E8F0"    # slate-200 — primary text
+C_TEXT_2  = "#64748B"    # slate-500 — secondary text / axis labels
 
 PLOTLY_LAYOUT = dict(
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(15,20,40,0.85)",
-    font=dict(family="Inter, sans-serif", color="#e0e0e0", size=12),
-    margin=dict(l=55, r=20, t=40, b=50),
-    legend=dict(bgcolor="rgba(20,25,50,0.8)", bordercolor="rgba(255,255,255,0.1)",
-                borderwidth=1, font=dict(size=11)),
-    xaxis=dict(gridcolor=C_GRID, zerolinecolor=C_GRID),
-    yaxis=dict(gridcolor=C_GRID, zerolinecolor=C_GRID),
+    paper_bgcolor="rgba(0,0,0,0)",   # fully transparent — no island
+    plot_bgcolor="rgba(15,23,42,0.6)",  # very dark slate, semi-transparent
+    font=dict(family="Inter, sans-serif", color=C_TEXT, size=12),
+    margin=dict(l=58, r=20, t=42, b=50),
+    legend=dict(
+        bgcolor="rgba(15,23,42,0.85)",
+        bordercolor="rgba(148,163,184,0.15)",
+        borderwidth=1,
+        font=dict(size=11, color=C_TEXT),
+    ),
+    xaxis=dict(
+        gridcolor=C_GRID,
+        zerolinecolor="rgba(148,163,184,0.2)",
+        linecolor="rgba(148,163,184,0.15)",
+        tickfont=dict(color=C_TEXT_2, size=11),
+        title_font=dict(color=C_TEXT_2, size=12),
+        showgrid=True,
+        zeroline=False,
+    ),
+    yaxis=dict(
+        gridcolor=C_GRID,
+        zerolinecolor="rgba(148,163,184,0.2)",
+        linecolor="rgba(148,163,184,0.15)",
+        tickfont=dict(color=C_TEXT_2, size=11),
+        title_font=dict(color=C_TEXT_2, size=12),
+        showgrid=True,
+        zeroline=False,
+    ),
 )
 
 
@@ -66,7 +92,7 @@ def plot_pressure_along_line(trace, P_tank, T_tank, segments):
     # Subcooling margin shading
     fig.add_trace(go.Scatter(
         x=x_positions, y=P_bar,
-        fill="tonexty", fillcolor="rgba(74,144,217,0.08)",
+        fill="tonexty", fillcolor="rgba(96,165,250,0.08)",
         line=dict(color="rgba(0,0,0,0)"), showlegend=False, hoverinfo="skip"
     ))
 
@@ -80,14 +106,14 @@ def plot_pressure_along_line(trace, P_tank, T_tank, segments):
         x=x_positions, y=P_bar,
         mode="lines+markers",
         line=dict(color=C_TANK, width=2.5),
-        marker=dict(size=8, color=C_TANK, line=dict(color="white", width=1)),
+        marker=dict(size=7, color=C_TANK, line=dict(color="white", width=1)),
         name="Fluid pressure",
         hovertemplate="%{customdata}<extra></extra>",
         customdata=hover,
     ))
 
     fig.update_layout(**PLOTLY_LAYOUT,
-        title=dict(text="Pressure along the feed line", font=dict(size=14)),
+        title=dict(text="Pressure along the feed line", font=dict(size=13, color=C_TEXT)),
         xaxis_title="Position along line (m)",
         yaxis_title="Pressure (bar)",
     )
@@ -119,7 +145,7 @@ def plot_PT_diagram(T_tank, P_tank, P_injector_inlet, P_chamber):
     ))
     fig.add_trace(go.Scatter(
         x=T_curve_C, y=P_curve_bar,
-        fill="tonexty", fillcolor="rgba(74,144,217,0.12)",
+        fill="tonexty", fillcolor="rgba(96,165,250,0.08)",
         line=dict(color="rgba(0,0,0,0)"), name="Liquid region", hoverinfo="skip"
     ))
 
@@ -165,7 +191,7 @@ def plot_PT_diagram(T_tank, P_tank, P_injector_inlet, P_chamber):
 
     fig.update_layout(**{k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("xaxis","yaxis")},
         title=dict(text="P-T diagram — operating points vs. saturation curve",
-                   font=dict(size=14)),
+                   font=dict(size=13, color=C_TEXT)),
         xaxis=dict(title="Temperature (°C)", gridcolor=C_GRID, zerolinecolor=C_GRID),
         yaxis=dict(title="Pressure (bar)", range=[0, 80], gridcolor=C_GRID,
                    zerolinecolor=C_GRID),
@@ -206,7 +232,7 @@ def plot_model_comparison(m_spi, m_hem, m_dyer, m_target):
     fig.update_layout(
         **{k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("xaxis", "yaxis")},
         title=dict(text="Model comparison — mass flow predictions",
-                   font=dict(size=14)),
+                   font=dict(size=13, color=C_TEXT)),
         xaxis=dict(title="", gridcolor=C_GRID, zerolinecolor=C_GRID),
         yaxis=dict(title="Mass flow (g/s)", gridcolor=C_GRID,
                    zerolinecolor=C_GRID),
@@ -349,7 +375,7 @@ def plot_line_profile(segments_ui):
     fig.update_layout(
         **{k: v for k, v in PLOTLY_LAYOUT.items()
            if k not in ("xaxis", "yaxis", "margin")},
-        title=dict(text="Feed line schematic", font=dict(size=14)),
+        title=dict(text="Feed line schematic", font=dict(size=13, color=C_TEXT)),
         shapes=shapes,
         annotations=annotations,
         xaxis=dict(range=[-0.5, x_max], showgrid=False,
@@ -410,7 +436,7 @@ def plot_subcooling_margin(trace, P_tank, T_tank, segments):
         x=x_positions, y=dT_vals,
         mode="lines+markers",
         line=dict(color=C_INLET, width=2.5),
-        marker=dict(size=8, color=C_INLET, line=dict(color="white", width=1)),
+        marker=dict(size=7, color=C_INLET, line=dict(color="white", width=1)),
         name="Subcooling margin",
         hovertemplate="%{customdata}<extra></extra>",
         customdata=hover,
@@ -418,7 +444,7 @@ def plot_subcooling_margin(trace, P_tank, T_tank, segments):
 
     fig.update_layout(**PLOTLY_LAYOUT,
         title=dict(text="Subcooling margin along the feed line",
-                   font=dict(size=14)),
+                   font=dict(size=13, color=C_TEXT)),
         xaxis_title="Position along line (m)",
         yaxis_title="Delta T_sub (K)",
     )
@@ -447,11 +473,11 @@ def plot_sensitivity(T_tank, P_tank, P_chamber, model_segments, Cd, A_injector,
         try:
             r = evaluate_full_system(0.3, T, P_tank, model_segments,
                                      Cd, A_injector, P_chamber, roughness)
+            m = r.get("m_dot_real")
             if r["feed_line_result"]["flashing_detected"]:
                 flash_temps.append(T - 273.15)
-                m_vals.append(None)
-            else:
-                m_vals.append(r["m_dot_real"] * 1000 if r["m_dot_real"] else None)
+            # Use m_dot_real whether or not flashing — model now always returns a value
+            m_vals.append(m * 1000 if m is not None else None)
             valid.append(T - 273.15)
         except Exception:
             pass
@@ -503,7 +529,7 @@ def plot_sensitivity(T_tank, P_tank, P_chamber, model_segments, Cd, A_injector,
 
     fig.update_layout(**PLOTLY_LAYOUT,
         title=dict(text="Sensitivity: mass flow vs tank temperature (+/-5 deg C)",
-                   font=dict(size=14)),
+                   font=dict(size=13, color=C_TEXT)),
         xaxis_title="Tank temperature (deg C)",
         yaxis_title="Real mass flow (g/s)",
     )
@@ -540,11 +566,167 @@ def plot_segment_losses(trace, segments):
     ))
     fig.update_layout(
         **{k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("xaxis","yaxis")},
-        title=dict(text="Pressure drop by segment", font=dict(size=14)),
+        title=dict(text="Pressure drop by segment", font=dict(size=13, color=C_TEXT)),
         xaxis=dict(title="Pressure drop (bar)", gridcolor=C_GRID,
                    zerolinecolor=C_GRID),
         yaxis=dict(title="", autorange="reversed",
                    gridcolor=C_GRID, zerolinecolor=C_GRID),
         bargap=0.25,
+    )
+    return fig
+
+
+def plot_tornado(T_tank, P_tank, P_chamber, model_segments, Cd, A_injector,
+                 roughness=1.5e-6):
+    """
+    Tornado plot: one-at-a-time sensitivity of real mass flow to each
+    uncertain input, at the current design point.
+
+    Inputs varied:
+        T_tank     : +/-5 K         -- ambient day variation
+        P_tank     : +/-5%          -- regulator / gauge uncertainty
+        Cd         : +/-0.05 (abs)  -- inlet geometry uncertainty
+        D_orifice  : +/-0.05 mm     -- machining tolerance
+        Line length: +/-20%         -- installation uncertainty
+    """
+    import sys, os, math
+    _DIR = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.abspath(os.path.join(_DIR, '..', 'model')))
+    from full_system import evaluate_full_system
+
+    def run(T, P, cd, A, segs):
+        try:
+            r = evaluate_full_system(0.3, T, P, segs, cd, A, P_chamber, roughness)
+            m = r.get('m_dot_real')
+            return float(m) * 1000 if m is not None else None
+        except Exception:
+            return None
+
+    m_nom = run(T_tank, P_tank, Cd, A_injector, model_segments)
+    if m_nom is None:
+        fig = go.Figure()
+        fig.add_annotation(text="Nominal point unavailable",
+                           xref="paper", yref="paper", x=0.5, y=0.5,
+                           showarrow=False, font=dict(color=C_TEXT))
+        fig.update_layout(**PLOTLY_LAYOUT,
+                          title=dict(text="Sensitivity tornado",
+                                     font=dict(size=13, color=C_TEXT)))
+        return fig
+
+    D_equiv = math.sqrt(4.0 * A_injector / math.pi)
+
+    def scale_pipes(segs, f):
+        return [{**s, 'L': s['L'] * f} if s.get('type') == 'pipe' else dict(s)
+                for s in segs]
+
+    # (label, m_low, m_high) — note: temp bug fix: use +/-5 K not +/-5%
+    candidates = [
+        ("Tank temperature (±5 K)",
+         run(T_tank - 5.0, P_tank, Cd, A_injector, model_segments),
+         run(T_tank + 5.0, P_tank, Cd, A_injector, model_segments)),
+        ("Tank pressure (±5%)",
+         run(T_tank, P_tank * 0.95, Cd, A_injector, model_segments),
+         run(T_tank, P_tank * 1.05, Cd, A_injector, model_segments)),
+        ("Discharge coeff. Cd (±0.05)",
+         run(T_tank, P_tank, max(0.3, Cd - 0.05), A_injector, model_segments),
+         run(T_tank, P_tank, min(1.0, Cd + 0.05), A_injector, model_segments)),
+        ("Orifice diameter (±0.05 mm)",
+         run(T_tank, P_tank, Cd,
+             math.pi * (max(1e-4, D_equiv - 0.05e-3) / 2) ** 2, model_segments),
+         run(T_tank, P_tank, Cd,
+             math.pi * ((D_equiv + 0.05e-3) / 2) ** 2, model_segments)),
+        ("Feed line length (±20%)",
+         run(T_tank, P_tank, Cd, A_injector, scale_pipes(model_segments, 0.80)),
+         run(T_tank, P_tank, Cd, A_injector, scale_pipes(model_segments, 1.20))),
+    ]
+
+    rows = [(lbl, lo, hi) for lbl, lo, hi in candidates
+            if lo is not None and hi is not None]
+    if not rows:
+        fig = go.Figure()
+        fig.update_layout(**PLOTLY_LAYOUT)
+        return fig
+
+    # Sort by total swing
+    rows.sort(key=lambda r: abs(r[2] - r[1]), reverse=True)
+    labels = [r[0] for r in rows]
+    m_lo   = [r[1] for r in rows]
+    m_hi   = [r[2] for r in rows]
+
+    # Deltas from nominal — pre-formatted as strings to avoid Plotly float
+    # formatting issues in go.Bar hovertemplate (%{x} does not reliably
+    # apply format strings to floats with many decimal places)
+    d_lo = [lo - m_nom for lo in m_lo]
+    d_hi = [hi - m_nom for hi in m_hi]
+
+    # customdata: [delta_str, m_dot_str] for each bar
+    cd_lo = [[f"{d:+.1f}", f"{m:.0f}"] for d, m in zip(d_lo, m_lo)]
+    cd_hi = [[f"{d:+.1f}", f"{m:.0f}"] for d, m in zip(d_hi, m_hi)]
+
+    fig = go.Figure()
+
+    # Low-side bar (to the left of nominal)
+    fig.add_trace(go.Bar(
+        name="Lower bound",
+        y=labels, x=d_lo,
+        orientation="h",
+        marker=dict(
+            color="rgba(96,165,250,0.75)",
+            line=dict(color="rgba(96,165,250,0.3)", width=0.5),
+        ),
+        hovertemplate="<b>%{y}</b><br>Δm = %{customdata[0]} g/s<br>m_dot = %{customdata[1]} g/s<extra></extra>",
+        customdata=cd_lo,
+    ))
+
+    # High-side bar (to the right of nominal)
+    fig.add_trace(go.Bar(
+        name="Upper bound",
+        y=labels, x=d_hi,
+        orientation="h",
+        marker=dict(
+            color="rgba(248,113,113,0.75)",
+            line=dict(color="rgba(248,113,113,0.3)", width=0.5),
+        ),
+        hovertemplate="<b>%{y}</b><br>Δm = %{customdata[0]} g/s<br>m_dot = %{customdata[1]} g/s<extra></extra>",
+        customdata=cd_hi,
+    ))
+
+    fig.add_vline(x=0, line=dict(color="rgba(226,232,240,0.5)", width=1.2, dash="dot"))
+    fig.add_annotation(
+        x=0, y=1.07, xref="x", yref="paper",
+        text=f"Nominal: {m_nom:.0f} g/s",
+        showarrow=False, xanchor="center",
+        font=dict(size=11, color=C_TEXT_2),
+    )
+
+    base = {k: v for k, v in PLOTLY_LAYOUT.items()
+            if k not in ("xaxis", "yaxis", "legend")}
+    fig.update_layout(
+        **base,
+        title=dict(text="Sensitivity tornado — Δm_dot per input",
+                   font=dict(size=13, color=C_TEXT)),
+        barmode="overlay",
+        bargap=0.30,
+        xaxis=dict(
+            title="Δ mass flow from nominal (g/s)",
+            gridcolor=C_GRID,
+            zerolinecolor="rgba(226,232,240,0.3)",
+            tickfont=dict(color=C_TEXT_2, size=11),
+            title_font=dict(color=C_TEXT_2, size=12),
+        ),
+        yaxis=dict(
+            title="",
+            autorange="reversed",
+            gridcolor=C_GRID,
+            tickfont=dict(color=C_TEXT, size=11),
+        ),
+        legend=dict(
+            bgcolor="rgba(15,23,42,0.85)",
+            bordercolor="rgba(148,163,184,0.15)",
+            borderwidth=1,
+            font=dict(size=11, color=C_TEXT),
+            orientation="h", x=0.5, y=-0.18, xanchor="center",
+        ),
+        showlegend=True,
     )
     return fig
