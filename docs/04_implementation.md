@@ -151,7 +151,7 @@ $$x = \frac{h_{upstream} - h_l(T_{downstream})}{h_{fg}(T_{downstream})}$$
 
 The HEM mixture density follows from the mass-weighted average of the two phases' specific volumes, and $\dot m_{HEM}$ from the same orifice equation used throughout the project, with $\rho_{HEM}$ in place of the pure-liquid density. Dyer blends $\dot m_{SPI}$ and $\dot m_{HEM}$ via the non-equilibrium parameter $\kappa$:
 
-$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\dot m_{SPI}}{1+\kappa} + \frac{\kappa}{1+\kappa}\dot m_{HEM}$$
+$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\dot m_{HEM}}{1+\kappa} + \frac{\kappa}{1+\kappa}\dot m_{SPI}$$
 
 **Domain restriction.** $\kappa$ requires $P_{upstream} > P_{sat}(T_{upstream})$ — the fluid must still be liquid at the orifice inlet, consistent with this model addressing vaporization *inside* the orifice (Section 3.1), not an already-two-phase feed line (that case is `feed_line.py`'s `flashing_detected`). Enforced with an explicit `ValueError` rather than an extreme or undefined $\kappa$.
 
