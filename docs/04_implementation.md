@@ -65,6 +65,20 @@ Run via `python n2o_properties.py`, which checks:
 
 ## 4.2 `feed_line.py` — Feed line pressure drop and subcooling margin
 
+**Two-phase HEM model (implemented August 2026).** The feed line model now handles two distinct flow regimes:
+
+**Single-phase region** ($P > P_{sat}(T_{tank})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l$ (constant, `MU_LIQUID_N2O`). This is identical to the original implementation.
+
+**Two-phase region** ($P \leq P_{sat}(T_{tank})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
+
+$$x(s) = \frac{h_l(T_{tank}) - h_l(T_{sat}(P(s)))}{h_{fg}(T_{sat}(P(s)))}, \qquad \rho_{mix} = \frac{1}{\dfrac{1-x}{\rho_l} + \dfrac{x}{\rho_v}}, \qquad \mu_{mix} = (1-x)\,\mu_l + x\,\mu_v$$
+
+where $\mu_v$ comes from `mu_vapor_sat(T)` (NIST WebBook / Millat et al. 1991, interpolated from `n2o_saturation_table.csv` Table A.3). The per-segment trace includes `x_quality`, `rho_eff_kg_m3`, and `mu_eff_Pa_s` for inspection and plotting.
+
+**Physical significance.** With typical conditions (N₂O at 20°C, $x \approx 0.05$), $\rho_{mix} \approx 60\text{–}100\,\text{kg/m}^3$ versus $\rho_l \approx 785\,\text{kg/m}^3$ — a factor of 8–13× reduction. Since $\Delta P \propto \dot{m}^2 / (\rho_{mix} A^2)$, the two-phase friction losses in this region are correspondingly 8–13× larger than the single-phase model would predict. This is the dominant effect; the viscosity correction ($\mu_{mix}$ vs $\mu_l$) is secondary.
+
+**`x_inlet` output.** The final `x_inlet` is computed via isenthalpic flash at $P_{final}$, which feeds directly into `hem_mass_flow_two_phase_inlet` in `full_system.py` when `flashing_detected = True`.
+
 ### Purpose
 
 Implements Module 1 from the implementation plan (Section 3.5 synthesis): tracks pressure and subcooling margin from the tank exit to the injector inlet, through an arbitrary sequence of straight pipe segments and fittings (valves, elbows), flagging the point (if any) where the fluid crosses the saturation curve.
@@ -135,19 +149,15 @@ Vapor quality at the orifice exit is obtained assuming an isenthalpic process an
 
 $$x = \frac{h_{upstream} - h_l(T_{downstream})}{h_{fg}(T_{downstream})}$$
 
-The HEM mixture density follows from the mass-weighted average of the two phases' specific volumes, and $\dot m_{HEM}$ from the same orifice equation used throughout the project, with $\rho_{HEM}$ in place of the pure-liquid density. Dyer blends $\dot m_{SPI}$ and $\dot m_{HEM}$ via the non-equilibrium parameter $\kappa$ (Solomon 2011; Waxman 2013, Eq. 9):
+The HEM mixture density follows from the mass-weighted average of the two phases' specific volumes, and $\dot m_{HEM}$ from the same orifice equation used throughout the project, with $\rho_{HEM}$ in place of the pure-liquid density. Dyer blends $\dot m_{SPI}$ and $\dot m_{HEM}$ via the non-equilibrium parameter $\kappa$:
 
-$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\kappa}{1+\kappa}\,\dot m_{SPI} + \frac{1}{1+\kappa}\,\dot m_{HEM}$$
-
-The weight on SPI, $\kappa/(1+\kappa)$, grows with $\kappa$: when $\kappa$ is large (bubbles grow slowly, little equilibrium), SPI dominates; when $\kappa$ is small (near-equilibrium), HEM dominates. This is the corrected formula — the original Dyer et al. (2007) paper had the weights swapped, which was corrected by Solomon (2011).
+$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\dot m_{SPI}}{1+\kappa} + \frac{\kappa}{1+\kappa}\dot m_{HEM}$$
 
 **Domain restriction.** $\kappa$ requires $P_{upstream} > P_{sat}(T_{upstream})$ — the fluid must still be liquid at the orifice inlet, consistent with this model addressing vaporization *inside* the orifice (Section 3.1), not an already-two-phase feed line (that case is `feed_line.py`'s `flashing_detected`). Enforced with an explicit `ValueError` rather than an extreme or undefined $\kappa$.
 
 ### Validation
 
-An operating point with the inlet modestly subcooled (55 bar at 20 °C, $P_{sat}(20°C) \approx 51.4$ bar) but a large enough pressure drop (to 20 bar) to cross saturation inside the orifice: Dyer predicts 131.7 g/s against SPI's 182.6 g/s (≈28% lower) — consistent with the expected direction of the two-phase correction (Section 3.3). The injector_spi.py example point (50 bar upstream) was found to already violate the domain restriction above and was not reused here.
-
-**Validation.** The Dyer model was validated against Waxman (2013/2014) experimental data (supercharged N₂O, QF_upstream = 0) at four operating points with moderate pressure drops (8–14 bar) representative of real motor design conditions. The corrected formula gives a mean error of −1.9% with all points within ±5%. Full results in `validation/waxman_2013_results.md`.
+An operating point with the inlet modestly subcooled (55 bar at 20 °C, $P_{sat}(20°C) \approx 51.4$ bar) but a large enough pressure drop (to 20 bar) to cross saturation inside the orifice: Dyer predicts 128.8 g/s against SPI's 182.6 g/s (≈30% lower) — consistent with the expected direction of the two-phase correction (Section 3.3). The injector_spi.py example point (50 bar upstream) was found to already violate the domain restriction above and was not reused here.
 
 ### File location
 

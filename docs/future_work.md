@@ -10,32 +10,14 @@ technical importance per the project roadmap document.
 - Two-phase inlet via isenthalpic flash (x_inlet from feed line)  ✅
 - HEM with two-phase inlet enthalpy  ✅
 - Coupled feed-line / injector solver (iterative, damped fixed-point)  ✅
+- Two-phase HEM pressure-drop model in feed line (rho_mix, mu_mix, x(s) per segment)  ✅
+- Saturated vapour viscosity mu_v(T) from NIST WebBook (Table A.3, Millat et al. 1991)  ✅
 - Sensitivity tornado plot  ✅
 - Dyer formula weight correction (Solomon 2011)  ✅
 
 ---
 
-## Priority 2 — Physically consistent two-phase feed-line model
-
-**Motivation.** Once flashing is detected in the feed line, the current model
-continues to use liquid-phase properties (density, viscosity) for the
-remaining pressure-drop calculation. After the flashing onset, the fluid is
-a two-phase mixture with different density and pressure-gradient behaviour.
-
-**Why not yet.** Implementing a correct two-phase pressure-drop model
-(HEM homogeneous, or Lockhart-Martinelli type) requires knowing the local
-void fraction at each point after the onset — which in turn requires the
-coupled solver (now implemented) to track x(s) along the line, not just at
-the inlet. This is the natural next step now that the coupled solver exists.
-
-**Proposed approach.** Extend `feed_line.py` to track enthalpy (and
-therefore x) segment by segment after the flashing onset, and use the
-HEM two-phase friction multiplier (Φ²_lo) for pressure-drop in the two-phase
-region.
-
----
-
-## Priority 3 — Two-phase choking limit
+## Priority 1 — Two-phase choking limit
 
 **Motivation.** The Dyer and HEM formulas use
 $\dot{m} = C_d A \sqrt{2 \rho \Delta P}$, which grows without bound with
@@ -54,7 +36,7 @@ entropy data.
 
 ---
 
-## Priority 4 — Full-system experimental validation
+## Priority 2 — Full-system experimental validation
 
 **Current state.** The Dyer injector model is validated against Waxman
 (2013/2014) with mean error −1.9% at moderate pressure drops. The coupled
@@ -67,7 +49,38 @@ solver since the one-pass results used previously may differ slightly.
 
 ---
 
-## Priority 7 — Quantitative uncertainty analysis (Monte Carlo)
+## Priority 3 — OF ratio and fuel grain sizing
+
+**Motivation.** The model currently outputs $\dot{m}_{oxidizer}$ at the converged
+operating point. Given a target OF ratio (specified by the user from thermochemical
+sizing), the fuel mass flow rate follows directly:
+
+$$\dot{m}_{fuel} = \dot{m}_{oxidizer} / OF$$
+
+With the regression rate correlation for paraffin or HTPB (Marxman):
+
+$$\dot{r} = a\, G_o^n, \qquad G_o = \dot{m}_{oxidizer} / A_{port}$$
+
+the initial grain geometry (port radius $r_0$, length $L$) can be estimated to
+deliver the required $\dot{m}_{fuel}$ at the design burn duration.
+
+**Why deferred.** Requires semi-empirical coefficients $a$, $n$ specific to
+the fuel (paraffin, HTPB) and oxidiser (N₂O) combination, which are sourced
+from static fire data or the literature. The model would expose these as
+user inputs — it does not model the combustion or thermal processes that
+govern regression rate. This is a post-processing step on the injector sizing
+output, not a change to the two-phase flow model.
+
+**Proposed inputs.** OF ratio (from CEA or equivalent), fuel type (dropdown
+with literature $a$, $n$ values for common fuels), burn duration, number of
+ports. Output: initial port radius, grain length, grain mass, estimated
+$I_{sp}$ at design OF.
+
+*Items implemented in this version are listed at the top. New items are added
+here as they are identified. See `roadmap/Future_Improvements_Roadmap.md`
+for the full priority order and rationale.*
+
+## Priority 4 — Quantitative uncertainty analysis (Monte Carlo)
 
 **Motivation.** The current sensitivity tornado shows which input matters
 most. A Monte Carlo analysis would quantify the output uncertainty given
@@ -79,7 +92,7 @@ each sample, and report the 5th–95th percentile of the mass-flow distribution.
 
 ---
 
-## Priority 8 — Improved N₂O thermophysical properties
+## Priority 5 — Improved N₂O thermophysical properties
 
 **Motivation.** The Perry/McGill correlations have ~2–3% error near the
 critical point vs. REFPROP. CoolProp (open source, no licence) provides
@@ -91,7 +104,7 @@ isentropic maximum search needed for choking (Priority 3).
 
 ---
 
-## Priority 9 — Tank thermal model
+## Priority 6 — Tank thermal model
 
 **Motivation.** Tank temperature is currently a direct user input. A
 thermal model would predict T_tank from ambient conditions, solar irradiance,
@@ -103,7 +116,7 @@ balance as a first approximation before a full transient model.
 
 ---
 
-## Priority 10 — Transient / blowdown model
+## Priority 7 — Transient / blowdown model
 
 **Motivation.** The current model is steady-state. A transient model would
 predict how mass flow, tank pressure, and temperature evolve over the burn.
@@ -113,6 +126,4 @@ implemented) as the inner loop, plus a tank thermodynamic model (Priority 9).
 
 ---
 
-*Items implemented in this version are listed at the top. New items are added
-here as they are identified. See `roadmap/Future_Improvements_Roadmap.md`
-for the full priority order and rationale.*
+

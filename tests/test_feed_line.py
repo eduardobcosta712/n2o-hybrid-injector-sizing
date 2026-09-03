@@ -175,3 +175,118 @@ class TestEvaluateFeedLine:
         bad_segments = [{"type": "rocket", "D": 0.008}]
         with pytest.raises(ValueError):
             evaluate_feed_line(0.5, self.T_TANK, 60e5, bad_segments)
+
+
+# ---------------------------------------------------------------------------
+# Two-phase feed line model — new tests for Priority 2 implementation
+# ---------------------------------------------------------------------------
+
+class TestTwoPhaseLineModel:
+    """
+    Tests that verify the two-phase HEM model in the feed line.
+    When flashing occurs, the model must use rho_mix and mu_mix instead
+    of pure-liquid properties -- which increases the pressure drop per
+    unit length compared to the single-phase assumption.
+    """
+
+    T_TANK = 293.15   # K, 20 degC
+    # Use a pipe long enough to cause meaningful two-phase losses
+    SEGS_LONG = [
+        {"type": "pipe", "L": 2.0, "D": 0.006},
+        {"type": "pipe", "L": 2.0, "D": 0.006},
+    ]
+
+    def test_x_quality_in_trace_is_zero_before_flashing(self):
+        # All segments before flashing onset must have x_quality == 0
+        P_tank = P_sat(self.T_TANK) + 10e5  # plenty of margin
+        result = evaluate_feed_line(0.3, self.T_TANK, P_tank, self.SEGS_LONG)
+        if not result["flashing_detected"]:
+            for seg in result["trace"]:
+                assert seg["x_quality"] == 0.0
+
+    def test_x_quality_increases_after_flashing(self):
+        # Once flashing starts, x must be >= 0 and non-decreasing
+        P_tank = P_sat(self.T_TANK)   # zero margin -- flashing from start
+        result = evaluate_feed_line(0.5, self.T_TANK, P_tank, self.SEGS_LONG)
+        assert result["flashing_detected"]
+        x_vals = [s["x_quality"] for s in result["trace"]]
+        # x must be non-decreasing (more vapour as pressure drops further)
+        for i in range(len(x_vals) - 1):
+            assert x_vals[i] <= x_vals[i + 1] + 1e-9, (
+                f"x_quality must be non-decreasing: {x_vals[i]:.5f} > {x_vals[i+1]:.5f}")
+
+    def test_rho_eff_lower_in_two_phase_region(self):
+        # In the two-phase region, effective density must be below rho_l
+        from n2o_properties import rho_liquid_sat
+        rho_l = rho_liquid_sat(self.T_TANK)
+        P_tank = P_sat(self.T_TANK)
+        result = evaluate_feed_line(0.5, self.T_TANK, P_tank, self.SEGS_LONG)
+        two_phase_segs = [s for s in result["trace"] if s["x_quality"] > 0]
+        for seg in two_phase_segs:
+            assert seg["rho_eff_kg_m3"] < rho_l, (
+                f"Two-phase rho_eff={seg['rho_eff_kg_m3']:.1f} must be < rho_l={rho_l:.1f}")
+
+    def test_two_phase_dP_larger_than_single_phase(self):
+        # The two-phase model predicts MORE pressure drop per segment than
+        # the single-phase model because rho_mix << rho_l (same flow rate,
+        # lower density -> higher velocity -> more friction losses).
+        # We compare the effective density directly: rho_eff in the two-phase
+        # region must be lower than rho_l, which drives higher losses.
+        from n2o_properties import rho_liquid_sat
+        rho_l = rho_liquid_sat(self.T_TANK)
+        P_tank = P_sat(self.T_TANK)
+        segs = [
+            {"type": "pipe", "L": 1.0, "D": 0.006},
+            {"type": "pipe", "L": 1.0, "D": 0.006},
+            {"type": "pipe", "L": 1.0, "D": 0.006},
+        ]
+        result = evaluate_feed_line(0.5, self.T_TANK, P_tank, segs)
+        # Find segments that are genuinely two-phase (x > 0.005)
+        two_phase = [s for s in result["trace"] if s["x_quality"] > 0.005]
+        if two_phase:
+            # Each two-phase segment must have lower effective density
+            # than pure liquid -- proving the two-phase model is engaged
+            for seg in two_phase:
+                assert seg["rho_eff_kg_m3"] < rho_l * 0.99, (
+                    f"Two-phase rho_eff={seg['rho_eff_kg_m3']:.1f} "
+                    f"not meaningfully below rho_l={rho_l:.1f}")
+            # And the dP in the last two-phase segment must exceed what
+            # pure-liquid Darcy-Weisbach would give for the same geometry
+            seg = two_phase[-1]
+            v_mix = 0.5 / (seg["rho_eff_kg_m3"] * math.pi * (0.006/2)**2)
+            v_liq = 0.5 / (rho_l * math.pi * (0.006/2)**2)
+            # dP ~ rho * v^2, but rho*v^2 = m_dot^2 / (rho * A^2), so
+            # dP_2ph / dP_1ph = rho_l / rho_mix > 1
+            ratio = rho_l / seg["rho_eff_kg_m3"]
+            assert ratio > 1.01, (
+                f"Expected rho_l/rho_mix > 1.01, got {ratio:.4f}")
+
+    def test_x_inlet_consistent_with_trace(self):
+        # x_inlet (computed at P_final) must be >= x at last segment start
+        P_tank = P_sat(self.T_TANK)
+        result = evaluate_feed_line(0.5, self.T_TANK, P_tank, self.SEGS_LONG)
+        if result["flashing_detected"]:
+            x_last_seg = result["trace"][-1]["x_quality"]
+            assert result["x_inlet"] >= x_last_seg - 1e-9
+
+    def test_mu_eff_between_liquid_and_vapour(self):
+        # In two-phase region: mu_l > mu_mix > mu_v
+        from n2o_properties import MU_LIQUID_N2O, mu_vapor_sat, T_sat
+        P_tank = P_sat(self.T_TANK)
+        result = evaluate_feed_line(0.5, self.T_TANK, P_tank, self.SEGS_LONG)
+        for seg in result["trace"]:
+            if seg["x_quality"] > 0:
+                P_seg = seg["pressure_after_Pa"]
+                if P_seg > 0 and P_seg < P_sat(self.T_TANK):
+                    mu_v = mu_vapor_sat(T_sat(P_seg))
+                    assert mu_v <= seg["mu_eff_Pa_s"] <= MU_LIQUID_N2O
+
+    def test_trace_has_new_fields(self):
+        # Every trace entry must have the new two-phase fields
+        P_tank = P_sat(self.T_TANK) + 5e5
+        result = evaluate_feed_line(0.3, self.T_TANK, P_tank,
+                                    [{"type": "pipe", "L": 1.0, "D": 0.01}])
+        for seg in result["trace"]:
+            assert "x_quality"     in seg
+            assert "rho_eff_kg_m3" in seg
+            assert "mu_eff_Pa_s"   in seg

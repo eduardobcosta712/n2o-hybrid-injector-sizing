@@ -19,12 +19,28 @@ environment, so fluid temperature is assumed constant along the line.
 Only pressure changes; see Section 1.6 of the theory docs for why this
 is a reasonable approximation for fast flows.
 
+Two-phase pressure drop (Priority 2 of roadmap):
+After the onset of flashing, the fluid is a liquid-vapour mixture. The
+model uses the Homogeneous Equilibrium Model (HEM) for the two-phase
+region: both phases share the same velocity and temperature (consistent
+with the HEM used in injector_two_phase.py). The mixture properties are:
+    rho_mix = 1 / ((1-x)/rho_l + x/rho_v)   [HEM density]
+    mu_mix  = (1-x)*mu_l + x*mu_v             [McAdams mixing rule]
+    x(s)    = (h_l(T_tank) - h_l(T_sat(P(s)))) / h_fg(T_sat(P(s)))
+The vapour quality x is updated at the start of each segment in the
+two-phase region, using the local pressure at that segment. This is
+more accurate than a single end-of-line flash because it accounts for
+the pressure evolution along the two-phase zone.
+
 Units: SI throughout (Pa, kg/m^3, m, m/s, Pa.s, kg/s).
 """
 
 import math
 from n2o_properties import (P_sat, T_sat, rho_liquid_sat, degree_of_subcooling,
-                             h_liquid_sat, h_fg)
+                             h_liquid_sat, h_fg, nu_vapor_sat, mu_vapor_sat,
+                             mu_mixture, MU_LIQUID_N2O)
+
+M_N2O = 44.013  # kg/kmol, molar mass of N2O (for rho_v = M_N2O / nu_vapor_sat)
 
 # Approximate dynamic viscosity of saturated liquid N2O near room
 # temperature (Pa.s). Treated as a constant for this version of the model;
@@ -193,66 +209,100 @@ def evaluate_feed_line(m_dot, T_tank, P_tank, segments, roughness=1.5e-6,
                  delta_T_sub after that segment -- useful for plotting
                  and for the interactive tool.
     """
-    rho = rho_liquid_sat(T_tank)
-    P = P_tank
-    trace = []
+    # Liquid-phase properties (constant along the single-phase region)
+    rho_l   = rho_liquid_sat(T_tank)
+    h_up    = h_liquid_sat(T_tank)   # upstream enthalpy, kJ/kmol (conserved)
+    Psat_T  = P_sat(T_tank)          # saturation pressure at tank temperature
+
+    P                = P_tank
+    trace            = []
     flashing_detected = False
+    x_current        = 0.0    # vapour quality; 0 until flashing onset
 
     for i, seg in enumerate(segments):
         D = seg["D"]
-        v = velocity_from_mass_flow(m_dot, rho, D)
+
+        # -----------------------------------------------------------------
+        # Determine mixture properties at the START of this segment.
+        # Before flashing onset: pure liquid (x=0, rho=rho_l, mu=mu_l).
+        # After flashing onset: two-phase HEM (x>0, rho=rho_mix, mu=mu_mix).
+        # x is updated segment-by-segment using the local pressure so the
+        # density and viscosity reflect the actual mixture state here,
+        # not just at the final inlet point.
+        # -----------------------------------------------------------------
+        if P < Psat_T and P > 0:
+            # Two-phase region: compute x isenthalpically at local P
+            T_sat_local = T_sat(P)
+            hfg_local   = h_fg(T_sat_local)
+            hl_local    = h_liquid_sat(T_sat_local)
+            if hfg_local > 0:
+                x_current = max(0.0, min(1.0, (h_up - hl_local) / hfg_local))
+            # HEM mixture density: 1 / ((1-x)/rho_l + x/rho_v)
+            rho_v_local = M_N2O / nu_vapor_sat(T_sat_local)
+            nu_mix      = (1.0 - x_current) / rho_l + x_current / rho_v_local
+            rho_eff     = 1.0 / nu_mix
+            # McAdams mixture viscosity: (1-x)*mu_l + x*mu_v
+            mu_eff      = mu_mixture(x_current, T=T_sat_local, mu_l=mu)
+        else:
+            # Single-phase liquid: use pure liquid properties
+            x_current = 0.0
+            rho_eff   = rho_l
+            mu_eff    = mu
+
+        # -----------------------------------------------------------------
+        # Pressure drop calculation (Darcy-Weisbach with mixture properties)
+        # The formula is the same for single-phase and two-phase; only the
+        # effective density and viscosity differ.
+        # -----------------------------------------------------------------
+        v = velocity_from_mass_flow(m_dot, rho_eff, D)
 
         if seg["type"] == "pipe":
-            Re = reynolds_number(rho, v, D, mu)
-            f = darcy_friction_factor(Re, roughness, D)
-            dP = friction_pressure_drop(rho, v, f, seg["L"], D)
+            Re  = reynolds_number(rho_eff, v, D, mu_eff)
+            f   = darcy_friction_factor(Re, roughness, D)
+            dP  = friction_pressure_drop(rho_eff, v, f, seg["L"], D)
         elif seg["type"] == "fitting":
-            dP = fitting_pressure_drop(rho, v, seg["K"])
+            dP  = fitting_pressure_drop(rho_eff, v, seg["K"])
         else:
             raise ValueError(f"Unknown segment type: {seg['type']!r}")
 
         P = P - dP
 
-        # Flashing check: has pressure dropped below the saturation
-        # pressure at the (constant) line temperature?
-        if P < P_sat(T_tank):
+        # Flashing check (first time P crosses P_sat)
+        if P < Psat_T:
             flashing_detected = True
 
         delta_T_sub = degree_of_subcooling(T_tank, P) if P > 0 else float("nan")
 
         trace.append({
-            "segment_index": i,
-            "segment_type": seg["type"],
-            "velocity_m_s": v,
+            "segment_index":    i,
+            "segment_type":     seg["type"],
+            "velocity_m_s":     v,
             "pressure_drop_Pa": dP,
             "pressure_after_Pa": P,
-            "delta_T_sub_K": delta_T_sub,
+            "delta_T_sub_K":    delta_T_sub,
+            "x_quality":        x_current,    # vapour quality at segment start
+            "rho_eff_kg_m3":    rho_eff,      # effective density used for dP
+            "mu_eff_Pa_s":      mu_eff,       # effective viscosity used for dP
         })
 
-    # If flashing occurred, estimate the vapour quality at the injector inlet
-    # via an isenthalpic flash from tank conditions to the final pressure.
-    # The feed line is adiabatic (module docstring), so enthalpy is conserved:
-    #   h_upstream = h_l(T_tank)  (liquid at tank exit)
-    #   x_inlet = (h_l(T_tank) - h_l(T_sat(P_final))) / h_fg(T_sat(P_final))
-    # This is the same isenthalpic quality calculation used inside the orifice,
-    # applied here to the feed line exit point.
-    # If no flashing, x_inlet = 0.0 (pure liquid throughout).
-    if flashing_detected and P > 0 and P < P_sat(T_tank):
-        T_flash = T_sat(P)
-        h_up    = h_liquid_sat(T_tank)
-        hfg_f   = h_fg(T_flash)
-        hl_f    = h_liquid_sat(T_flash)
-        x_inlet = (h_up - hl_f) / hfg_f if hfg_f > 0 else 0.0
-        x_inlet = max(0.0, min(1.0, x_inlet))
+    # Final x_inlet: quality at the injector inlet (end of last segment)
+    # Re-compute at final P for accuracy rather than using x_current from
+    # the last segment START -- the pressure may have dropped further.
+    if flashing_detected and P > 0 and P < Psat_T:
+        T_sat_final = T_sat(P)
+        hfg_final   = h_fg(T_sat_final)
+        hl_final    = h_liquid_sat(T_sat_final)
+        x_inlet     = max(0.0, min(1.0, (h_up - hl_final) / hfg_final
+                                   if hfg_final > 0 else 0.0))
     else:
         x_inlet = 0.0
 
     return {
-        "P_final": P,
+        "P_final":           P,
         "delta_T_sub_final": degree_of_subcooling(T_tank, P) if P > 0 else float("nan"),
         "flashing_detected": flashing_detected,
-        "x_inlet": x_inlet,
-        "trace": trace,
+        "x_inlet":           x_inlet,
+        "trace":             trace,
     }
 
 

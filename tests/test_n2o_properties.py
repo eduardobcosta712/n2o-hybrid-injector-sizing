@@ -17,6 +17,14 @@ import pytest
 from n2o_properties import (
     P_sat, dP_sat_dT, T_sat, rho_liquid_sat,
     nu_vapor_sat, h_liquid_sat, h_vapor_sat, h_fg,
+    mu_vapor_sat, mu_mixture,
+    degree_of_subcooling,
+    T_MIN, T_MAX,
+)
+
+from n2o_properties import (
+    P_sat, dP_sat_dT, T_sat, rho_liquid_sat,
+    nu_vapor_sat, h_liquid_sat, h_vapor_sat, h_fg,
     degree_of_subcooling,
     T_MIN, T_MAX,
 )
@@ -259,3 +267,62 @@ class TestDegreeOfSubcooling:
         P_low  = P_sat(T) + 2e5
         P_high = P_sat(T) + 10e5
         assert degree_of_subcooling(T, P_high) > degree_of_subcooling(T, P_low)
+
+
+class TestMuVaporSat:
+    """Tests for mu_vapor_sat(T) -- saturated vapour dynamic viscosity."""
+
+    def test_known_values_from_nist(self):
+        # Exact NIST table points must be returned exactly (within float precision)
+        assert math.isclose(mu_vapor_sat(182.33) * 1e6, 9.0689, rel_tol=1e-4)
+        assert math.isclose(mu_vapor_sat(252.33) * 1e6, 13.417, rel_tol=1e-4)
+        assert math.isclose(mu_vapor_sat(307.33) * 1e6, 22.982, rel_tol=1e-4)
+
+    def test_increases_with_temperature(self):
+        # Vapour viscosity must increase with T (unlike liquids)
+        temps = [190.0, 220.0, 250.0, 270.0, 295.0]
+        values = [mu_vapor_sat(T) for T in temps]
+        for i in range(len(values) - 1):
+            assert values[i] < values[i + 1], (
+                f"mu_v must increase with T: mu_v({temps[i]}) >= mu_v({temps[i+1]})")
+
+    def test_returns_pa_s_not_upa_s(self):
+        # At 250 K, mu_v ~ 13.4e-6 Pa.s; must NOT be 13.4 (would be μPa.s)
+        muv = mu_vapor_sat(250.0)
+        assert 5e-6 < muv < 30e-6, f"mu_vapor_sat should be in Pa.s, got {muv}"
+
+    def test_out_of_range_raises(self):
+        with pytest.raises(ValueError):
+            mu_vapor_sat(180.0)  # below triple point
+        with pytest.raises(ValueError):
+            mu_vapor_sat(315.0)  # above critical
+
+    def test_much_less_than_liquid(self):
+        # Vapour viscosity << liquid viscosity at all temperatures
+        from n2o_properties import MU_LIQUID_N2O
+        for T in [200.0, 250.0, 295.0]:
+            assert mu_vapor_sat(T) < MU_LIQUID_N2O
+
+
+class TestMuMixture:
+    """Tests for mu_mixture(x, T) -- HEM mixture viscosity."""
+
+    def test_pure_liquid_x0(self):
+        from n2o_properties import MU_LIQUID_N2O
+        assert math.isclose(mu_mixture(0.0, T=250.0), MU_LIQUID_N2O)
+
+    def test_pure_vapour_x1(self):
+        assert math.isclose(mu_mixture(1.0, T=250.0), mu_vapor_sat(250.0))
+
+    def test_between_liquid_and_vapour(self):
+        from n2o_properties import MU_LIQUID_N2O
+        mu_mix = mu_mixture(0.3, T=260.0)
+        mu_v   = mu_vapor_sat(260.0)
+        assert mu_v < mu_mix < MU_LIQUID_N2O
+
+    def test_decreases_with_vapour_quality(self):
+        # More vapour = lower mixture viscosity (vapour << liquid)
+        x_vals = [0.0, 0.1, 0.3, 0.5, 0.8, 1.0]
+        mu_vals = [mu_mixture(x, T=270.0) for x in x_vals]
+        for i in range(len(mu_vals) - 1):
+            assert mu_vals[i] >= mu_vals[i + 1]
