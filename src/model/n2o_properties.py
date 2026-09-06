@@ -125,21 +125,47 @@ def _load_saturation_table():
             continue
         if s == "[TABLE_A3]":
             in_a3 = True; header_skipped_a3 = False; continue
+        if s == "[TABLE_A4]":
+            in_a3 = False; continue
         if in_a3:
             if not header_skipped_a3:
                 header_skipped_a3 = True; continue
             fields = next(csv.reader([s]))
             T_muv_list.append(float(fields[0]))
-            # NIST gives mu_v in μPa·s; convert to Pa·s (SI)
             mu_v_list.append(float(fields[1]) * 1e-6)
 
+    # --- Parse TABLE_A4 (cp_l, mu_l, s_l, s_v from NIST) ---
+    T_a4, cp_l_list, mu_l_list, s_l_list, s_v_list = [], [], [], [], []
+    in_a4 = False
+    header_a4 = False
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s == "[TABLE_A4]":
+            in_a4 = True; header_a4 = False; continue
+        if in_a4:
+            if not header_a4:
+                header_a4 = True; continue
+            fields = next(csv.reader([s]))
+            T_a4.append(float(fields[0]))
+            cp_l_list.append(float(fields[1]))   # J/(kg.K)
+            mu_l_list.append(float(fields[2]))   # Pa.s
+            s_l_list.append(float(fields[3]))    # J/(mol.K)
+            s_v_list.append(float(fields[4]))    # J/(mol.K)
+
     _table_cache = {
-        "T_K":    T_list,
-        "nu_v":   nu_v_list,
-        "h_l":    h_l_list,
-        "h_v":    h_v_list,
+        "T_K":     T_list,
+        "nu_v":    nu_v_list,
+        "h_l":     h_l_list,
+        "h_v":     h_v_list,
         "T_K_muv": T_muv_list,
-        "mu_v":   mu_v_list,
+        "mu_v":    mu_v_list,
+        "T_K_a4":  T_a4,
+        "cp_l":    cp_l_list,   # J/(kg.K)
+        "mu_l":    mu_l_list,   # Pa.s
+        "s_l":     s_l_list,    # J/(mol.K)
+        "s_v":     s_v_list,    # J/(mol.K)
     }
     return _table_cache
 
@@ -411,14 +437,96 @@ def h_fg(T):
 # Dynamic viscosity of saturated N2O (liquid and vapour)
 # ---------------------------------------------------------------------------
 
-# Saturated liquid viscosity: constant approximation.
-# Source: Hoge (1945) as cited by NIST WebBook. At 220-300 K, mu_l varies
-# from ~130 to ~60 uPa.s. The constant 1.5e-4 Pa.s is a conservative
-# mid-range estimate used for the friction factor in feed_line.py.
-# TODO (future_work.md Priority 2): replace with T-dependent liquid
-# viscosity from the NIST WebBook liquid saturation table.
-MU_LIQUID_N2O = 1.5e-4   # Pa.s, dynamic viscosity of saturated liquid N2O
+# MU_LIQUID_N2O: fallback constant for backwards compatibility.
+# Now that Table A.4 provides temperature-dependent mu_l(T), use
+# mu_liquid_sat(T) wherever T is known. This constant is kept for
+# cases where T is not available (e.g. module-level defaults).
+MU_LIQUID_N2O = 1.5e-4   # Pa.s, mid-range estimate (conservative)
 
+
+
+def cp_liquid_sat(T):
+    """
+    Isobaric heat capacity of saturated liquid N2O, J/(kg.K).
+
+    Interpolated from Table A.4 (NIST WebBook, Lemmon & Span 2006).
+    Used in the Henry-Fauske critical flow model (injector_two_phase.py).
+
+    Physical note: cp_l increases sharply near the critical point
+    (309.52 K), diverging to infinity at T_crit. Values above 300 K
+    should be used with caution in engineering models.
+
+    Parameters
+    ----------
+    T : float
+        Temperature, K.
+
+    Returns
+    -------
+    float
+        Liquid heat capacity, J/(kg.K).
+    """
+    _check_range(T)
+    tbl = _load_saturation_table()
+    return _interp(T, tbl["T_K_a4"], tbl["cp_l"])
+
+
+def mu_liquid_sat(T):
+    """
+    Dynamic viscosity of saturated liquid N2O, Pa.s.
+
+    Interpolated from Table A.4 (NIST WebBook, Laesecke & Hafer 1998).
+    Replaces the constant MU_LIQUID_N2O where T is known.
+
+    At design conditions (220-300 K): 60-180 uPa.s.
+    Decreases strongly with temperature (liquid viscosity typical behaviour).
+
+    Parameters
+    ----------
+    T : float
+        Temperature, K.
+
+    Returns
+    -------
+    float
+        Dynamic viscosity of saturated liquid, Pa.s.
+    """
+    _check_range(T)
+    tbl = _load_saturation_table()
+    return _interp(T, tbl["T_K_a4"], tbl["mu_l"])
+
+
+def mu_mixture(x, T=None, mu_l=None):
+    """
+    Dynamic viscosity of a two-phase liquid-vapour N2O mixture, Pa.s.
+
+    Uses the McAdams mixing rule (linear in mass quality):
+        mu_mix = (1 - x) * mu_l + x * mu_v
+
+    Parameters
+    ----------
+    x : float
+        Vapour quality (mass fraction of vapour), [0, 1].
+    T : float or None
+        Temperature, K. If provided, mu_l = mu_liquid_sat(T) and
+        mu_v = mu_vapor_sat(T). If None, uses constant MU_LIQUID_N2O
+        and a mid-range mu_v estimate of 13e-6 Pa.s (~250 K).
+    mu_l : float or None
+        Override for liquid viscosity, Pa.s. If None, computed from T
+        via mu_liquid_sat(T) or defaulted to MU_LIQUID_N2O.
+
+    Returns
+    -------
+    float
+        Mixture dynamic viscosity, Pa.s.
+    """
+    if T is not None:
+        mu_l_val = mu_liquid_sat(T) if mu_l is None else mu_l
+        mu_v_val = mu_vapor_sat(T)
+    else:
+        mu_l_val = MU_LIQUID_N2O if mu_l is None else mu_l
+        mu_v_val = 13e-6
+    return (1.0 - x) * mu_l_val + x * mu_v_val
 
 def mu_vapor_sat(T):
     """
@@ -452,35 +560,6 @@ def mu_vapor_sat(T):
     _check_range(T)
     tbl = _load_saturation_table()
     return _interp(T, tbl["T_K_muv"], tbl["mu_v"])
-
-
-def mu_mixture(x, T=None, mu_l=MU_LIQUID_N2O):
-    """
-    Dynamic viscosity of a two-phase liquid-vapour N2O mixture, Pa.s.
-
-    Uses the McAdams mixing rule (linear in mass quality):
-        mu_mix = (1 - x) * mu_l + x * mu_v
-
-    This is the standard mixing rule for the HEM (homogeneous equilibrium)
-    two-phase flow model, where both phases share the same velocity and T.
-
-    Parameters
-    ----------
-    x : float
-        Vapour quality (mass fraction of vapour), [0, 1].
-    T : float or None
-        Temperature, K. If provided, mu_v = mu_vapor_sat(T).
-        If None, uses a mid-range estimate of 13e-6 Pa.s (at ~250 K).
-    mu_l : float
-        Liquid dynamic viscosity, Pa.s. Default: MU_LIQUID_N2O.
-
-    Returns
-    -------
-    float
-        Mixture dynamic viscosity, Pa.s.
-    """
-    mu_v = mu_vapor_sat(T) if T is not None else 13e-6
-    return (1.0 - x) * mu_l + x * mu_v
 
 
 def degree_of_subcooling(T, P):

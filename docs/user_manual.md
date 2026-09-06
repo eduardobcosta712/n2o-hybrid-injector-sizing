@@ -130,7 +130,7 @@ Below the segment list, a live schematic shows the feed line layout: pipes as ho
 
 ### Mass flow for line evaluation
 
-This field sets the **initial guess** for the coupled solver. The model iterates automatically until the feed-line losses and injector flow are self-consistent — the final result does not depend on this value, only convergence speed. Set it to your design target mass flow or leave it at the default.
+This field sets the **initial guess** for the coupled solver. The model iterates automatically until the feed-line losses and injector flow are self-consistent. It does not directly affect the injector result — the injector model uses the orifice geometry and the pressure conditions at the injector inlet, not this value. Set it to your design target mass flow as a reasonable approximation.
 
 ### Results
 
@@ -138,20 +138,13 @@ After entering all inputs, results appear immediately below the feed line:
 
 | Indicator | Meaning |
 |---|---|
-| **Flashing in line — NO** | Feed line stays subcooled liquid throughout |
-| **Flashing in line — YES** | Pressure dropped below P_sat in the line; two-phase inlet detected |
-| **Inlet vapour quality x_in** | Vapour fraction at the injector inlet (shown when flashing occurs) |
+| **Flashing in line — NO** | Feed line stays subcooled liquid throughout; injector models are valid |
+| **Flashing in line — YES** | Pressure dropped below P_sat somewhere in the line; x_inlet computed |
+| **Inlet vapour quality x_inlet** | Vapour fraction at the injector inlet (shown when flashing occurs) | somewhere in the line; injector models not evaluated |
 | **SPI sufficient — YES** | Single-phase model valid; no two-phase correction needed |
 | **SPI sufficient — NO** | Dyer model used; two-phase correction applied |
-| **Real mass flow** | Converged mass flow from the coupled solver, in g/s |
-| **Exit vapour quality x** | Vapour fraction at the orifice exit |
-
-The model uses a **coupled solver** that iterates until the feed-line losses and injector flow are mutually consistent. The number of iterations and convergence status are available in the solver diagnostics (see below).
-
-Three regimes are possible:
-- **SPI** — fluid stays single-phase through the orifice (P_chamber ≥ P_sat)
-- **Dyer** — fluid is liquid at the inlet but flashes inside the orifice
-- **HEM two-phase inlet** — fluid arrives partially vaporised at the inlet (flashing in the line)
+| **Real mass flow** | Model-selected prediction in g/s |
+| **SPI over-prediction** | How much the SPI model would have over-predicted (%) |
 
 When Dyer is used, a caption shows kappa (non-equilibrium parameter), exit vapour quality x, and the HEM prediction for reference.
 
@@ -160,14 +153,15 @@ When Dyer is used, a caption shows kappa (non-equilibrium parameter), exit vapou
 Four interactive Plotly charts appear:
 
 1. **Pressure along the feed line** — pressure at each segment, with the P_sat(T_tank) threshold as a dashed red line. The green shading shows the subcooling margin. Use scroll to zoom, click-drag to pan.
-2. **P-T diagram** — saturation curve with liquid/vapour regions shaded, and the three operating points (tank, injector inlet, chamber) marked.
+2. **P-T diagram** — saturation curve with liquid/vapour regions shaded, and the three operating points (tank, injector inlet, chamber) marked. The chamber point is plotted at T_sat(P_chamber), the saturation temperature at chamber pressure.
 3. **Subcooling margin along the line** — delta T_sub at each segment. Green fill = margin remaining; red fill = flashing zone.
-4. **Sensitivity analysis** — how the real mass flow varies as tank temperature changes ±5 °C from the design point.
+4. **Sensitivity analysis** — mass flow vs. tank temperature (±5 K)
 
-Two additional charts are available in expanders:
+A **sensitivity tornado** expander is available below the charts: each input is varied one-at-a-time (±5 K temperature, ±5% pressure, ±0.05 Cd, ±0.05 mm orifice diameter, ±20% line length) to show which input most affects the result.
 
-- **Pressure drop by segment** — horizontal bar chart showing which segments consume the most pressure.
-- **Sensitivity tornado** — one-at-a-time sensitivity of mass flow to each uncertain input (tank temperature ±5 K, tank pressure ±5%, Cd ±0.05, orifice diameter ±0.05 mm, line length ±20%). The widest bar is the input that most needs accurate measurement.
+ — how the real mass flow varies as tank temperature changes ±5 °C from the design point. The design point is marked with a star. Any temperatures where flashing is predicted are highlighted as a red zone.
+
+A fifth chart is available in the **Pressure drop by segment** expander: a horizontal bar chart showing which segments consume the most pressure.
 
 ### PDF export
 
@@ -206,13 +200,12 @@ A caption below the cards shows the percentage by which the Dyer area exceeds th
 
 ## When flashing is detected in the feed line
 
-If the feed line pressure drops below P_sat(T_tank) before reaching the injector, the fluid arrives **partially vaporised** at the orifice inlet. The tool now handles this automatically:
+If the feed line pressure drops below P_sat(T_tank) before reaching the injector, the injector models are not evaluated. Instead, the tool shows:
 
-- The **inlet vapour quality x_in** is computed via isenthalpic flash from the tank conditions to the injector inlet pressure.
-- The **HEM two-phase inlet model** is applied: the upstream enthalpy includes the vapour contribution, giving a physically consistent prediction of the orifice exit quality and mass flow.
-- A **diagnostic panel** identifies the likely cause and suggests corrective actions.
+- A **diagnostic panel** identifying the likely cause (tank pressure too low, line too long, pipe diameter too small, high-K fittings) and suggesting specific corrective actions.
+- A **reference SPI value** — what the SPI model would predict if the fluid were single-phase throughout. This is an upper bound; the real mass flow will be substantially lower due to two-phase flow in the line.
 
-Note: this model is an approximation. The two-phase pressure-drop calculation in the feed line still uses liquid-phase properties (a known limitation documented in `future_work.md`). For design purposes, correcting the feed line to avoid flashing is always preferable.
+The most common fix is to increase tank pressure so that P_tank − P_sat(T_tank) > 5 bar before line losses, providing a safety margin.
 
 ---
 

@@ -38,15 +38,19 @@ This is a known failure mode of plain Newton-Raphson: $P_{sat}(T)$ becomes incre
 
 This issue is noted here deliberately, rather than corrected silently, because it is informative: it confirms that care is needed specifically in the region nearest the critical point — which is precisely the region of greatest interest for this project (Section 3.2), since that is where N₂O's flashing behavior is most sensitive.
 
-### Tabulated saturated vapor properties: $\nu_v(T)$, $h_l(T)$, $h_v(T)$, $h_{fg}(T)$
+### Tabulated saturated properties: $\nu_v(T)$, $h_l(T)$, $h_v(T)$, $h_{fg}(T)$, $\mu_v(T)$, $\mu_l(T)$, $c_{pl}(T)$
 
-The HEM/Dyer two-phase injector model (Section 3.4) additionally requires the saturated vapor molar volume, $\nu_v(T)$, and the latent heat of vaporization, $h_{fg}(T)$. No closed-form correlation for $\nu_v(T)$ was available for this project. An ideal-gas approximation was considered and rejected: it degrades precisely near the critical point, the region of greatest interest for this project (Section 3.2), where intermolecular forces are no longer negligible. A Peng-Robinson equation of state was also considered, but a direct tabulated source was judged preferable — real measured data rather than a general model's prediction, avoiding the systematic error any cubic EOS carries near the critical point.
+The HEM/Dyer two-phase injector model (Section 3.4) and the two-phase feed-line model (Section 4.2) require several saturated properties beyond the closed-form correlations. These are stored in `n2o_saturation_table.csv` across four sections:
 
-Table A.1 of the same source already in use for the closed-form correlations (Jean-Philyppe, J., 2023, arXiv:2302.06725, Appendix A) tabulates $\nu_v$, $h_l$, and $h_v$ at 27 saturation points spanning the full valid range ($T \in [182.33, 309.52]$ K). These values are stored in `n2o_saturation_table.csv` and used via linear interpolation between points — the same scheme the source paper itself uses for this quantity. The latent heat is then obtained directly as
+**Table A.1** (McGill/Perry, arXiv:2302.06725): $\nu_v$, $h_l$, $h_v$ at 27 saturation points (182–309 K). $h_{fg}(T) = h_v(T) - h_l(T)$ directly — not via Clausius-Clapeyron, which amplifies numerical error near the critical point.
 
-$$h_{fg}(T) = h_v(T) - h_l(T)$$
+**Table A.2** (McGill/Perry): derivatives of Table A.1 (not currently used).
 
-rather than via the Clausius-Clapeyron relation, $h_{fg} = T(\nu_v - \nu_l)\,dP_{sat}/dT$: the direct subtraction avoids amplifying numerical error from $(\nu_v - \nu_l)$, which shrinks toward zero near the critical point.
+**Table A.3** (NIST WebBook, Millat et al. 1991 viscosity correlation, downloaded August 2026): saturated vapour dynamic viscosity $\mu_v(T)$ in 26 points (182–307 K). Uncertainty ~2% for T > 150 K. Used in `mu_vapor_sat(T)` and `mu_mixture(x, T)` for the two-phase feed-line model.
+
+**Table A.4** (NIST WebBook, Lemmon & Span 2006 EOS + Laesecke & Hafer 1998 liquid viscosity, downloaded August 2026): isobaric heat capacity of saturated liquid $c_{pl}(T)$, saturated liquid dynamic viscosity $\mu_l(T)$, and liquid/vapour entropy $s_l(T)$, $s_v(T)$. Used in `cp_liquid_sat(T)` and `mu_liquid_sat(T)`. Entropy data is available for future use in the isentropic choking limit (see `future_work.md`, Priority 3).
+
+Note: $\mu_l(T)$ replaces the previous constant `MU_LIQUID_N2O = 1.5e-4 Pa·s` in the feed-line model. The constant is retained as a fallback where T is not known.
 
 ### Validation
 
@@ -67,7 +71,7 @@ Run via `python n2o_properties.py`, which checks:
 
 **Two-phase HEM model (implemented August 2026).** The feed line model now handles two distinct flow regimes:
 
-**Single-phase region** ($P > P_{sat}(T_{tank})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l$ (constant, `MU_LIQUID_N2O`). This is identical to the original implementation.
+**Single-phase region** ($P > P_{sat}(T_{tank})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l(T_{tank})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (`MU_LIQUID_N2O = 1.5\times10^{-4}$ Pa·s); now temperature-dependent.
 
 **Two-phase region** ($P \leq P_{sat}(T_{tank})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
 
@@ -151,13 +155,24 @@ $$x = \frac{h_{upstream} - h_l(T_{downstream})}{h_{fg}(T_{downstream})}$$
 
 The HEM mixture density follows from the mass-weighted average of the two phases' specific volumes, and $\dot m_{HEM}$ from the same orifice equation used throughout the project, with $\rho_{HEM}$ in place of the pure-liquid density. Dyer blends $\dot m_{SPI}$ and $\dot m_{HEM}$ via the non-equilibrium parameter $\kappa$:
 
-$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\dot m_{HEM}}{1+\kappa} + \frac{\kappa}{1+\kappa}\dot m_{SPI}$$
+$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\dot m_{SPI}}{1+\kappa} + \frac{\kappa}{1+\kappa}\dot m_{HEM}$$
 
 **Domain restriction.** $\kappa$ requires $P_{upstream} > P_{sat}(T_{upstream})$ — the fluid must still be liquid at the orifice inlet, consistent with this model addressing vaporization *inside* the orifice (Section 3.1), not an already-two-phase feed line (that case is `feed_line.py`'s `flashing_detected`). Enforced with an explicit `ValueError` rather than an extreme or undefined $\kappa$.
 
 ### Validation
 
 An operating point with the inlet modestly subcooled (55 bar at 20 °C, $P_{sat}(20°C) \approx 51.4$ bar) but a large enough pressure drop (to 20 bar) to cross saturation inside the orifice: Dyer predicts 128.8 g/s against SPI's 182.6 g/s (≈30% lower) — consistent with the expected direction of the two-phase correction (Section 3.3). The injector_spi.py example point (50 bar upstream) was found to already violate the domain restriction above and was not reused here.
+
+
+### HEM critical flow — `hem_critical_flow()`
+
+Available as a standalone function in `injector_two_phase.py`. Implements Waxman (2013) Eq.(5): scans $P_2$ from $P_{sat}(T_{upstream})$ downward and finds the maximum of the isenthalpic HEM mass-flow curve:
+
+$$\dot{m}_{crit} = \max_{P_2 < P_{sat}} \left[ C_d A \sqrt{2\,\rho_{mix}(P_2)\,\Delta P} \right]$$
+
+This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\text{K}$, $P_1 = 4.36\,\text{MPa}$): $\dot{m}_{crit} = 41.1\,\text{g/s}$ at $P_{2,crit} = 30.4\,\text{bar}$.
+
+The function is **not applied automatically** in `dyer_mass_flow()` because the Dyer non-equilibrium correction legitimately predicts above the HEM-only ceiling (confirmed by Waxman experimental data: 44–48 g/s vs. HEM cap of 41.1 g/s). Automatic integration requires the isentropic path (constant entropy), not the isenthalpic path used here. Entropy data is now available in Table A.4 but the isentropic inversion is deferred (see `future_work.md`, Priority 3).
 
 ### File location
 
@@ -166,7 +181,7 @@ An operating point with the inlet modestly subcooled (55 bar at 20 °C, $P_{sat}
 ---
 *Next section: 4.5 `full_system.py` — orchestrating the full tank -> feed line -> injector path.*
 
-## 4.5 `full_system.py` — Full system orchestration
+## 4.5 `full_system.py` — Full system orchestration and coupled solver
 
 ### Purpose
 

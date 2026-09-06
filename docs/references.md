@@ -30,6 +30,9 @@ The saturation property correlations used in `n2o_properties.py` originate from 
 **Dyer, R.S. (1976).** *The effect of dissolved gas and submicron particles on cavitation inception in water.* PhD thesis, California Institute of Technology.
 *(Original formulation of the NHNE non-equilibrium injector model, later adapted for liquid oxidiser applications.)*
 
+**Solomon, B. J. (2011).** Engineering model for propellant-actuated devices. M.Sc. thesis, Utah State University.
+*(Identifies and corrects the weight-swap error in the original Dyer et al. (2007) two-phase injector formula. The corrected NHNE weighting convention — large κ → more weight on SPI — is adopted in this project.)*
+
 **Waxman, B.S., Zimmerman, J.E., Cantwell, B., & Zilliac, G. (2014).** *Mass flow rate and isolation pressure measurements in nitrous oxide with the Dyer injector model.* AIAA 2014-3834.
 *(Validation of the Dyer model against N₂O experimental data; documents the SPI over-prediction effect and the Dyer correction.)*
 
@@ -86,6 +89,18 @@ The range Cd = 0.61–0.82 cited in the tool (sharp-edged to well-rounded orific
 T_crit = 36.4 °C (309.52 K), P_crit = 72.45 bar — consistent with:
 
 **NIST WebBook, National Institute of Standards and Technology.** Nitrous oxide (N₂O) thermophysical properties. https://webbook.nist.gov/cgi/cbook.cgi?ID=10024-97-2&Type=SatT&Offset=0
+
+**Lemmon, E. W., and Span, R. (2006).** Short fundamental equations of state for 20 industrial fluids. *Journal of Chemical and Engineering Data*, 51(3), 785–850. DOI: 10.1021/je050186n.
+*(N₂O equation of state used by NIST WebBook. Source of Tables A.3 and A.4 thermodynamic properties.)*
+
+**Millat, J., Vesovic, V., and Wakeham, W. A. (1991).** The viscosity of nitrous oxide and tetrafluoromethane in the limit of zero density. *International Journal of Thermophysics*, 12(2), 265–273.
+*(N₂O saturated vapour viscosity correlation used by NIST. Source of Table A.3.)*
+
+**Laesecke, A., and Hafer, R. F. (1998).** Viscosity of fluorinated propane isomers. *Journal of Chemical and Engineering Data*, 43(1), 84–92. DOI: 10.1021/je970186n.
+*(N₂O saturated liquid viscosity correlation used by NIST. Source of Table A.4 μ_l values.)*
+
+**Niño, E. V., and Razavi, M. R. (2019).** Design of two-phase injectors using analytical and numerical methods with application to hybrid rockets. AIAA 2019-4154.
+*(Tabulated Waxman operating points used for model validation; Table 4 and Fig. 2.)*
 
 ---
 

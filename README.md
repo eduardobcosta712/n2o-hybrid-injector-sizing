@@ -76,17 +76,21 @@ Three injector regimes are handled automatically:
 - **Dyer/NHNE** — liquid at the inlet, two-phase inside the orifice
 - **HEM two-phase inlet** — fluid arrives partially vaporised (flashing in the feed line)
 
-The Dyer model is a weighted combination of the SPI limit ("no time to vaporise") and the HEM limit ("full thermodynamic equilibrium"), with the weight determined by how close the upstream pressure already is to saturation.
+The Dyer model is a weighted combination of the SPI limit ("no time to vaporise") and the HEM limit ("full thermodynamic equilibrium"), with the weight determined by how close the upstream pressure already is to saturation. The formula uses the corrected weight convention of Solomon (2011) and Waxman (2013, Eq. 9) — large κ weights toward SPI (less equilibrium), small κ toward HEM.
 
 ---
 
 ## Validation
 
-The Dyer/NHNE model has been validated against experimental data from Waxman (2013/2014) for supercharged N₂O injectors — the correct domain for the model (subcooled liquid at the injector inlet, QF_upstream = 0). Four operating points at moderate pressure drops (8–14 bar), representative of real motor design conditions, give a **mean error of −1.9%** with all points within ±5%. Full report in [`validation/waxman_2013_validation.md`](validation/waxman_2013_validation.md).
+The full coupled model has been validated against experimental data from Waxman (2013/2014) for supercharged N₂O injectors — the correct domain for the model (subcooled liquid at the injector inlet, QF_upstream = 0). Four operating points at moderate pressure drops (8–14 bar), representative of real motor design conditions, give a **MAPE of 3.51%** (mean error −1.9%), with all points within ±5%. This compares favourably with the Niño & Razavi (2019) reference result of 3.91% for the same dataset. Full report in [`validation/waxman_2013_results.md`](validation/waxman_2013_results.md).
 
-**On validation coverage.** This is the only open-access experimental dataset identified that matches the model's domain (supercharged N₂O, tabulated operating points at design-relevant pressure drops). Other published datasets either use self-pressurized conditions or are behind institutional paywalls. The Waxman dataset is considered sufficient validation for the injector sizing use case. The two-phase inlet path (flashing in the feed line) is physically implemented but has not been validated against published data, as no suitable open-access dataset was found; this is noted as a known limitation.
+The `hem_critical_flow()` function implements the Waxman (2013) Eq.(5) isenthalpic maximum scan, providing the physical choking limit as a standalone reference tool. At the Waxman conditions it gives 41.1 g/s — the Dyer predictions (42–50 g/s) are above this limit, consistent with the non-equilibrium correction accounting for partial vaporisation inside the orifice.
+
+**On validation coverage.** This is the only open-access experimental dataset in the correct domain (supercharged N₂O, tabulated operating points at design-relevant pressure drops). The two-phase inlet path (feed-line flashing) is physically implemented and tested but has not been validated against published data — no suitable open-access dataset was found. This is noted as a known limitation.
 
 ---
+
+> **137 automated tests** pass on Python 3.10 and 3.12 via GitHub Actions CI (pytest, 5 test modules covering all model components).
 
 ## Scope and known limitations
 
@@ -94,7 +98,8 @@ The Dyer/NHNE model has been validated against experimental data from Waxman (20
 - Feed line assumed **adiabatic** and **steady-state** — no transient start-up effects.
 - When flashing is detected in the feed line, the model estimates the vapour quality at the injector inlet via isenthalpic flash and applies HEM with a two-phase inlet enthalpy. The Dyer blend is not used in this regime (it collapses to SPI when P_upstream ≈ P_sat, which is physically incorrect — HEM is the appropriate limit).
 - Discharge coefficients use **literature reference values**, not team-calibrated data.
-- The Dyer model is validated for moderate pressure drops (design regime, ΔP = 20–50 bar). It does not capture two-phase choking at extreme ΔP. See [`docs/future_work.md`](docs/future_work.md).
+- The Dyer model is validated for moderate pressure drops (design regime, ΔP = 20–50 bar). At extreme ΔP the Bernoulli-based formula over-predicts. The `hem_critical_flow()` function provides the physical choking limit as a standalone reference; automatic integration requires the isentropic expansion path (entropy data available in Table A.4 but integration deferred — see [`docs/future_work.md`](docs/future_work.md)).
+- N₂O thermophysical properties sourced from McGill/Perry (Tables A.1–A.2) and NIST WebBook/Lemmon & Span 2006 (Tables A.3–A.4: μ_v, C_pl, μ_l, entropy). Functions include `mu_liquid_sat(T)`, `cp_liquid_sat(T)`, `mu_vapor_sat(T)`. Accuracy ~1–2% in design range; higher uncertainty near the critical point.
 
 ---
 

@@ -147,3 +147,58 @@ T_K,mu_v_uPa_s
 297.33,18.762
 302.33,20.202
 307.33,22.982
+
+# [TABLE_A4] — Saturated liquid Cp, liquid viscosity, and entropy (liquid+vapour)
+#
+# SOURCE: NIST Chemistry WebBook, SRD 69
+#   Species: Nitrous oxide (N2O), CAS 10024-97-2
+#   Equation of state: Lemmon & Span (2006), J. Chem. Eng. Data 51(3), 785-850
+#   Viscosity (liquid): Laesecke & Hafer (1998), Int. J. Thermophys. 19, 1557
+#   Downloaded: August 2026
+#
+# Units in this table (all converted to SI per-kg or per-kmol as noted):
+#   cp_l_J_kgK  : isobaric heat capacity of saturated liquid, J/(kg.K)
+#                 [converted from NIST J/mol.K by dividing by M_N2O/1000]
+#   mu_l_Pa_s   : dynamic viscosity of saturated liquid, Pa.s
+#                 [converted from NIST uPa.s by x1e-6]
+#   s_l_J_molK  : entropy of saturated liquid, J/(mol.K)
+#   s_v_J_molK  : entropy of saturated vapour, J/(mol.K)
+#
+# NIST uncertainty:
+#   Cp_l: ~1% for T < 300 K; larger near critical point (T > 300 K)
+#   mu_l: ~2% for T < 300 K; larger near critical point
+#   Entropy: ~0.5% throughout
+#
+# NOTE: cp_l diverges near the critical point (309.52 K) -- this is
+# physically correct (cp -> inf at critical point). The Henry-Fauske
+# model uses cp_l in the denominator; values above 300 K should be
+# used with caution. In practice, design conditions are T < 295 K.
+
+[TABLE_A4]
+T_K,cp_l_J_kgK,mu_l_Pa_s,s_l_J_molK,s_v_J_molK
+182.33,1717.7425,3.208200e-04,-0.9690,90.0170
+187.33,1720.9461,2.931100e-04,1.0754,88.3070
+192.33,1725.8992,2.689900e-04,3.0698,86.7150
+197.33,1732.6699,2.478500e-04,5.0186,85.2260
+202.33,1741.2583,2.292300e-04,6.9257,83.8290
+207.33,1751.8233,2.127000e-04,8.7950,82.5140
+212.33,1764.4332,1.979500e-04,10.6300,81.2710
+217.33,1779.3152,1.847100e-04,12.4340,80.0910
+222.33,1796.6510,1.727400e-04,14.2100,78.9670
+227.33,1816.7587,1.618600e-04,15.9610,77.8900
+232.33,1840.0018,1.519200e-04,17.6910,76.8530
+237.33,1866.9030,1.427600e-04,19.4030,75.8500
+242.33,1898.0528,1.342900e-04,21.0990,74.8730
+247.33,1934.3603,1.264100e-04,22.7840,73.9140
+252.33,1976.9614,1.190100e-04,24.4610,72.9670
+257.33,2027.4692,1.120400e-04,26.1340,72.0240
+262.33,2088.1558,1.054200e-04,27.8080,71.0760
+267.33,2162.3611,9.907500e-05,29.4890,70.1130
+272.33,2255.2200,9.295200e-05,31.1830,69.1210
+277.33,2374.9801,8.698200e-05,32.9010,68.0860
+282.33,2535.8417,8.109500e-05,34.6560,66.9860
+287.33,2765.0921,7.520100e-05,36.4670,65.7890
+292.33,3120.8961,6.918200e-05,38.3680,64.4440
+297.33,3757.7534,6.283500e-05,40.4190,62.8580
+302.33,5269.8066,5.572000e-05,42.7690,60.8150
+307.33,14111.0581,4.606600e-05,46.0360,57.4530

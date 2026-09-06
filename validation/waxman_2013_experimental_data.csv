@@ -1,0 +1,30 @@
+# Waxman et al. (2013), AIAA 2013-3636
+# "Mass Flow Rate and Isolation Characteristics of Injectors for Use
+#  with Self-Pressurizing Oxidizers in Hybrid Rockets"
+# Stanford University / NASA Ames Research Center
+#
+# DATA EXTRACTION NOTES:
+#   - All data are for N2O (not CO2), with helium supercharge (QF_upstream = 0)
+#   - Geometry: L = 18.4 mm fixed for all injectors
+#   - Cd_SPI: measured in the single-phase region (low delta_P)
+#   - m_dot_crit_exp: critical mass flow rate (plateau in two-phase regime)
+#   - P1_super: supercharge = P1 - P_sat(T1), in MPa
+#   - SOURCE: Table 1 (geometry), Fig. 15 (Cd_SPI), Fig. 16 (m_dot_crit),
+#     Fig. 11 and text p.14 (reference upstream conditions)
+#
+# EXPERIMENTAL UNCERTAINTY:
+#   - Cd_SPI: graph read-off uncertainty ~ +/-0.01
+#   - m_dot_crit: graph read-off uncertainty ~ +/-5%
+#   - Upstream conditions: time-averaged over test (P1, T1 drift slightly)
+#
+# DOMAIN OF VALIDITY for Eduardo's model:
+#   - QF_upstream = 0 (supercharged) -> liquid at injector inlet ✓
+#   - P_downstream < P_sat(T1) -> two-phase flashing inside orifice ✓
+#   - This is the correct domain for validating the Dyer model as implemented
+
+injector_id,style,D_mm,L_mm,L_D,inlet_geometry,fluid,T1_K,P1_MPa,P1_super_MPa,P2_MPa,Cd_SPI_exp,m_dot_crit_exp_gs,notes
+1,Straight,0.79,18.4,23.4,Square Edge,N2O,280.0,4.96,1.26,atm,0.68,4.1,Cd from Fig.15 at ~1.26 MPa supercharge; m_dot_crit from Fig.16
+2,Straight,1.50,18.4,12.3,Square Edge,N2O,280.0,4.96,1.26,atm,0.71,14.8,Cd from Fig.15; m_dot_crit from Fig.16
+3,Straight,1.50,18.4,12.3,Rounded,N2O,280.0,4.96,1.26,atm,0.77,18.0,PRIMARY REFERENCE CASE - Fig.11/12/13; Cd and m_dot_crit confirmed in text p.14
+4,Straight,1.50,18.4,12.3,Chamfered,N2O,280.0,4.96,1.26,atm,0.76,17.8,Cd and m_dot_crit from Fig.18/19 (CO2 analog) with <5% correction per Waxman
+5,Straight,1.93,18.4,9.5,Square Edge,N2O,280.0,4.96,1.26,atm,0.65,23.5,Cd from Fig.15; m_dot_crit scaled by area ratio from injector 2

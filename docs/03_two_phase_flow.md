@@ -33,9 +33,15 @@ This instantaneous-equilibrium assumption is a known limitation in short orifice
 
 ### Dyer model (NHNE — Non-Homogeneous Non-Equilibrium, in its general formulation)
 
-Directly addresses the HEM limitation identified above. It is formulated essentially as a **weighted combination** between the flow rate predicted by the pure SPI model (the "no time to vaporize" limit — the fluid crosses the orifice too fast to respond to the pressure drop) and the flow rate predicted by the HEM model (the full-equilibrium limit). The relative weight of the combination depends on how close the upstream pressure already is to $P_{sat}(T)$ at the orifice inlet: the closer to saturation at the inlet, the more weight given to HEM; the more subcooled, the more weight given to SPI.
+Directly addresses the HEM limitation identified above. It is formulated as a **weighted combination** between the SPI limit ("no time to vaporise") and the HEM limit ("full thermodynamic equilibrium"):
 
-Because it reasonably captures observed behavior in short orifices, without the added complexity of more general fully non-homogeneous, non-equilibrium models, the Dyer model is the most widely adopted in the amateur/university rocketry literature for this specific problem, and is the reference model chosen for this project's implementation (Section 4).
+$$\dot{m}_{Dyer} = \frac{\kappa}{1+\kappa}\,\dot{m}_{SPI} + \frac{1}{1+\kappa}\,\dot{m}_{HEM}$$
+
+where the non-equilibrium parameter $\kappa = \sqrt{(P_{up} - P_{down})\,/\,(P_{sat}(T_{up}) - P_{down})}$ is proportional to $\tau_{bubble}/\tau_{residence}$. Large $\kappa$ → less equilibrium → more weight on SPI. Small $\kappa$ → near-equilibrium → more weight on HEM. The weight on SPI, $\kappa/(1+\kappa)$, increases with $\kappa$ — consistent with this physical interpretation.
+
+> **Implementation note.** The original Dyer et al. (2007) paper contained a sign error in the weighting formula (weights on SPI and HEM were swapped). This was corrected by Solomon (2011) and confirmed by Waxman (2013, Eq. 9). The formula above and the implementation in `injector_two_phase.py` reflect the corrected version.
+
+Because it reasonably captures observed behaviour in short orifices without the added complexity of more general non-homogeneous, non-equilibrium models, the Dyer model is the most widely adopted in the university rocketry literature for this class of problem, and is the reference model for this project. Validation against Waxman (2013/2014) gives MAPE = 3.51% at moderate pressure drops — see `validation/waxman_2013_results.md`.
 
 ## 3.5 Synthesis for implementation
 

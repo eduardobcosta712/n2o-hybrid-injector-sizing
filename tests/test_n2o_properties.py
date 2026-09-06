@@ -308,8 +308,8 @@ class TestMuMixture:
     """Tests for mu_mixture(x, T) -- HEM mixture viscosity."""
 
     def test_pure_liquid_x0(self):
-        from n2o_properties import MU_LIQUID_N2O
-        assert math.isclose(mu_mixture(0.0, T=250.0), MU_LIQUID_N2O)
+        from n2o_properties import mu_liquid_sat
+        assert math.isclose(mu_mixture(0.0, T=250.0), mu_liquid_sat(250.0))
 
     def test_pure_vapour_x1(self):
         assert math.isclose(mu_mixture(1.0, T=250.0), mu_vapor_sat(250.0))
