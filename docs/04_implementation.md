@@ -71,7 +71,7 @@ Run via `python n2o_properties.py`, which checks:
 
 **Two-phase HEM model (implemented August 2026).** The feed line model now handles two distinct flow regimes:
 
-**Single-phase region** ($P > P_{\mathrm{sat}}(T_{\mathrm{tank}})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{\mathrm{tank}})$ and $\mu_l(T_{\mathrm{tank}})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (`MU_LIQUID_N2O = 1.5\times10^{-4}$ Pa·s); now temperature-dependent.
+**Single-phase region** ($P > P_{\mathrm{sat}}(T_{\mathrm{tank}})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{\mathrm{tank}})$ and $\mu_l(T_{\mathrm{tank}})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (`MU_LIQUID_N2O`) of $1.5\times10^{-4}\,\mathrm{Pa\cdot s}$; now temperature-dependent.
 
 **Two-phase region** ($P \leq P_{\mathrm{sat}}(T_{\mathrm{tank}})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
 
@@ -170,7 +170,7 @@ Available as a standalone function in `injector_two_phase.py`. Implements Waxman
 
 $$\dot{m}_{crit} = \max_{P_2 < P_{sat}} \left[ C_d A \sqrt{2\,\rho_{mix}(P_2)\,\Delta P} \right]$$
 
-This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\text{K}$, $P_1 = 4.36\,\text{MPa}$): $\dot{m}_{\mathrm{crit}} = 41.1\,\text{g/s}$ at $P_{2,\mathrm{crit}} = 30.4\,\text{bar}$.
+This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\mathrm{K}$, $P_1 = 4.36\,\mathrm{MPa}$): $\dot{m}_{\mathrm{crit}} = 41.1\,\mathrm{g/s}$ at $P_{2,\mathrm{crit}} = 30.4\,\mathrm{bar}$.
 
 The function is **not applied automatically** in `dyer_mass_flow()` because the Dyer non-equilibrium correction legitimately predicts above the HEM-only ceiling (confirmed by Waxman experimental data: 44–48 g/s vs. HEM cap of 41.1 g/s).
 
