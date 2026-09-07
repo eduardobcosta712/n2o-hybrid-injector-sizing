@@ -17,6 +17,29 @@ pressure already is to saturation.
     m_dot_HEM  = Cd * A * sqrt(2 * rho_HEM * delta_P)
     m_dot_Dyer = (kappa / (1 + kappa)) * m_dot_SPI + (1 / (1 + kappa)) * m_dot_HEM
 
+Two vapour-quality paths are used in this module, for two different
+physical questions (see docs/future_work.md, Priority 1):
+
+    - ISENTHALPIC (h = const): describes the REAL thermodynamic state of
+      the fluid at a given point (e.g. the orifice exit). An orifice is
+      adiabatic but not reversible, so the 1st law gives h_up = h_down
+      regardless of internal losses -- this is the correct path for
+      vapor_quality_isenthalpic, hem_mass_flow, dyer_mass_flow, and
+      hem_critical_flow (the mass-flow curve itself is still evaluated
+      along real, physically-realized states).
+    - ISENTROPIC (s = const): describes the speed at which a pressure
+      disturbance propagates, c^2 = (dP/drho)_s -- a thermodynamic
+      derivative taken at constant entropy, because an acoustic wave is a
+      small, fast, essentially reversible perturbation on top of the
+      (possibly irreversible) mean flow. This is the physically correct
+      path for locating the two-phase CHOKING condition, implemented in
+      vapor_quality_isentropic and hem_critical_flow_isentropic.
+
+hem_critical_flow() (isenthalpic) is kept unchanged and side-by-side with
+hem_critical_flow_isentropic(): it is already validated and cited in
+validation/waxman_2013_results.md, and remains useful as a direct
+comparison against the more rigorous isentropic scan.
+
 Units: SI throughout (Pa, K, kg/m^3, m^2, kg/s), except vapor quality x
 and the Dyer weighting parameter kappa, which are dimensionless.
 """
@@ -63,6 +86,47 @@ def vapor_quality_isenthalpic(h_upstream, T_downstream):
         and are physically meaningless outside [0, 1] (Section 1.7).
     """
     x = (h_upstream - h_liquid_sat(T_downstream)) / h_fg(T_downstream)
+    return max(0.0, min(1.0, x))
+
+
+def vapor_quality_isentropic(s_upstream, T_downstream):
+    """
+    Vapor quality x at a given downstream state, assuming an ISENTROPIC
+    (constant-entropy) process -- the path that correctly locates the
+    two-phase CHOKING condition (see module docstring), as opposed to the
+    isenthalpic path (vapor_quality_isenthalpic above) that correctly
+    describes the real thermodynamic state at the orifice exit.
+
+    Derived exactly analogously to vapor_quality_isenthalpic, replacing
+    enthalpy with entropy: s_upstream = s_l(T_downstream) + x * s_fg(T_downstream)
+
+        x = (s_upstream - s_l(T_downstream)) / s_fg(T_downstream)
+
+    Added September 2026 for the isentropic choking limit (Priority 1,
+    docs/future_work.md).
+
+    Parameters
+    ----------
+    s_upstream : float
+        Upstream fluid molar entropy, kJ/(kmol.K). For liquid entering
+        subcooled or saturated, this is s_liquid_sat(T_upstream); for a
+        two-phase inlet (feed-line flashing), this is the quality-weighted
+        mixture entropy -- see hem_critical_flow_isentropic below.
+    T_downstream : float
+        Saturation temperature corresponding to the downstream pressure
+        being scanned, T_sat(P_downstream), K. Must lie within Table
+        A.4's range (see n2o_properties.T_MIN_A4 / T_MAX_A4) -- narrower
+        than the enthalpy table's range, since entropy data comes from a
+        separate, shorter NIST table.
+
+    Returns
+    -------
+    float
+        Vapor quality x (dimensionless), clamped to [0, 1] for the same
+        reason as vapor_quality_isenthalpic.
+    """
+    from n2o_properties import s_liquid_sat, s_fg
+    x = (s_upstream - s_liquid_sat(T_downstream)) / s_fg(T_downstream)
     return max(0.0, min(1.0, x))
 
 
@@ -273,6 +337,15 @@ def hem_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     where these two effects balance -- this is the two-phase speed-of-sound
     condition (the choked state), expressed through the isenthalpic path.
 
+    Approximation note (see hem_critical_flow_isentropic for the more
+    rigorous version, added September 2026, Priority 1): the isenthalpic
+    path correctly describes the real thermodynamic STATE of the fluid at
+    each P2, but the true choking condition -- the propagation speed of a
+    pressure disturbance -- is an isentropic derivative, c^2 = (dP/drho)_s.
+    This function is kept as-is, unchanged, because it is already
+    validated (validation/waxman_2013_results.md) and remains a useful,
+    entropy-data-free reference point.
+
     Parameters
     ----------
     Cd : float
@@ -332,6 +405,151 @@ def hem_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
             P2 -= dP_step; continue
 
         x = (h_up - hl2) / hfg2
+        x = max(0.0, min(1.0, x))
+
+        nu_mix  = (1.0 - x) / rho_l2 + x / rho_v2
+        rho_mix = 1.0 / nu_mix
+        dP      = P_upstream - P2
+
+        m = Cd * A * math.sqrt(2.0 * rho_mix * dP) if dP > 0 else 0.0
+
+        if m > best_m:
+            best_m   = m
+            best_P2  = P2
+            best_x   = x
+            best_rho = rho_mix
+
+        P2 -= dP_step
+
+    return {
+        "m_dot_crit": best_m,
+        "P2_crit":    best_P2,
+        "x_crit":     best_x,
+        "rho_crit":   best_rho,
+    }
+
+
+def hem_critical_flow_isentropic(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
+                                  n_steps=200):
+    """
+    HEM isentropic maximum mass flow rate (two-phase critical flow), kg/s.
+
+    Isentropic-path analogue of hem_critical_flow(): finds the maximum of
+    the HEM mass-flow curve along a path of constant molar entropy rather
+    than constant molar enthalpy.
+
+    Physical motivation (Section 3.3 / docs/future_work.md, Priority 1):
+    the two-phase speed of sound -- and therefore the true choking
+    condition -- is a thermodynamic derivative taken at constant entropy,
+        c^2 = (dP/drho)_s,
+    because an acoustic disturbance is, by definition, a small, fast,
+    essentially reversible perturbation superimposed on the (possibly
+    irreversible) mean flow. hem_critical_flow() uses the isenthalpic
+    path instead, which correctly describes the real thermodynamic STATE
+    of the fluid at the orifice exit (energy balance across an adiabatic,
+    lossy orifice) but is only an approximation to the propagation-speed
+    condition that actually defines choking. This function implements the
+    more rigorous isentropic scan; hem_critical_flow() is kept unchanged,
+    side-by-side, for direct comparison -- it is already validated and
+    cited in validation/waxman_2013_results.md.
+
+    Domain restriction: entropy data (Table A.4, NIST WebBook) only
+    covers T in [n2o_properties.T_MIN_A4, n2o_properties.T_MAX_A4], i.e.
+    up to 307.33 K -- short of the 309.52 K critical point used
+    elsewhere in this project. Since the scan starts at T_sat(P_upstream)
+    ~= T_upstream and moves to lower T (lower P2), T_upstream itself is
+    the binding constraint: this function raises ValueError immediately
+    if T_upstream exceeds Table A.4's range, rather than let the scan
+    fail partway through with a less legible error. hem_critical_flow()
+    (isenthalpic) remains available as a fallback this close to the
+    critical point; CoolProp integration (Priority 4) would remove this
+    limitation entirely.
+
+    Parameters
+    ----------
+    Cd : float
+        Discharge coefficient.
+    A : float
+        Total orifice area, m^2.
+    T_upstream : float
+        Upstream temperature (= tank temperature), K. Must be
+        <= n2o_properties.T_MAX_A4 (307.33 K) -- see domain restriction.
+    P_upstream : float
+        Upstream pressure, Pa.
+    x_inlet : float, optional
+        Vapour quality at the orifice inlet (from feed-line flash).
+        Default 0.
+    n_steps : int, optional
+        Number of P2 values to scan between P_sat and P_min. Default 200.
+
+    Returns
+    -------
+    dict
+        "m_dot_crit"  : critical (maximum) HEM mass flow rate, kg/s
+        "P2_crit"     : downstream pressure at the critical condition, Pa
+        "x_crit"      : vapour quality at the critical condition
+        "rho_crit"    : HEM mixture density at the critical condition, kg/m^3
+
+    Raises
+    ------
+    ValueError
+        If T_upstream is outside Table A.4's valid range.
+    """
+    import math
+    from n2o_properties import (P_sat, T_sat as T_sat_f, rho_liquid_sat,
+                                 nu_vapor_sat, s_liquid_sat, s_vapor_sat,
+                                 s_fg, T_MIN_A4, T_MAX_A4)
+
+    M_N2O = 44.013
+
+    if not (T_MIN_A4 <= T_upstream <= T_MAX_A4):
+        raise ValueError(
+            f"T_upstream = {T_upstream:.2f} K is outside Table A.4's valid "
+            f"range [{T_MIN_A4}, {T_MAX_A4}] K (NIST WebBook, Lemmon & Span "
+            "2006), the only source of entropy data in this project. The "
+            "isentropic choking scan cannot be evaluated this close to the "
+            "critical point with the current data. hem_critical_flow() "
+            "(isenthalpic) remains available as a fallback in this regime "
+            "-- see also docs/future_work.md, Priority 4 (CoolProp/REFPROP "
+            "integration), which would remove this limitation."
+        )
+
+    # Upstream entropy (conserved along isentropic path)
+    s_up = s_liquid_sat(T_upstream) + x_inlet * s_fg(T_upstream)
+
+    # Saturation pressure at upstream temperature -- onset of two-phase flow
+    P_sat_up = P_sat(T_upstream)
+
+    # Scan range: from just below P_sat down to 5% of P_sat (mirrors
+    # hem_critical_flow exactly, for a like-for-like comparison)
+    P_min   = max(0.05 * P_sat_up, 1e5)   # never below 1 bar
+    P_start = min(P_sat_up * 0.999, P_upstream - 1e3)
+
+    best_m = 0.0
+    best_P2 = P_start
+    best_x  = 0.0
+    best_rho = rho_liquid_sat(T_upstream)
+
+    dP_step = (P_start - P_min) / max(n_steps, 1)
+    P2 = P_start
+
+    while P2 >= P_min:
+        T2 = T_sat_f(P2)
+        # T2 <= T_upstream <= T_MAX_A4 always holds since P2 <= P_start <
+        # P_sat(T_upstream), so this guard should never trigger -- kept
+        # anyway per the project's "fail loudly, never silently" convention,
+        # mirroring the hfg2 <= 0 guard in hem_critical_flow.
+        if T2 > T_MAX_A4:
+            P2 -= dP_step; continue
+
+        rho_l2 = rho_liquid_sat(T2)
+        rho_v2 = M_N2O / nu_vapor_sat(T2)
+        sfg2   = s_fg(T2)
+
+        if sfg2 <= 0:
+            P2 -= dP_step; continue
+
+        x = (s_up - s_liquid_sat(T2)) / sfg2
         x = max(0.0, min(1.0, x))
 
         nu_mix  = (1.0 - x) / rho_l2 + x / rho_v2
@@ -509,34 +727,6 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     # large kappa -> more weight on SPI (less equilibrium); small kappa -> HEM.
     m_dot_Dyer = (kappa / (1.0 + kappa)) * m_dot_SPI + (1.0 / (1.0 + kappa)) * m_dot_HEM
 
-    # Apply HEM choking limit to m_dot_HEM only, then re-blend.
-    #
-    # Physical rationale: the two-phase speed-of-sound limit (choking)
-    # applies to the HEM component -- which assumes full thermodynamic
-    # equilibrium. The SPI component (no vaporisation, liquid throughout)
-    # is not subject to the same limit. Capping m_dot_HEM before blending
-    # preserves the physical meaning of the Dyer non-equilibrium correction:
-    # the Dyer result can legitimately exceed the pure HEM critical flow
-    # because the kappa weighting accounts for partial vaporisation.
-    # Consistent with Waxman (2013): measured flows exceed the HEM
-    # critical value by 5-15% (exactly the Dyer non-equilibrium correction).
-    # Correct NHNE formula (Waxman 2013 Eq.9 / Solomon 2011):
-    # large kappa -> more weight on SPI (less equilibrium); small kappa -> HEM.
-    m_dot_Dyer = (kappa / (1.0 + kappa)) * m_dot_SPI + (1.0 / (1.0 + kappa)) * m_dot_HEM
-
-    # NOTE ON CHOKING LIMIT:
-    # The Dyer formula has no built-in velocity ceiling. At large delta_P
-    # (beyond the design regime), it over-predicts beyond the physical
-    # two-phase choking limit. The function hem_critical_flow() computes
-    # this limit and is available for standalone use. It is NOT applied
-    # automatically here because:
-    #   (a) In the design regime (delta_P = 20-50 bar), Dyer is within
-    #       +-5% of experiment without any cap (Waxman 2013/2014).
-    #   (b) The correct cap depends on the isentropic path (needs entropy
-    #       data not in the current property tables for a rigorous result).
-    #   (c) The critical-flow regime is outside the tool's design domain
-    #       (documented in future_work.md, Priority 3).
-
     return {
         "m_dot_Dyer": m_dot_Dyer,
         "m_dot_SPI":  m_dot_SPI,
@@ -548,36 +738,17 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
 
 if __name__ == "__main__":
     # --- Validation case ---
-    #
-    #   The injector_spi.py example (50 bar upstream / 20 bar downstream at
-    #   20 degC) is NOT usable here: at 20 degC, P_sat is ~51.4 bar, so that
-    #   example's 50 bar upstream is already below saturation -- valid for
-    #   demonstrating spi_sufficient() == False, but outside this module's
-    #   domain (Dyer assumes liquid AT the orifice inlet; see
-    #   dyer_non_equilibrium_parameter's docstring). Confirmed directly: an
-    #   initial attempt to reuse that exact example raised the expected
-    #   ValueError here, which is itself useful confirmation that the
-    #   domain check is doing its job.
-    #
-    #   Instead: N2O at 20 degC upstream, with the tank/run-line pressure
-    #   raised to 55 bar (a modest ~3.6 bar of subcooling margin above
-    #   P_sat(20 degC) ~= 51.4 bar -- comparable to feed_line.py's own
-    #   Case B), and 20 bar downstream. This keeps the inlet liquid (valid
-    #   for Dyer) while still crossing saturation inside the orifice
-    #   (so SPI is still expected to over-predict, per Section 2.4/3.3).
-
     from n2o_properties import rho_liquid_sat, nu_vapor_sat
 
-    M_N2O = 44.013  # kg/kmol, molar mass of N2O (n2o_properties.py convention)
+    M_N2O = 44.013  # kg/kmol
 
     T_upstream = 293.15   # K, 20 degC
     P_upstream = 55e5     # Pa, 55 bar (subcooled: P_sat(20 degC) ~= 51.4 bar)
     P_downstream = 20e5   # Pa, 20 bar chamber pressure
     Cd = 0.65
-    A = 3.79e-6            # m^2, same example orifice area as injector_spi.py
+    A = 3.79e-6            # m^2
 
     rho_l_upstream = rho_liquid_sat(T_upstream)
-
     T_downstream = T_sat(P_downstream)
     rho_l_downstream = rho_liquid_sat(T_downstream)
     rho_v_downstream = M_N2O / nu_vapor_sat(T_downstream)
@@ -587,25 +758,37 @@ if __name__ == "__main__":
 
     print("Two-phase injector model (HEM + Dyer) -- example evaluation")
     print("-" * 60)
-    print(f"Upstream temperature:     {T_upstream:.2f} K ({T_upstream-273.15:.1f} degC)")
-    print(f"Upstream pressure:        {P_upstream/1e5:.1f} bar")
-    print(f"Downstream pressure:      {P_downstream/1e5:.1f} bar")
-    print(f"P_sat at T_upstream:      {P_sat(T_upstream)/1e5:.2f} bar")
-    print(f"T_downstream (=T_sat(P_downstream)): {T_downstream:.2f} K "
-          f"({T_downstream-273.15:.1f} degC)")
-    print(f"rho_l upstream:           {rho_l_upstream:.1f} kg/m^3")
-    print(f"rho_l downstream:         {rho_l_downstream:.1f} kg/m^3")
-    print(f"rho_v downstream:         {rho_v_downstream:.2f} kg/m^3")
-    print("-" * 60)
-    print(f"Vapor quality at exit, x: {result['x_exit']:.4f}")
-    print(f"Dyer kappa:               {result['kappa']:.3f}")
-    print("-" * 60)
+    print(f"Dyer-predicted mass flow: {result['m_dot_Dyer']*1000:.1f} g/s")
     print(f"SPI-predicted mass flow:  {result['m_dot_SPI']*1000:.1f} g/s")
     print(f"HEM-predicted mass flow:  {result['m_dot_HEM']*1000:.1f} g/s")
-    print(f"Dyer-predicted mass flow: {result['m_dot_Dyer']*1000:.1f} g/s")
-    print("-" * 60)
-    reduction_pct = 100.0 * (1.0 - result['m_dot_Dyer'] / result['m_dot_SPI'])
-    print(f"Dyer vs SPI reduction:    {reduction_pct:.1f}%")
-    print("  -> As expected (Section 3.3), the two-phase-aware models predict")
-    print("     a lower mass flow than pure SPI, which over-predicts by")
-    print("     assuming single-phase liquid throughout the orifice.")
+
+    # --- Waxman validation conditions, for the isenthalpic vs isentropic
+    #     critical-flow comparison (added September 2026, Priority 1) ---
+    print()
+    print("=" * 60)
+    print("Isenthalpic vs isentropic critical flow -- Waxman conditions")
+    print("(T1 = 280 K, P1 = 4.36 MPa, D = 1.5 mm, Cd = 0.65)")
+    print("=" * 60)
+
+    T1 = 280.0
+    P1 = 4.36e6
+    Cd_w = 0.65
+    D_w = 0.0015
+    A_w = math.pi * (D_w / 2.0) ** 2
+
+    crit_h = hem_critical_flow(Cd_w, A_w, T1, P1)
+    crit_s = hem_critical_flow_isentropic(Cd_w, A_w, T1, P1)
+
+    print(f"  Isenthalpic : m_dot_crit = {crit_h['m_dot_crit']*1000:6.2f} g/s  "
+          f"at P2_crit = {crit_h['P2_crit']/1e5:5.2f} bar, "
+          f"x_crit = {crit_h['x_crit']:.4f}")
+    print(f"  Isentropic  : m_dot_crit = {crit_s['m_dot_crit']*1000:6.2f} g/s  "
+          f"at P2_crit = {crit_s['P2_crit']/1e5:5.2f} bar, "
+          f"x_crit = {crit_s['x_crit']:.4f}")
+    diff_pct = 100.0 * (crit_s['m_dot_crit'] - crit_h['m_dot_crit']) / crit_h['m_dot_crit']
+    print(f"  Difference  : {diff_pct:+.2f}%")
+    print()
+    print("  Reference (Waxman experimental, moderate dP): 44.0-48.0 g/s")
+    print("  Both critical-flow ceilings should sit below the experimental")
+    print("  Dyer-regime values -- Dyer's non-equilibrium correction")
+    print("  legitimately predicts above either HEM-only ceiling.")

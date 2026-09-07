@@ -26,9 +26,21 @@ for BOTH the correlations and the tabulated data (the table's own T range).
 All functions raise ValueError outside this range rather than silently
 extrapolating, since neither the fit nor the table is guaranteed valid there.
 
+IMPORTANT EXCEPTION -- Table A.4 (cp_l, mu_l, s_l, s_v; NIST WebBook) does
+NOT cover the full range above: it stops at 307.33 K, short of the
+309.52 K critical-point limit used everywhere else in this module. This
+is a real, separate constraint (see T_MIN_A4/T_MAX_A4 and
+_check_range_a4 below), not an oversight -- it reflects the actual extent
+of the downloaded NIST data. Functions built on Table A.4
+(cp_liquid_sat, mu_liquid_sat, s_liquid_sat, s_vapor_sat, s_fg) enforce
+this narrower range explicitly.
+
 Units: T in Kelvin, P in Pa, molar volumes in m^3/kmol, molar enthalpies
-in kJ/kmol throughout this module (see CSV header for the raw-file unit
-trap: the source table stores enthalpies per MOL, not per kmol).
+in kJ/kmol, molar entropies in kJ/(kmol.K) [numerically identical to
+J/(mol.K), the unit the source table uses -- no factor-of-1000 conversion
+needed, unlike h_l/h_v, since kJ/mol and J/mol.K/1000 mol/kmol cancel
+exactly] throughout this module. See the CSV header for the raw-file unit
+trap on enthalpy.
 """
 
 import csv
@@ -38,6 +50,19 @@ import os
 # Valid temperature range for all correlations in this module (Kelvin)
 T_MIN = 182.33
 T_MAX = 309.52
+
+# Valid temperature range for functions built on Table A.4 only (NIST
+# WebBook, Lemmon & Span 2006): cp_liquid_sat, mu_liquid_sat,
+# s_liquid_sat, s_vapor_sat, s_fg. Narrower than [T_MIN, T_MAX] above --
+# Table A.4's last row is 307.33 K, not 309.52 K. Added September 2026
+# while implementing the isentropic choking limit (Priority 1), which is
+# the first place this distinction actually matters: the isentropic scan
+# evaluates entropy at temperatures up to T_upstream, and a design point
+# with T_upstream between 307.33 K and 309.52 K would previously have
+# passed the (too permissive) _check_range(T) check and then hit an
+# opaque "should be unreachable" RuntimeError inside _interp.
+T_MIN_A4 = 182.33
+T_MAX_A4 = 307.33
 
 # Critical point (reference values, for sanity checks / user-facing warnings)
 T_CRIT = 309.52    # K  (~36.4 degC)
@@ -60,6 +85,29 @@ def _check_range(T):
         raise ValueError(
             f"Temperature {T:.2f} K is outside the correlation's valid range "
             f"[{T_MIN}, {T_MAX}] K. Results outside this range are not reliable."
+        )
+
+
+def _check_range_a4(T):
+    """
+    Range check for functions based on Table A.4 (NIST WebBook), which is
+    narrower than the module's main [T_MIN, T_MAX] range -- see the
+    T_MIN_A4/T_MAX_A4 module docstring note above. Raising a specific,
+    named error here (rather than falling through to the correlation's
+    wider _check_range and then hitting _interp's generic "should be
+    unreachable" RuntimeError) is the "fail loudly" convention used
+    throughout this project: the caller should immediately understand
+    which table ran out of data, not just that something, somewhere,
+    was inconsistent.
+    """
+    if not (T_MIN_A4 <= T <= T_MAX_A4):
+        raise ValueError(
+            f"Temperature {T:.2f} K is outside Table A.4's valid range "
+            f"[{T_MIN_A4}, {T_MAX_A4}] K (NIST WebBook, Lemmon & Span 2006). "
+            f"This table is narrower than the main correlation's range "
+            f"([{T_MIN}, {T_MAX}] K): it stops short of the critical point. "
+            "Affects cp_liquid_sat, mu_liquid_sat, s_liquid_sat, "
+            "s_vapor_sat, and s_fg."
         )
 
 
@@ -456,6 +504,9 @@ def cp_liquid_sat(T):
     (309.52 K), diverging to infinity at T_crit. Values above 300 K
     should be used with caution in engineering models.
 
+    Range note: Table A.4 stops at 307.33 K (T_MAX_A4), not the module's
+    overall T_MAX = 309.52 K -- see _check_range_a4.
+
     Parameters
     ----------
     T : float
@@ -466,7 +517,7 @@ def cp_liquid_sat(T):
     float
         Liquid heat capacity, J/(kg.K).
     """
-    _check_range(T)
+    _check_range_a4(T)
     tbl = _load_saturation_table()
     return _interp(T, tbl["T_K_a4"], tbl["cp_l"])
 
@@ -481,6 +532,9 @@ def mu_liquid_sat(T):
     At design conditions (220-300 K): 60-180 uPa.s.
     Decreases strongly with temperature (liquid viscosity typical behaviour).
 
+    Range note: Table A.4 stops at 307.33 K (T_MAX_A4), not the module's
+    overall T_MAX = 309.52 K -- see _check_range_a4.
+
     Parameters
     ----------
     T : float
@@ -491,9 +545,97 @@ def mu_liquid_sat(T):
     float
         Dynamic viscosity of saturated liquid, Pa.s.
     """
-    _check_range(T)
+    _check_range_a4(T)
     tbl = _load_saturation_table()
     return _interp(T, tbl["T_K_a4"], tbl["mu_l"])
+
+
+def s_liquid_sat(T):
+    """
+    Saturated liquid molar entropy of N2O at temperature T, from Table A.4
+    (NIST WebBook, Lemmon & Span 2006) via linear interpolation.
+
+    Added September 2026 for the isentropic choking limit (Priority 1,
+    future_work.md): the true two-phase speed-of-sound condition that
+    defines choking is a constant-ENTROPY (isentropic) derivative,
+        c^2 = (dP/drho)_s,
+    because an acoustic disturbance is a small, fast, essentially
+    reversible perturbation on top of the (possibly irreversible) mean
+    flow -- unlike the real thermodynamic state at an orifice exit, which
+    is correctly described by the isenthalpic path (see
+    vapor_quality_isenthalpic in injector_two_phase.py) because the
+    orifice itself is adiabatic but not reversible.
+
+    Units: kJ/(kmol.K), numerically identical to the source table's
+    J/(mol.K) -- no conversion factor needed (1 J/mol.K = 1 kJ/kmol.K),
+    unlike h_l/h_v, which the source stores in kJ/mol and this module
+    converts to kJ/kmol.
+
+    Range note: Table A.4 stops at 307.33 K (T_MAX_A4), narrower than the
+    module's overall T_MAX = 309.52 K -- see _check_range_a4.
+
+    Parameters
+    ----------
+    T : float
+        Temperature, K.
+
+    Returns
+    -------
+    float
+        Saturated liquid molar entropy, s_l, in kJ/(kmol.K).
+    """
+    _check_range_a4(T)
+    tbl = _load_saturation_table()
+    return _interp(T, tbl["T_K_a4"], tbl["s_l"])
+
+
+def s_vapor_sat(T):
+    """
+    Saturated vapour molar entropy of N2O at temperature T, from Table A.4
+    (NIST WebBook, Lemmon & Span 2006) via linear interpolation.
+
+    See s_liquid_sat docstring for the physical motivation, unit note,
+    and range note -- identical here.
+
+    Parameters
+    ----------
+    T : float
+        Temperature, K.
+
+    Returns
+    -------
+    float
+        Saturated vapour molar entropy, s_v, in kJ/(kmol.K).
+    """
+    _check_range_a4(T)
+    tbl = _load_saturation_table()
+    return _interp(T, tbl["T_K_a4"], tbl["s_v"])
+
+
+def s_fg(T):
+    """
+    Entropy of vaporization of N2O at temperature T,
+        s_fg(T) = s_v(T) - s_l(T)
+    the molar entropy increase on fully vaporizing saturated liquid at
+    temperature T -- the entropy-domain analogue of h_fg(T), used as the
+    denominator of the isentropic vapour-quality formula (Priority 1):
+
+        x_is(P2) = (s_up - s_l(T_sat(P2))) / s_fg(T_sat(P2))
+
+    Parameters
+    ----------
+    T : float
+        Temperature, K.
+
+    Returns
+    -------
+    float
+        Entropy of vaporization, kJ/(kmol.K). Positive throughout the
+        valid range (vapour has higher entropy than liquid at the same
+        T, away from the critical point where the two converge -- same
+        trend as h_fg, see docs/01_n2o_thermodynamics.md Section 1.5).
+    """
+    return s_vapor_sat(T) - s_liquid_sat(T)
 
 
 def mu_mixture(x, T=None, mu_l=None):
@@ -661,3 +803,31 @@ if __name__ == "__main__":
     print(f"\nLatent heat h_fg(T) trend approaching the critical point:")
     for T_check in [220.0, 260.0, 290.0, 305.0, 309.5]:
         print(f"  h_fg({T_check:.1f} K) = {h_fg(T_check)/1000:.2f} kJ/mol")
+
+    # --- Self-validation of the new entropy functions (s_liquid_sat,
+    #     s_vapor_sat, s_fg), added September 2026 for Priority 1 ---
+    print("-" * 75)
+    print("Validating entropy functions (interpolated from Table A.4):")
+    print("-" * 75)
+
+    # Table A.4 rows are at 182.33 + 5*n K (triple point + 5 K steps),
+    # NOT at round numbers -- 252.33 K is an exact row, 250.0 K is not.
+    T_exact_a4 = 252.33  # exact row in Table A.4
+    print(f"Exact-row check at T = {T_exact_a4} K:")
+    print(f"  s_liquid_sat = {s_liquid_sat(T_exact_a4):.4f} kJ/(kmol.K) "
+          f"(table s_l: 24.4610)")
+    print(f"  s_vapor_sat  = {s_vapor_sat(T_exact_a4):.4f} kJ/(kmol.K) "
+          f"(table s_v: 72.9670)")
+    print(f"  s_fg         = {s_fg(T_exact_a4):.4f} kJ/(kmol.K)")
+
+    print(f"\ns_fg(T) trend approaching the (Table A.4) high-T limit:")
+    for T_check in [200.0, 240.0, 270.0, 300.0, 307.0]:
+        print(f"  s_fg({T_check:.1f} K) = {s_fg(T_check):.3f} kJ/(kmol.K)")
+
+    print(f"\nOut-of-range check (Table A.4 stops at {T_MAX_A4} K, "
+          f"below the correlation's own {T_MAX} K):")
+    try:
+        s_liquid_sat(308.0)
+        print("  UNEXPECTED: no error raised")
+    except ValueError as e:
+        print(f"  Correctly raised ValueError: {e}")

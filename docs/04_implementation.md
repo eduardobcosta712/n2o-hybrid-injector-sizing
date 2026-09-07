@@ -48,7 +48,7 @@ The HEM/Dyer two-phase injector model (Section 3.4) and the two-phase feed-line 
 
 **Table A.3** (NIST WebBook, Millat et al. 1991 viscosity correlation, downloaded August 2026): saturated vapour dynamic viscosity $\mu_v(T)$ in 26 points (182–307 K). Uncertainty ~2% for T > 150 K. Used in `mu_vapor_sat(T)` and `mu_mixture(x, T)` for the two-phase feed-line model.
 
-**Table A.4** (NIST WebBook, Lemmon & Span 2006 EOS + Laesecke & Hafer 1998 liquid viscosity, downloaded August 2026): isobaric heat capacity of saturated liquid $c_{pl}(T)$, saturated liquid dynamic viscosity $\mu_l(T)$, and liquid/vapour entropy $s_l(T)$, $s_v(T)$. Used in `cp_liquid_sat(T)` and `mu_liquid_sat(T)`. Entropy data is available for future use in the isentropic choking limit (see `future_work.md`, Priority 3).
+**Table A.4** (NIST WebBook, Lemmon & Span 2006 EOS + Laesecke & Hafer 1998 liquid viscosity, downloaded August 2026): isobaric heat capacity of saturated liquid $c_{pl}(T)$, saturated liquid dynamic viscosity $\mu_l(T)$, and liquid/vapour entropy $s_l(T)$, $s_v(T)$. Used in `cp_liquid_sat(T)` and `mu_liquid_sat(T)`. Entropy data is available for future use in the isentropic choking limit (see `future_work.md`, Priority 1).
 
 Note: $\mu_l(T)$ replaces the previous constant `MU_LIQUID_N2O = 1.5e-4 Pa·s` in the feed-line model. The constant is retained as a fallback where T is not known.
 
@@ -71,9 +71,9 @@ Run via `python n2o_properties.py`, which checks:
 
 **Two-phase HEM model (implemented August 2026).** The feed line model now handles two distinct flow regimes:
 
-**Single-phase region** ($P > P_{sat}(T_{tank})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l(T_{tank})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (`MU_LIQUID_N2O = 1.5\times10^{-4}$ Pa·s); now temperature-dependent.
+**Single-phase region** ($P > P_{\mathrm{sat}}(T_{\mathrm{tank}})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{\mathrm{tank}})$ and $\mu_l(T_{\mathrm{tank}})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (`MU_LIQUID_N2O = 1.5\times10^{-4}$ Pa·s); now temperature-dependent.
 
-**Two-phase region** ($P \leq P_{sat}(T_{tank})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
+**Two-phase region** ($P \leq P_{\mathrm{sat}}(T_{\mathrm{tank}})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
 
 $$x(s) = \frac{h_l(T_{tank}) - h_l(T_{sat}(P(s)))}{h_{fg}(T_{sat}(P(s)))}, \qquad \rho_{mix} = \frac{1}{\dfrac{1-x}{\rho_l} + \dfrac{x}{\rho_v}}, \qquad \mu_{mix} = (1-x)\,\mu_l + x\,\mu_v$$
 
@@ -170,9 +170,34 @@ Available as a standalone function in `injector_two_phase.py`. Implements Waxman
 
 $$\dot{m}_{crit} = \max_{P_2 < P_{sat}} \left[ C_d A \sqrt{2\,\rho_{mix}(P_2)\,\Delta P} \right]$$
 
-This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\text{K}$, $P_1 = 4.36\,\text{MPa}$): $\dot{m}_{crit} = 41.1\,\text{g/s}$ at $P_{2,crit} = 30.4\,\text{bar}$.
+This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\text{K}$, $P_1 = 4.36\,\text{MPa}$): $\dot{m}_{\mathrm{crit}} = 41.1\,\text{g/s}$ at $P_{2,\mathrm{crit}} = 30.4\,\text{bar}$.
 
-The function is **not applied automatically** in `dyer_mass_flow()` because the Dyer non-equilibrium correction legitimately predicts above the HEM-only ceiling (confirmed by Waxman experimental data: 44–48 g/s vs. HEM cap of 41.1 g/s). Automatic integration requires the isentropic path (constant entropy), not the isenthalpic path used here. Entropy data is now available in Table A.4 but the isentropic inversion is deferred (see `future_work.md`, Priority 3).
+The function is **not applied automatically** in `dyer_mass_flow()` because the Dyer non-equilibrium correction legitimately predicts above the HEM-only ceiling (confirmed by Waxman experimental data: 44–48 g/s vs. HEM cap of 41.1 g/s).
+
+### Isentropic choking scan — `hem_critical_flow_isentropic()` (added September 2026, Priority 1)
+
+`hem_critical_flow()` above uses the isenthalpic path ($h=$ const), which correctly describes the real thermodynamic *state* of the fluid at the orifice exit (an orifice is adiabatic, so the 1st law gives $h_{up}=h_{down}$ regardless of internal irreversibility), but is only an approximation to the true choking condition. Choking is set by the two-phase speed of sound, $c^2 = (\partial P/\partial\rho)_s$ — a derivative taken at constant **entropy**, because an acoustic disturbance is a small, fast, essentially reversible perturbation on top of the (possibly irreversible) mean flow.
+
+`hem_critical_flow_isentropic()` implements this more rigorous scan, mirroring `hem_critical_flow()` exactly except along $s=$const:
+
+$$x_{is}(P_2) = \frac{s_{up} - s_l(T_{sat}(P_2))}{s_v(T_{sat}(P_2)) - s_l(T_{sat}(P_2))}, \qquad \dot m_{crit,\,is} = \max_{P_2 < P_{sat}} \Big[C_d A \sqrt{2\,\rho_{HEM}(x_{is})\,(P_{up}-P_2)}\Big]$$
+
+The two required entropy functions, `s_liquid_sat(T)` and `s_vapor_sat(T)`, were added to `n2o_properties.py`, interpolating $s_l$, $s_v$ from Table A.4 (NIST WebBook) — the same table already used for `cp_liquid_sat`/`mu_liquid_sat`, previously loaded but with no public accessor. `s_fg(T) = s_v(T) - s_l(T)` is the entropy-domain analogue of `h_fg(T)`.
+
+**Table A.4 range gap.** While implementing this, a pre-existing gap surfaced: Table A.4 only covers 182.33–307.33 K, narrower than the module's main correlation range (up to 309.52 K, the critical point). `cp_liquid_sat`/`mu_liquid_sat` were previously checked against the wider range, so a call between 307.33 K and 309.52 K would silently fall through to `_interp`'s generic "should be unreachable" `RuntimeError`. This is now an explicit, named range check (`T_MIN_A4`, `T_MAX_A4`, `_check_range_a4`), applied consistently to all four Table-A.4 functions plus the two new entropy functions. `hem_critical_flow_isentropic()` checks `T_upstream` against this range up front and raises a `ValueError` pointing to `hem_critical_flow()` (isenthalpic) as a fallback, and to Priority 4 (CoolProp/REFPROP) as the eventual fix.
+
+**Kept side by side, not replaced.** `hem_critical_flow()` (isenthalpic) is unchanged and remains the version cited in `validation/waxman_2013_results.md`. `hem_critical_flow_isentropic()` is additive, for direct comparison and eventual use as the Dyer cap.
+
+**Validation.** At Waxman conditions ($T_1=280$ K, $P_1=4.36$ MPa, $D=1.5$ mm, $C_d=0.65$):
+
+| Path | $\dot m_{crit}$ | $P_{2,crit}$ | $x_{crit}$ |
+|---|---|---|---|
+| Isenthalpic (`hem_critical_flow`) | 41.05 g/s | 30.37 bar | 0.0856 |
+| Isentropic (`hem_critical_flow_isentropic`) | 41.64 g/s | 29.65 bar | 0.0880 |
+
++1.43% difference — both remain below the experimental Dyer-regime range (44.0–48.0 g/s), consistent with the existing interpretation that Dyer's non-equilibrium correction legitimately predicts above either HEM-only ceiling.
+
+**What remains** (see `future_work.md`, Priority 1): deciding how `hem_critical_flow_isentropic()` should be applied automatically as a cap inside `dyer_mass_flow()`, and re-confirming the Waxman MAPE afterwards.
 
 ### File location
 

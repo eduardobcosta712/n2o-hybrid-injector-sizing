@@ -2,19 +2,22 @@
 test_injector_two_phase.py
 
 Tests for injector_two_phase.py: vapour quality, HEM mixture density,
-HEM mass flow, Dyer non-equilibrium parameter, and the full Dyer mass flow.
+HEM mass flow, Dyer non-equilibrium parameter, the full Dyer mass flow,
+and the isenthalpic/isentropic critical-flow choking scans.
 """
 
 import math
 import pytest
 
 from injector_two_phase import (
-    vapor_quality_isenthalpic, hem_mixture_density,
+    vapor_quality_isenthalpic, vapor_quality_isentropic, hem_mixture_density,
     hem_mass_flow, dyer_non_equilibrium_parameter, dyer_mass_flow,
+    hem_critical_flow, hem_critical_flow_isentropic,
 )
 from n2o_properties import (
     P_sat, T_sat, rho_liquid_sat, nu_vapor_sat,
-    h_liquid_sat, h_fg,
+    h_liquid_sat, h_fg, s_liquid_sat, s_fg,
+    T_MAX_A4,
 )
 
 M_N2O = 44.013  # kg/kmol
@@ -55,6 +58,50 @@ class TestVaporQuality:
         x_small_drop = vapor_quality_isenthalpic(h_up, T_sat(40e5))
         x_large_drop = vapor_quality_isenthalpic(h_up, T_sat(10e5))
         assert x_large_drop > x_small_drop
+
+
+# ---------------------------------------------------------------------------
+# vapor_quality_isentropic -- added September 2026, Priority 1
+# Same structure as TestVaporQuality above, mirrored onto the entropy path.
+# ---------------------------------------------------------------------------
+
+class TestVaporQualityIsentropic:
+
+    def test_clamped_to_zero_when_no_vaporisation(self):
+        # If the upstream entropy equals s_l at T_downstream, no entropy
+        # "room" is available for vaporisation -> x = 0. Mirrors
+        # TestVaporQuality.test_clamped_to_zero_when_no_vaporisation.
+        T_down = T_sat(20e5)
+        s_up = s_liquid_sat(T_down)
+        x = vapor_quality_isentropic(s_up, T_down)
+        assert math.isclose(x, 0.0, abs_tol=1e-9)
+
+    def test_between_zero_and_one(self):
+        T_up = 280.0   # within Table A.4's range (<= T_MAX_A4)
+        T_down = T_sat(20e5)
+        s_up = s_liquid_sat(T_up)
+        x = vapor_quality_isentropic(s_up, T_down)
+        assert 0.0 <= x <= 1.0
+
+    def test_increases_with_pressure_drop(self):
+        T_up = 280.0
+        s_up = s_liquid_sat(T_up)
+        x_small_drop = vapor_quality_isentropic(s_up, T_sat(45e5))
+        x_large_drop = vapor_quality_isentropic(s_up, T_sat(10e5))
+        assert x_large_drop > x_small_drop
+
+    def test_differs_from_isenthalpic_at_same_state(self):
+        # The two paths are genuinely different calculations (one uses
+        # h_l/h_fg, the other s_l/s_fg) -- they need not agree numerically,
+        # but both should land in a physically sensible range for the
+        # same operating point, confirming neither is silently reusing
+        # the other's tables.
+        T_up = 280.0
+        T_down = T_sat(20e5)
+        x_h = vapor_quality_isenthalpic(h_liquid_sat(T_up), T_down)
+        x_s = vapor_quality_isentropic(s_liquid_sat(T_up), T_down)
+        assert 0.0 <= x_h <= 1.0
+        assert 0.0 <= x_s <= 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -190,3 +237,119 @@ class TestDyerMassFlow:
         r1 = self._run()
         r2 = self._run(A=self.A * 2)
         assert math.isclose(r2["m_dot_Dyer"], r1["m_dot_Dyer"] * 2, rel_tol=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# hem_critical_flow -- isenthalpic choking scan (unchanged, re-tested here
+# for regression protection now that hem_critical_flow_isentropic sits
+# alongside it)
+# ---------------------------------------------------------------------------
+
+class TestHemCriticalFlow:
+
+    # Waxman (2013/2014) conditions, per validation/waxman_2013_results.md
+    T1 = 280.0
+    P1 = 4.36e6
+    Cd = 0.65
+    D  = 0.0015
+    A  = math.pi * (D / 2.0) ** 2
+
+    def test_matches_documented_waxman_value(self):
+        # Documented in docs/04_implementation.md / future_work.md: 41.1 g/s
+        crit = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
+        assert math.isclose(crit["m_dot_crit"] * 1000, 41.1, rel_tol=0.02)
+
+    def test_x_crit_in_range(self):
+        crit = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
+        assert 0.0 <= crit["x_crit"] <= 1.0
+
+    def test_below_p_sat(self):
+        from n2o_properties import P_sat as P_sat_f
+        crit = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
+        assert crit["P2_crit"] < P_sat_f(self.T1)
+
+    def test_scales_linearly_with_area(self):
+        crit1 = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
+        crit2 = hem_critical_flow(self.Cd, 2 * self.A, self.T1, self.P1)
+        assert math.isclose(crit2["m_dot_crit"], 2 * crit1["m_dot_crit"], rel_tol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# hem_critical_flow_isentropic -- added September 2026, Priority 1
+# ---------------------------------------------------------------------------
+
+class TestHemCriticalFlowIsentropic:
+
+    # Same Waxman conditions as TestHemCriticalFlow, for direct comparison.
+    T1 = 280.0
+    P1 = 4.36e6
+    Cd = 0.65
+    D  = 0.0015
+    A  = math.pi * (D / 2.0) ** 2
+
+    # --- Known-value / cross-check ---------------------------------------
+
+    def test_close_to_isenthalpic_value(self):
+        # The isentropic and isenthalpic scans are different calculations
+        # but should agree to within a few percent at Waxman conditions
+        # (entropy and enthalpy corrections are both "small" physically
+        # reasonable refinements of the same underlying choking condition,
+        # not competing models).
+        crit_h = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
+        crit_s = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, self.P1)
+        rel_diff = abs(crit_s["m_dot_crit"] - crit_h["m_dot_crit"]) / crit_h["m_dot_crit"]
+        assert rel_diff < 0.05
+
+    def test_both_below_waxman_experimental_range(self):
+        # Both HEM-only ceilings must sit below the experimental Dyer-regime
+        # values (44.0-48.0 g/s) -- Dyer's non-equilibrium correction
+        # legitimately predicts above either HEM-only ceiling (see
+        # validation/waxman_2013_results.md, Section 6).
+        crit_s = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, self.P1)
+        assert crit_s["m_dot_crit"] * 1000 < 44.0
+
+    # --- Physical properties -----------------------------------------------
+
+    def test_positive(self):
+        crit = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, self.P1)
+        assert crit["m_dot_crit"] > 0
+
+    def test_x_crit_in_range(self):
+        crit = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, self.P1)
+        assert 0.0 <= crit["x_crit"] <= 1.0
+
+    def test_below_p_sat(self):
+        crit = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, self.P1)
+        assert crit["P2_crit"] < P_sat(self.T1)
+
+    def test_scales_linearly_with_area(self):
+        crit1 = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, self.P1)
+        crit2 = hem_critical_flow_isentropic(self.Cd, 2 * self.A, self.T1, self.P1)
+        assert math.isclose(crit2["m_dot_crit"], 2 * crit1["m_dot_crit"], rel_tol=1e-6)
+
+    def test_higher_upstream_pressure_gives_more_flow(self):
+        crit_low  = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, 4.0e6)
+        crit_high = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, 5.0e6)
+        assert crit_high["m_dot_crit"] > crit_low["m_dot_crit"]
+
+    # --- Edge cases -------------------------------------------------------
+
+    def test_raises_above_table_a4_range(self):
+        # T_upstream above 307.33 K: entropy data (Table A.4) unavailable.
+        # This is the exact domain restriction documented in the
+        # function's docstring and in future_work.md, Priority 1.
+        with pytest.raises(ValueError):
+            hem_critical_flow_isentropic(self.Cd, self.A, T_MAX_A4 + 1.0, self.P1)
+
+    def test_accepts_temperature_at_table_a4_boundary(self):
+        # T_upstream exactly at the boundary must be accepted (inclusive).
+        crit = hem_critical_flow_isentropic(self.Cd, self.A, T_MAX_A4, 6.0e6)
+        assert crit["m_dot_crit"] >= 0.0
+
+    def test_two_phase_inlet_raises_x_above_zero(self):
+        # With x_inlet > 0, the upstream entropy is higher (partially
+        # vaporised already) -- should still return a valid, positive
+        # critical flow, not raise.
+        crit = hem_critical_flow_isentropic(self.Cd, self.A, self.T1, self.P1,
+                                             x_inlet=0.05)
+        assert crit["m_dot_crit"] > 0

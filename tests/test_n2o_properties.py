@@ -18,15 +18,9 @@ from n2o_properties import (
     P_sat, dP_sat_dT, T_sat, rho_liquid_sat,
     nu_vapor_sat, h_liquid_sat, h_vapor_sat, h_fg,
     mu_vapor_sat, mu_mixture,
+    s_liquid_sat, s_vapor_sat, s_fg,
     degree_of_subcooling,
-    T_MIN, T_MAX,
-)
-
-from n2o_properties import (
-    P_sat, dP_sat_dT, T_sat, rho_liquid_sat,
-    nu_vapor_sat, h_liquid_sat, h_vapor_sat, h_fg,
-    degree_of_subcooling,
-    T_MIN, T_MAX,
+    T_MIN, T_MAX, T_MIN_A4, T_MAX_A4,
 )
 
 # ---------------------------------------------------------------------------
@@ -326,3 +320,93 @@ class TestMuMixture:
         mu_vals = [mu_mixture(x, T=270.0) for x in x_vals]
         for i in range(len(mu_vals) - 1):
             assert mu_vals[i] >= mu_vals[i + 1]
+
+
+# ---------------------------------------------------------------------------
+# s_liquid_sat / s_vapor_sat / s_fg -- added September 2026, Priority 1
+# (isentropic choking limit). Same three-category structure as the rest
+# of this file: known value, physical property, edge case.
+# ---------------------------------------------------------------------------
+
+class TestEntropyFunctions:
+    """Tests for s_liquid_sat(T), s_vapor_sat(T), and s_fg(T) -- Table A.4."""
+
+    # --- Known-value checks -------------------------------------------------
+
+    def test_s_liquid_exact_table_row(self):
+        # Table A.4 row at 252.33 K: s_l = 24.4610 J/(mol.K)
+        assert math.isclose(s_liquid_sat(252.33), 24.4610, rel_tol=1e-4)
+
+    def test_s_vapor_exact_table_row(self):
+        # Table A.4 row at 252.33 K: s_v = 72.9670 J/(mol.K)
+        assert math.isclose(s_vapor_sat(252.33), 72.9670, rel_tol=1e-4)
+
+    def test_s_fg_matches_difference_at_exact_row(self):
+        assert math.isclose(s_fg(252.33), 72.9670 - 24.4610, rel_tol=1e-6)
+
+    def test_midpoint_interpolation(self):
+        # Halfway between two adjacent Table A.4 rows (247.33 K, 252.33 K)
+        # should equal the simple average of the two rows' values --
+        # exact by construction for linear interpolation.
+        s_l_247 = s_liquid_sat(247.33)
+        s_l_252 = s_liquid_sat(252.33)
+        s_l_mid = s_liquid_sat(249.83)
+        assert math.isclose(s_l_mid, (s_l_247 + s_l_252) / 2.0, rel_tol=1e-9)
+
+    # --- Physical properties -------------------------------------------------
+
+    def test_s_fg_positive_throughout_a4_range(self):
+        # Vapour entropy must exceed liquid entropy at the same T, away
+        # from the critical point (same trend as h_fg, Section 1.5).
+        for T in [190.0, 220.0, 260.0, 300.0, T_MAX_A4]:
+            assert s_fg(T) > 0, f"s_fg({T}) = {s_fg(T):.2f} -- must be positive"
+
+    def test_s_fg_decreases_toward_critical_point(self):
+        # s_fg -> 0 as T -> T_crit, mirroring h_fg's trend (Section 1.5):
+        # liquid and vapour entropies converge at the critical point.
+        T_vals = [200.0, 240.0, 270.0, 300.0, T_MAX_A4]
+        sfg_vals = [s_fg(T) for T in T_vals]
+        for i in range(len(sfg_vals) - 1):
+            assert sfg_vals[i] > sfg_vals[i + 1], (
+                f"s_fg not decreasing toward critical point: "
+                f"s_fg({T_vals[i]:.0f}) = {sfg_vals[i]:.2f}, "
+                f"s_fg({T_vals[i+1]:.0f}) = {sfg_vals[i+1]:.2f}"
+            )
+
+    def test_s_liquid_increases_with_temperature(self):
+        # Liquid entropy must increase with T (more thermal disorder).
+        T_vals = [190.0, 220.0, 260.0, 300.0]
+        s_vals = [s_liquid_sat(T) for T in T_vals]
+        for i in range(len(s_vals) - 1):
+            assert s_vals[i] < s_vals[i + 1]
+
+    def test_s_fg_units_are_kJ_per_kmolK_not_J_per_molK_times_1000(self):
+        # Sanity check on the "no conversion needed" unit note in the
+        # docstring: s_fg should be O(10-100) kJ/(kmol.K) in the design
+        # range, matching the raw NIST J/(mol.K) values directly (since
+        # 1 J/(mol.K) == 1 kJ/(kmol.K) numerically) -- NOT scaled by an
+        # extra factor of 1000 as h_l/h_v are when read from Table A.1.
+        assert 10.0 < s_fg(260.0) < 100.0
+
+    # --- Edge cases -------------------------------------------------
+
+    def test_s_liquid_raises_above_table_a4_max(self):
+        # Table A.4 stops at 307.33 K -- narrower than the correlation's
+        # own T_MAX = 309.52 K. This is the exact gap Priority 1 surfaced.
+        with pytest.raises(ValueError):
+            s_liquid_sat(T_MAX_A4 + 1.0)
+
+    def test_s_vapor_raises_below_table_a4_min(self):
+        with pytest.raises(ValueError):
+            s_vapor_sat(T_MIN_A4 - 1.0)
+
+    def test_s_fg_raises_outside_a4_range(self):
+        with pytest.raises(ValueError):
+            s_fg(T_MAX)   # 309.52 K -- valid for P_sat/h_fg, NOT for entropy
+
+    def test_a4_range_strictly_narrower_than_main_range(self):
+        # Documents the gap explicitly, so a future change to either
+        # range constant is caught by this test rather than silently
+        # changing behaviour.
+        assert T_MIN_A4 == T_MIN
+        assert T_MAX_A4 < T_MAX
