@@ -498,7 +498,15 @@ def cp_liquid_sat(T):
     Isobaric heat capacity of saturated liquid N2O, J/(kg.K).
 
     Interpolated from Table A.4 (NIST WebBook, Lemmon & Span 2006).
-    Used in the Henry-Fauske critical flow model (injector_two_phase.py).
+
+    Intended use: a Henry-Fauske-type non-equilibrium critical flow model
+    (see docs/future_work.md, Priority 1 as of September 2026) would need
+    this as an input. That model is NOT YET IMPLEMENTED in
+    injector_two_phase.py -- this function's docstring previously claimed
+    otherwise ("Used in the Henry-Fauske critical flow model"), which was
+    a stale, aspirational reference never actually wired up. Corrected
+    September 2026 while investigating why hem_critical_flow() cannot be
+    used as an automatic Dyer cap (see dyer_mass_flow's docstring note).
 
     Physical note: cp_l increases sharply near the critical point
     (309.52 K), diverging to infinity at T_crit. Values above 300 K

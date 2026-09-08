@@ -36,6 +36,12 @@ The saturation property correlations used in `n2o_properties.py` originate from 
 **Waxman, B.S., Zimmerman, J.E., Cantwell, B., & Zilliac, G. (2014).** *Mass flow rate and isolation pressure measurements in nitrous oxide with the Dyer injector model.* AIAA 2014-3834.
 *(Validation of the Dyer model against N₂O experimental data; documents the SPI over-prediction effect and the Dyer correction.)*
 
+**Henry, R.E. & Fauske, H.K. (1971).** *The Two-Phase Critical Flow of One-Component Mixtures in Nozzles, Orifices, and Short Tubes.* ASME Journal of Heat Transfer, 93(2), 179-187.
+*(Original non-equilibrium critical flow model. Used in `henry_fauske_critical_flow()` as the physically correct ceiling for the Dyer prediction — the equilibrium HEM ceiling was shown to be the wrong bound, since real non-equilibrium two-phase flow chokes at a higher mass flux than full equilibrium allows.)*
+
+**Simoneau, R.J., Henry, R.E., Hendricks, R.C. & Watterson, R. (1971).** *Two-Phase Critical Discharge of High Pressure Liquid Nitrogen.* NASA Technical Memorandum TM X-67863.
+*(Presents the simplified Henry-Fauske equations (Eqs. 2-5) actually transcribed into `henry_fauske_critical_flow()`, including the empirical non-equilibrium factor N = min(1, x_E/0.14) from Henry (1970), fit to steam-water data of Starkman et al. (1964).)*
+
 ---
 
 ## Feed line pressure drop
@@ -106,4 +112,4 @@ T_crit = 36.4 °C (309.52 K), P_crit = 72.45 bar — consistent with:
 
 ## Notes
 
-All numerical coefficients in `n2o_properties.py` are sourced from the McGill/Perry reference above and are documented with their source in the module docstring. No coefficients were derived independently or taken from unverified sources, consistent with the project's policy of not using "magic numbers" without a traceable origin.
+All numerical coefficients in `n2o_properties.py` and `injector_two_phase.py` are sourced from the references above and are documented with their source in the module docstrings. No coefficients were derived independently or taken from unverified sources, consistent with the project's policy of not using "magic numbers" without a traceable origin. The Henry-Fauske non-equilibrium factor N = x_E/0.14 was specifically deferred until a primary/near-primary source with legible equations (not image-embedded) could be obtained, rather than being implemented from partial or half-remembered recollection.

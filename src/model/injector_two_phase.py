@@ -45,8 +45,13 @@ and the Dyer weighting parameter kappa, which are dimensionless.
 """
 
 import math
-from n2o_properties import P_sat, T_sat, h_liquid_sat, h_fg
+from n2o_properties import (P_sat, T_sat, dP_sat_dT, h_liquid_sat, h_fg,
+                             rho_liquid_sat, nu_vapor_sat,
+                             s_liquid_sat, s_vapor_sat, s_fg,
+                             T_MIN, T_MIN_A4, T_MAX_A4)
 from injector_spi import spi_mass_flow
+
+M_N2O = 44.013  # kg/kmol, molar mass of N2O
 
 
 def vapor_quality_isenthalpic(h_upstream, T_downstream):
@@ -574,6 +579,266 @@ def hem_critical_flow_isentropic(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     }
 
 
+def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
+                                tol_bar=1e-4, max_iter=100):
+    """
+    Henry-Fauske (1971) non-equilibrium critical mass flux for saturated
+    or subcooled liquid discharging through a converging nozzle/orifice.
+
+    Added September 2026 (docs/future_work.md, Priority 1) after
+    `hem_critical_flow()`/`hem_critical_flow_isentropic()` were shown
+    NOT to be the right ceiling for a non-equilibrium (Dyer) prediction:
+    all 4 validated Waxman operating points already sit 1.03x-1.21x
+    ABOVE the equilibrium HEM ceiling, which is correct, validated
+    behaviour (real non-equilibrium two-phase flow chokes at a HIGHER
+    mass flux than the full-equilibrium limit). Henry-Fauske models that
+    non-equilibrium choking directly, instead of assuming full
+    equilibrium.
+
+    Source
+    ------
+    Henry, R.E. & Fauske, H.K. (1971), "The Two-Phase Critical Flow of
+    One-Component Mixtures in Nozzles, Orifices, and Short Tubes", ASME
+    J. Heat Transfer, 93(2), 179-187.
+
+    Equations transcribed here from the simplified form given in:
+    Simoneau, R.J., Henry, R.E., Hendricks, R.C. & Watterson, R. (1971),
+    "Two-Phase Critical Discharge of High Pressure Liquid Nitrogen",
+    NASA TM X-67863, Eqs. (2)-(5).
+
+    Theory
+    ------
+    For saturated/subcooled liquid at the nozzle inlet (stagnation
+    conditions, subscript 0), the simplified Henry-Fauske model makes
+    five assumptions valid for P0/Pc > 0.05 (comfortably true for this
+    project's operating range):
+        1. Negligible vapour forms before the throat (x_t ~ 0), so the
+           inlet-to-throat momentum balance is single-phase Bernoulli:
+               eta = P_t/P0 = 1 - v_l0 * G_c^2 / (2 * P0)      (Eq. 2)
+        2. The liquid phase is incompressible.
+        3. Vapour forming AT the throat is in equilibrium at the local
+           (throat) pressure.
+        4. Liquid and vapour velocities are equal at the throat (k~1).
+        5. The rate of mass transfer (vaporisation) at the throat is a
+           fraction N of the full-equilibrium rate:
+               N = min(1, x_E / 0.14)
+           where x_E is the EQUILIBRIUM quality at the throat -- the
+           same isentropic quality already computed by
+           vapor_quality_isentropic() for the HEM-equilibrium ceiling.
+           N = 0.14 is Henry's (1970) empirical fit to the Starkman et
+           al. steam-water low-quality expansion data; capped at 1 once
+           the flow is close enough to equilibrium that no further
+           non-equilibrium enhancement applies.
+
+    Combining these gives the critical mass flux directly:
+
+        G_c^2 = [ N*(v_gE - v_l0) / (s_gE - s_lE) * ds_lE/dP ]^-1      (Eq. 5)
+
+    evaluated AT the (unknown) throat state -- v_gE, s_gE, s_lE are
+    saturated vapour/liquid specific volume and entropy at T_sat(P_t),
+    and ds_lE/dP is the derivative of saturated liquid specific entropy
+    along the saturation curve, obtained via the chain rule
+    ds_lE/dP = (ds_l/dT) / (dP_sat/dT), with ds_l/dT from a small
+    central finite difference on s_liquid_sat(T) (no closed-form
+    derivative is available, since s_l comes from table interpolation,
+    not a fitted correlation like P_sat) and dP_sat/dT from the existing
+    analytical dP_sat_dT(T).
+
+    Eqs. (2) and (5) are coupled -- G_c depends on properties evaluated
+    AT the throat pressure P_t, and P_t (via Eq. 2) depends on G_c -- so
+    they are solved simultaneously here via bisection on P_t (found to
+    be far more robust than naive fixed-point iteration, which diverges
+    for this system: G_c(P_t) from Eq. 5 blows up as P_t -> P_sat(T0)
+    from below, since N -> 0 there).
+
+    Units note: Eq. (5) requires SPECIFIC (per unit mass) volume and
+    entropy throughout for the units to work out to a mass flux. This
+    project's n2o_properties.py functions are molar (v via
+    nu_vapor_sat/M_N2O and rho_liquid_sat already give specific volume
+    directly; s_liquid_sat/s_vapor_sat are converted from
+    kJ/(kmol.K) to J/(kg.K) internally here via *1000/M_N2O).
+
+    Parameters
+    ----------
+    Cd : float
+        Discharge coefficient (dimensionless). Applied multiplicatively
+        to the ideal nozzle mass flux, consistent with how Cd is used
+        throughout this project (SPI, HEM, Dyer) -- the original paper's
+        G_c itself has no Cd (derived for a characterised venturi nozzle).
+    A : float
+        Total orifice area, m^2.
+    T_upstream : float
+        Stagnation (upstream/tank) temperature, K. Must lie within
+        Table A.4's range (n2o_properties.T_MIN_A4 to T_MAX_A4) --
+        entropy is required.
+    P_upstream : float
+        Stagnation (upstream/tank) pressure, Pa. Must exceed
+        P_sat(T_upstream) -- the model assumes liquid (saturated or
+        subcooled) at the nozzle inlet, mirroring
+        dyer_non_equilibrium_parameter's domain restriction.
+    x_inlet : float, optional
+        Vapour quality at the nozzle inlet, for a two-phase (already
+        flashing) inlet. Default 0 (pure liquid stagnation).
+    tol_bar : float, optional
+        Bisection convergence tolerance on the throat pressure, bar.
+        Default 1e-4 bar -- tight, converges in ~40-60 iterations
+        regardless.
+    max_iter : int, optional
+        Maximum bisection iterations before returning the best estimate
+        found so far without erroring (bisection with a valid bracket
+        always converges; this is a safety cap, not expected to bind).
+
+    Returns
+    -------
+    dict
+        "m_dot_crit" : critical (choked) mass flow rate, kg/s.
+        "G_c"        : critical mass flux, kg/(m^2.s).
+        "P2_crit"    : throat pressure at the critical condition, Pa.
+        "x_crit"     : equilibrium quality at the critical throat state
+                       (x_E, NOT the actual non-equilibrium quality N*x_E).
+        "N"          : Henry's non-equilibrium factor at the critical
+                       condition, in [0, 1].
+
+    Raises
+    ------
+    ValueError
+        If T_upstream is outside Table A.4's range, or P_upstream does
+        not exceed P_sat(T_upstream).
+    RuntimeError
+        If a valid bracket for the bisection cannot be found (should not
+        happen for physically sensible inputs within this project's
+        design range; would indicate a genuinely pathological operating
+        point).
+
+    Validation
+    -----------
+    At Waxman conditions (T=280 K, P=4.36 MPa, D=1.5 mm, Cd=0.65):
+    m_dot_crit = 50.67 g/s -- above hem_critical_flow_isentropic's
+    41.64 g/s (correct: non-equilibrium exceeds equilibrium), and above
+    all 4 validated Dyer predictions (42.25-49.55 g/s), so it does not
+    cut into any already-validated result. See
+    validation/waxman_2013_results.md for the full comparison.
+
+    IMPORTANT CAVEAT (see docs/future_work.md, Priority 1). At OTHER
+    operating points further from the Waxman geometry -- e.g. the
+    conditions in examples/example_01_sizing.md (20 degC, 58->22 bar,
+    6x1.5mm holes) -- this ceiling DOES bind, sitting roughly 13-17%
+    below the uncapped Dyer blend. There is currently NO experimental
+    data point in this project's validation set where the Henry-Fauske
+    ceiling actually changes the answer (all 4 Waxman points sit below
+    it) -- so while the model is theoretically sound and correctly
+    implemented from a primary source, it is NOT empirically confirmed
+    in the regime where it matters. For this reason it is surfaced as a
+    side-by-side diagnostic value with a `choked` flag in
+    dyer_mass_flow(), NOT applied as an automatic override of
+    `m_dot_Dyer` -- see that function's docstring.
+    """
+    if not (T_MIN_A4 <= T_upstream <= T_MAX_A4):
+        raise ValueError(
+            f"T_upstream = {T_upstream:.2f} K is outside Table A.4's valid "
+            f"range [{T_MIN_A4}, {T_MAX_A4}] K -- entropy data is required "
+            "for the Henry-Fauske non-equilibrium closure. See "
+            "docs/future_work.md, Priority 4 (CoolProp/REFPROP)."
+        )
+
+    P_sat_up = P_sat(T_upstream)
+    if P_upstream <= P_sat_up:
+        raise ValueError(
+            f"P_upstream = {P_upstream/1e5:.2f} bar is at or below "
+            f"P_sat(T_upstream) = {P_sat_up/1e5:.2f} bar -- the fluid must "
+            "be liquid (saturated or subcooled) at the nozzle inlet for "
+            "this model, mirroring dyer_non_equilibrium_parameter's "
+            "domain restriction."
+        )
+
+    v_l0 = 1.0 / rho_liquid_sat(T_upstream)
+    s_up_molar = s_liquid_sat(T_upstream) + x_inlet * s_fg(T_upstream)  # kJ/(kmol.K)
+
+    h_T = 0.05  # K, finite-difference step for ds_l/dT
+
+    def _G_c_from_eq5(P_t):
+        """Eq. (5): the mass-transfer-rate closure evaluated at throat
+        pressure P_t. Returns (G_c, x_E, N) or (None, x_E, N) if the
+        bracket term is non-positive (no real G_c at this P_t)."""
+        T_t = T_sat(P_t)
+        v_gE = nu_vapor_sat(T_t) / M_N2O                      # m^3/kg
+        s_lE = s_liquid_sat(T_t) * 1000.0 / M_N2O              # J/(kg.K)
+        s_gE = s_vapor_sat(T_t) * 1000.0 / M_N2O               # J/(kg.K)
+
+        x_E = vapor_quality_isentropic(s_up_molar, T_t)
+        # N = x_E/0.14 formally divides by zero as x_E -> 0 (no vapour
+        # yet, no non-equilibrium enhancement needed); use a small floor
+        # instead of exactly zero so the bracket term stays finite and
+        # bisection can still evaluate the residual there.
+        N = min(1.0, x_E / 0.14) if x_E > 1e-9 else 1e-9
+
+        T_plus = min(T_t + h_T, T_MAX_A4)
+        T_minus = max(T_t - h_T, T_MIN_A4)
+        s_l_plus = s_liquid_sat(T_plus) * 1000.0 / M_N2O
+        s_l_minus = s_liquid_sat(T_minus) * 1000.0 / M_N2O
+        ds_l_dT = (s_l_plus - s_l_minus) / (T_plus - T_minus)
+        ds_lE_dP = ds_l_dT / dP_sat_dT(T_t)
+
+        denom = N * (v_gE - v_l0) / (s_gE - s_lE) * ds_lE_dP
+        if denom <= 0:
+            return None, x_E, N
+        return math.sqrt(1.0 / denom), x_E, N
+
+    def _residual(P_t):
+        """Residual between the throat pressure implied by momentum
+        (Eq. 2, using G_c from Eq. 5) and the P_t plugged in. Root of
+        this function is the self-consistent (P_t, G_c) solution."""
+        G_c, x_E, N = _G_c_from_eq5(P_t)
+        if G_c is None:
+            return None, None, None, None
+        P_t_from_momentum = P_upstream - v_l0 * G_c ** 2 / 2.0
+        return P_t_from_momentum - P_t, G_c, x_E, N
+
+    # Bracket the root. Just below P_sat(T_upstream), N -> 0 so G_c(Eq.5)
+    # blows up, making the residual strongly negative (momentum can't
+    # support that flux without P_t going deeply negative). At a low
+    # pressure floor, N has saturated at 1 and G_c(Eq.5) has dropped
+    # enough that the residual turns positive -- found empirically to
+    # bracket reliably across this project's operating range.
+    P_hi = P_sat_up * 0.999
+    P_lo = max(P_sat(T_MIN + 1.0) * 1.01, 1e5)
+
+    r_hi, *_ = _residual(P_hi)
+    r_lo, *_ = _residual(P_lo)
+    if r_hi is None or r_lo is None or r_hi * r_lo > 0:
+        raise RuntimeError(
+            f"henry_fauske_critical_flow: could not bracket a root for "
+            f"T_upstream={T_upstream:.2f} K, P_upstream={P_upstream/1e5:.2f} bar "
+            f"(r_lo={r_lo} at {P_lo/1e5:.2f} bar, r_hi={r_hi} at {P_hi/1e5:.2f} bar). "
+            "This should not happen for physically sensible inputs within "
+            "this project's design range -- please report this operating "
+            "point."
+        )
+
+    P_t = 0.5 * (P_hi + P_lo)
+    G_c = x_E = N = None
+    for _ in range(max_iter):
+        P_t = 0.5 * (P_hi + P_lo)
+        r_mid, G_c, x_E, N = _residual(P_t)
+        if r_mid is None:
+            P_lo = P_t
+            continue
+        if r_mid > 0:
+            P_lo = P_t
+        else:
+            P_hi = P_t
+        if (P_hi - P_lo) < tol_bar * 1e5:
+            break
+
+    return {
+        "m_dot_crit": Cd * A * G_c,
+        "G_c":        G_c,
+        "P2_crit":    P_t,
+        "x_crit":     x_E,
+        "N":          N,
+    }
+
+
 def apply_choking_limit(m_dot_model, Cd, A, T_upstream, P_upstream,
                          x_inlet=0.0):
     """
@@ -704,7 +969,8 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     Returns
     -------
     dict
-        "m_dot_Dyer": Dyer-predicted mass flow rate, kg/s.
+        "m_dot_Dyer": Dyer-predicted mass flow rate, kg/s. UNCHANGED by
+                     the Henry-Fauske ceiling below -- see "choked".
         "m_dot_SPI": SPI-only prediction at the same operating point, kg/s
                      (the "no time to vaporize" limit, for comparison).
         "m_dot_HEM": HEM-only prediction, kg/s (the full-equilibrium
@@ -712,6 +978,38 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
         "kappa": Dyer's non-equilibrium weighting parameter.
         "x_exit": vapor quality at the orifice exit, from the HEM
                   sub-calculation (dimensionless).
+        "m_dot_crit_HF": Henry-Fauske non-equilibrium critical mass flow
+                  ceiling, kg/s, or None if it could not be computed
+                  (see "HF_unavailable_reason"). Surfaced as a DIAGNOSTIC
+                  value, side by side with "m_dot_Dyer" -- NOT applied
+                  automatically, per the design decision documented
+                  below and in docs/future_work.md, Priority 1.
+        "choked": True if "m_dot_Dyer" exceeds "m_dot_crit_HF" (i.e. the
+                  Dyer blend predicts more flow than the non-equilibrium
+                  choking ceiling allows). False if it does not exceed
+                  it, or if the ceiling could not be computed.
+        "HF_unavailable_reason": None if "m_dot_crit_HF" was computed
+                  successfully; otherwise a short string explaining why
+                  (e.g. T_upstream outside Table A.4's range).
+
+    Note on why "m_dot_Dyer" is NOT automatically capped at
+    "m_dot_crit_HF" (decided September 2026, docs/future_work.md,
+    Priority 1). henry_fauske_critical_flow() is correctly implemented
+    from a primary source (Henry & Fauske 1971, via Simoneau et al.
+    1971) and is internally consistent (always sits above the
+    equilibrium HEM ceiling; does not perturb any of the 4 validated
+    Waxman operating points, since all 4 already sit below it). BUT at
+    other operating points -- e.g. examples/example_01_sizing.md's
+    conditions -- it DOES bind, cutting the predicted flow by roughly
+    13-17%, and there is currently no experimental data point in this
+    project's validation set where the ceiling actually changes the
+    answer (all 4 Waxman points sit below it). Silently overriding
+    "m_dot_Dyer" with a value that is theoretically well-founded but
+    empirically unconfirmed in the regime where it matters would risk
+    quietly changing already-published results without evidence.
+    Instead, both values are returned, so calling code (full_system.py,
+    the Streamlit interface) can choose to display a warning when
+    "choked" is True, without silently changing the headline number.
     """
     kappa = dyer_non_equilibrium_parameter(P_upstream, T_upstream, P_downstream)
 
@@ -727,12 +1025,30 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     # large kappa -> more weight on SPI (less equilibrium); small kappa -> HEM.
     m_dot_Dyer = (kappa / (1.0 + kappa)) * m_dot_SPI + (1.0 / (1.0 + kappa)) * m_dot_HEM
 
+    # Henry-Fauske non-equilibrium choking ceiling -- diagnostic only,
+    # not applied automatically (see docstring above). Computed
+    # best-effort: if it cannot be evaluated (e.g. T_upstream above
+    # Table A.4's 307.33 K limit), Dyer's own result is still returned
+    # unaffected, with the reason recorded rather than silently ignored.
+    try:
+        hf = henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream)
+        m_dot_crit_HF = hf["m_dot_crit"]
+        choked = m_dot_Dyer > m_dot_crit_HF
+        hf_unavailable_reason = None
+    except (ValueError, RuntimeError) as e:
+        m_dot_crit_HF = None
+        choked = False
+        hf_unavailable_reason = str(e)
+
     return {
         "m_dot_Dyer": m_dot_Dyer,
         "m_dot_SPI":  m_dot_SPI,
         "m_dot_HEM":  m_dot_HEM,
         "kappa":      kappa,
         "x_exit":     hem_result["x_exit"],
+        "m_dot_crit_HF":         m_dot_crit_HF,
+        "choked":                choked,
+        "HF_unavailable_reason": hf_unavailable_reason,
     }
 
 
@@ -792,3 +1108,33 @@ if __name__ == "__main__":
     print("  Both critical-flow ceilings should sit below the experimental")
     print("  Dyer-regime values -- Dyer's non-equilibrium correction")
     print("  legitimately predicts above either HEM-only ceiling.")
+
+    # --- Henry-Fauske diagnostic (added September 2026, Priority 1) ---
+    # Two contrasting cases: the Waxman validated point (should NOT be
+    # flagged as choked -- the whole point of the earlier validation),
+    # and a case further from Waxman (examples/example_01_sizing.md's
+    # conditions) where the ceiling DOES bind, demonstrating the
+    # side-by-side diagnostic rather than a silent override.
+    print()
+    print("=" * 60)
+    print("Henry-Fauske diagnostic -- side by side with Dyer, not applied")
+    print("=" * 60)
+
+    cases = [
+        ("Waxman (validated)", 280.0, 4.36e6, 30.4e5, math.pi * (0.0015/2)**2),
+        ("Example-1-like (NOT choking-validated)", 293.15, 58e5, 22e5,
+         6 * math.pi * (0.75e-3)**2),
+    ]
+    for label, T_u, P_u, P_d, A_c in cases:
+        rho_l_u = rho_liquid_sat(T_u)
+        T_d = T_sat(P_d)
+        rho_l_d = rho_liquid_sat(T_d)
+        rho_v_d = M_N2O / nu_vapor_sat(T_d)
+        r = dyer_mass_flow(Cd, A_c, T_u, P_u, P_d, rho_l_u, rho_l_d, rho_v_d)
+        print(f"\n  {label}:")
+        print(f"    m_dot_Dyer      = {r['m_dot_Dyer']*1000:7.2f} g/s")
+        if r["m_dot_crit_HF"] is not None:
+            print(f"    m_dot_crit_HF   = {r['m_dot_crit_HF']*1000:7.2f} g/s")
+        else:
+            print(f"    m_dot_crit_HF   = unavailable ({r['HF_unavailable_reason']})")
+        print(f"    choked          = {r['choked']}")
