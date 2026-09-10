@@ -53,6 +53,7 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;}
 .badge-ok{display:inline-block;background:#0a1a12;color:#2d8a5a;border:1px solid #1a3028;border-radius:3px;padding:.12rem .55rem;font-size:.75rem;font-family:'JetBrains Mono',monospace;}
 .badge-warn{display:inline-block;background:#1a0d0d;color:#9a3030;border:1px solid #301515;border-radius:3px;padding:.12rem .55rem;font-size:.75rem;font-family:'JetBrains Mono',monospace;}
 .badge-info{display:inline-block;background:#0a1525;color:#3d5a80;border:1px solid #152035;border-radius:3px;padding:.12rem .55rem;font-size:.75rem;font-family:'JetBrains Mono',monospace;}
+.badge-choke{display:inline-block;background:#1f1206;color:#d97706;border:1px solid #3a2408;border-radius:3px;padding:.12rem .55rem;font-size:.75rem;font-family:'JetBrains Mono',monospace;}
 .diag-box{background:#100a0a;border:1px solid #201010;border-left:3px solid #602020;border-radius:3px;padding:.9rem 1.2rem;margin-top:.9rem;}
 .diag-box h4{color:#803030;margin:0 0 .45rem;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;}
 .diag-box ul{color:#7a8494;margin:0;padding-left:1rem;font-size:.82rem;line-height:1.9;}
@@ -537,6 +538,29 @@ def render_result_cards(result):
         st.caption(f"Dyer: kappa = {ir['kappa']:.3f}  |  "
                    f"exit vapour quality x = {ir['x_exit']:.3f}  |  "
                    f"HEM prediction: {ir['m_dot_HEM']*1000:.1f} g/s")
+        # Henry-Fauske non-equilibrium choking diagnostic (added September
+        # 2026, docs/future_work.md Priority 1). Surfaced as a warning,
+        # NOT applied to m_dot itself -- see injector_two_phase.dyer_mass_flow
+        # docstring for why: the ceiling is theoretically sound (Henry &
+        # Fauske 1971) but only confirmed not to perturb the 4 validated
+        # Waxman points; at other conditions (e.g. this exact scenario)
+        # it may be the more conservative, if unconfirmed, estimate.
+        if ir.get("choked"):
+            st.markdown(
+                '<div class="badge-choke">&#9888; Non-equilibrium choking ceiling '
+                'exceeded</div>', unsafe_allow_html=True)
+            st.warning(
+                f"Dyer predicts {m_dot*1000:.1f} g/s, but the non-equilibrium "
+                f"choking ceiling (Henry-Fauske, 1971) at these tank/chamber "
+                f"conditions is only {ir['m_dot_crit_HF']*1000:.1f} g/s — "
+                f"independent of orifice area. This ceiling is theoretically "
+                f"sound but not experimentally confirmed outside the Waxman "
+                f"reference conditions (where it does not bind); treat it as "
+                f"a conservative alternative estimate, not a certainty. "
+                f"See docs/future_work.md, Priority 1.")
+        elif ir.get("HF_unavailable_reason"):
+            st.caption(f"Non-equilibrium ceiling check unavailable: "
+                       f"{ir['HF_unavailable_reason']}")
     elif ir and ir.get("x_exit") is not None:
         st.caption(f"HEM two-phase inlet: exit vapour quality x = {ir['x_exit']:.3f}")
     return True
@@ -557,7 +581,8 @@ if st.session_state.page == "landing":
         the fluid approaches its saturation pressure along the feed path.
         The model chains three physics blocks: feed line pressure drop
         (Darcy-Weisbach), injector sufficiency check (SPI), and two-phase
-        correction (Dyer/NHNE).
+        correction (Dyer/NHNE), with a non-equilibrium choking ceiling
+        (Henry-Fauske) surfaced as a diagnostic warning.
     </div>""", unsafe_allow_html=True)
 
     col1, col2 = st.columns(2, gap="large")
@@ -594,6 +619,11 @@ if st.session_state.page == "landing":
             <li>When flashing is detected in the feed line, injector models are
                 <strong>not evaluated</strong>. A conservative upper-bound
                 estimate is provided instead.</li>
+            <li>A <strong>non-equilibrium choking ceiling</strong> (Henry-Fauske,
+                1971) is shown as a diagnostic warning when the Dyer prediction
+                exceeds it — theoretically sound, but only confirmed not to
+                perturb results in the Waxman-validated regime; not applied
+                automatically outside it.</li>
         </ul>
     </div>""", unsafe_allow_html=True)
 
@@ -863,6 +893,31 @@ elif st.session_state.page == "design":
                     "compensates for two-phase flow reduction so the system delivers "
                     "the target mass flow.")
 
+                # Henry-Fauske non-equilibrium choking diagnostic (added
+                # September 2026, docs/future_work.md Priority 1). "choked"
+                # here is independent of A_dyer: since both the Dyer
+                # prediction and the ceiling scale linearly with area, no
+                # amount of resizing the orifice escapes this warning if
+                # it is triggered by the tank/chamber conditions themselves.
+                if dr.get("choked"):
+                    st.markdown(
+                        '<div class="badge-choke">&#9888; Non-equilibrium choking '
+                        'ceiling exceeded</div>', unsafe_allow_html=True)
+                    st.warning(
+                        f"The non-equilibrium choking ceiling (Henry-Fauske, 1971) "
+                        f"at these tank/chamber conditions is "
+                        f"{dr['m_dot_crit_HF']*1000:.1f} g/s — independent of orifice "
+                        f"area. The target of {m_dot_target_gs:.0f} g/s may not be "
+                        f"achievable at this ΔP regardless of how the orifice is "
+                        f"sized; consider raising tank pressure or lowering chamber "
+                        f"pressure instead. This ceiling is theoretically sound but "
+                        f"not experimentally confirmed outside the Waxman reference "
+                        f"conditions (where it does not bind). See "
+                        f"docs/future_work.md, Priority 1.")
+                elif dr.get("HF_unavailable_reason"):
+                    st.caption(f"Non-equilibrium ceiling check unavailable: "
+                               f"{dr['HF_unavailable_reason']}")
+
                 # Combustion stability check
                 actual_dP = P_inlet - P_chamber
                 stab = actual_dP / P_chamber * 100
@@ -878,7 +933,9 @@ elif st.session_state.page == "design":
                     st.plotly_chart(
                         plot_model_comparison(
                             dr["m_dot_SPI"], dr["m_dot_HEM"],
-                            dr["m_dot_Dyer"], m_dot_target),
+                            dr["m_dot_Dyer"], m_dot_target,
+                            m_dot_crit_HF=dr.get("m_dot_crit_HF"),
+                            choked=dr.get("choked", False)),
                         use_container_width=True,
                         config={"scrollZoom": False})
                 with pc2:
@@ -929,6 +986,8 @@ elif st.session_state.page == "design":
                     "d_spi": d_spi, "d_dyer": d_dyer, "pct": pct,
                     "m_spi": dr["m_dot_SPI"], "m_hem": dr["m_dot_HEM"],
                     "m_dyer": dr["m_dot_Dyer"], "m_target": m_dot_target,
+                    "m_dot_crit_HF": dr.get("m_dot_crit_HF"),
+                    "choked": dr.get("choked", False),
                 }
                 pdf_bytes = generate_pdf(
                     mode="design",

@@ -59,6 +59,14 @@ The question is: what diameter should each hole be, and how does the SPI-sized i
 
 ---
 
+## Non-equilibrium choking diagnostic (added September 2026)
+
+Running this case in the tool now also shows a **choking warning**: at these tank/chamber conditions, the Henry-Fauske (1971) non-equilibrium choking ceiling works out to roughly **480–495 g/s** — below the 500 g/s target itself.
+
+**Important physical point:** this ceiling is *independent of orifice area* (both the Dyer prediction and the ceiling scale linearly with area — see `docs/future_work.md`, Priority 1), so this is not something the Dyer area above can be adjusted to avoid. If the ceiling turns out, with future validation, to be the physically binding one, the 500 g/s target itself would not be achievable at this ΔP regardless of hole sizing — the fix would be tank pressure or chamber pressure, not area. As with Example 1, this ceiling is theoretically sound but not experimentally confirmed at this example's pressure drop (outside the 8–14 bar Waxman-validated band), so the 13.711 mm² / 1.477 mm Dyer sizing above remains the tool's primary, methodology-validated recommendation — the warning is a flag to investigate further, not a correction to apply by hand.
+
+---
+
 ## Interpretation
 
 The Dyer model requires a total orifice area **44% larger** than SPI. The difference comes from two-phase effects inside the orifice: even though the feed line delivers fully-subcooled liquid at the injector inlet, the large pressure drop across the orifice (59.75 → 20 bar) causes partial vaporisation inside the orifice itself, reducing the effective mixture density and therefore the mass flow for a given area.
@@ -84,4 +92,4 @@ instead of the target 500 g/s — a shortfall of approximately 30%.
 2. Set sidebar: T = 15 °C, P = 60 bar, Cd = 0.65, P_chamber = 20 bar.
 3. Set target: 500 g/s, 8 holes.
 4. Add feed line segments as listed above.
-5. Read the results — Dyer hole diameter should show **1.477 mm** and area increase **44.0%**.
+5. Read the results — Dyer hole diameter should show **1.477 mm** and area increase **44.0%**. An amber choking-ceiling warning should also appear underneath the area caption (see note above).

@@ -23,6 +23,8 @@ Two consequences, which reinforce each other:
 
 The combined effect of these two mechanisms explains why real mass flow, under significant vaporization, can fall far below what the SPI model predicts — a model that always assumes dense, incompressible liquid with no propagation speed limit. Discrepancies of several-fold between predicted and measured flow, documented in the literature (`references.md`), reflect a physical regime change, not a fine calibration error.
 
+**A subtlety worth flagging here** (worked out fully in `04_implementation.md`, Section 4.4, and `future_work.md`, Priority 1): "the choking limit" is not a single number. The **equilibrium** choking limit — computed assuming the liquid and vapor phases reach full thermodynamic equilibrium at every point, as HEM does — is *not* the same as the **non-equilibrium** choking limit that applies to a real, fast orifice flow where full equilibrium has not had time to establish (Section 3.4 below). Real non-equilibrium flow chokes at a *higher* mass flux than the equilibrium limit predicts. This project implements both: an equilibrium ceiling (`hem_critical_flow`) for reference, and a non-equilibrium ceiling (Henry & Fauske, 1971) as the physically appropriate diagnostic against the Dyer model's own non-equilibrium prediction.
+
 ## 3.4 Two-phase flow models: HEM and Dyer
 
 ### HEM — Homogeneous Equilibrium Model
@@ -43,20 +45,22 @@ where the non-equilibrium parameter $\kappa = \sqrt{(P_{up} - P_{down})\,/\,(P_{
 
 Because it reasonably captures observed behaviour in short orifices without the added complexity of more general non-homogeneous, non-equilibrium models, the Dyer model is the most widely adopted in the university rocketry literature for this class of problem, and is the reference model for this project. Validation against Waxman (2013/2014) gives MAPE = 3.51% at moderate pressure drops — see `validation/waxman_2013_results.md`.
 
+**Non-equilibrium choking ceiling.** Because the Dyer prediction is itself a non-equilibrium quantity, it legitimately and correctly exceeds the equilibrium HEM choking limit (Section 3.3) at every validated operating point — this is not an error to be capped. The physically appropriate upper bound for a non-equilibrium prediction is a non-equilibrium critical-flow model in its own right: this project implements the simplified Henry & Fauske (1971) model (`henry_fauske_critical_flow`) for exactly this purpose, and surfaces it as a diagnostic warning alongside the Dyer result rather than an automatic correction, since it has only been confirmed not to interfere with the Waxman-validated regime — see `04_implementation.md`, Section 4.4, for the full derivation and validation.
+
 ## 3.5 Synthesis for implementation
 
 From the analysis in Sections 1–3, the sizing problem breaks down into two complementary fronts:
 
 1. **Feed line path** (tank → injector inlet) — tracking pressure drop and subcooling margin $\Delta T_{sub}$ along the line, incorporating friction losses (Darcy-Weisbach formulation) and fitting losses (valves, bends). When flashing occurs in the line, the model uses HEM two-phase properties (mixture density $\rho_{mix}$, mixture viscosity $\mu_{mix}$ via McAdams rule) updated segment-by-segment at the local pressure and isenthalpic vapour quality $x(s)$.
 
-2. **Injector orifice** — computing real mass flow, explicitly accounting for possible partial vaporisation inside the orifice itself, via SPI, HEM, or Dyer, depending on how close pressure is to saturation. When fluid arrives two-phase at the inlet ($x_{inlet} > 0$ from feed-line flashing), the HEM two-phase inlet model is used with upstream enthalpy $h_{up} = h_l(T_{tank}) + x_{inlet} \cdot h_{fg}(T_{tank})$.
+2. **Injector orifice** — computing real mass flow, explicitly accounting for possible partial vaporisation inside the orifice itself, via SPI, HEM, or Dyer, depending on how close pressure is to saturation. When fluid arrives two-phase at the inlet ($x_{inlet} > 0$ from feed-line flashing), the HEM two-phase inlet model is used with upstream enthalpy $h_{up} = h_l(T_{tank}) + x_{inlet} \cdot h_{fg}(T_{tank})$. A non-equilibrium choking ceiling (Section 3.4) is checked alongside the Dyer result as a diagnostic.
 
 The two fronts are coupled via the iterative solver in `full_system.py`, which finds the self-consistent operating point where feed-line losses and injector flow are mutually consistent (see `04_implementation.md`, Section 4.5).
 
 
 ## Summary
 
-Near the critical point, N₂O vaporizes with disproportionate ease compared to other fluids; when that vaporization occurs inside the injector orifice, the mixture's density drop — and possible two-phase choking — reduce real mass flow far more severely than the pure-liquid model can predict. The Dyer model, as a bridge between the SPI and HEM limits, is the approach adopted in this project to capture that behavior.
+Near the critical point, N₂O vaporizes with disproportionate ease compared to other fluids; when that vaporization occurs inside the injector orifice, the mixture's density drop — and possible two-phase choking — reduce real mass flow far more severely than the pure-liquid model can predict. The Dyer model, as a bridge between the SPI and HEM limits, is the approach adopted in this project to capture that behavior, with a non-equilibrium choking ceiling (Henry-Fauske) checked alongside it as a diagnostic safeguard.
 
 ---
 *Previous document: [02_spi_model.md](02_spi_model.md) · Next document: [04_implementation.md](04_implementation.md) — computational implementation of the SPI, HEM, and Dyer models, and of the sizing tool (in progress).*

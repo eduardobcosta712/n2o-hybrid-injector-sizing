@@ -15,6 +15,12 @@ References:
     Rockets. AIAA 2019-4154.
     (Table 4: four tabulated operating points; Table 3: model error summary.)
 
+    Henry, R.E. & Fauske, H.K. (1971). The Two-Phase Critical Flow of
+    One-Component Mixtures in Nozzles, Orifices, and Short Tubes. ASME
+    J. Heat Transfer, 93(2), 179-187.
+    (Non-equilibrium critical flow ceiling, checked as a diagnostic in
+    Section on Henry-Fauske below -- added September 2026.)
+
 MODEL STATE AT TIME OF VALIDATION (September 2026):
     - Coupled feed-line / injector solver (damped fixed-point, alpha=0.5)
     - SPI / Dyer / HEM two-phase inlet regime selection
@@ -22,7 +28,11 @@ MODEL STATE AT TIME OF VALIDATION (September 2026):
     - Properties: N2O saturation table A.1 (McGill/Perry) + A.3 (mu_v,
       NIST/Millat 1991) + A.4 (cp_l, mu_l, s_l, s_v, NIST/Lemmon 2006)
     - Dyer formula: corrected weights (Waxman 2013 Eq.9 / Solomon 2011)
-    - HEM critical flow: hem_critical_flow() available standalone
+    - HEM critical flow (equilibrium): hem_critical_flow() (isenthalpic)
+      and hem_critical_flow_isentropic() -- standalone diagnostics
+    - Henry-Fauske critical flow (non-equilibrium): henry_fauske_critical_flow(),
+      surfaced via dyer_mass_flow()'s "choked" flag -- diagnostic only,
+      NOT applied as an automatic cap (see docs/future_work.md, Priority 1)
 
 DOMAIN:
     Waxman uses helium-supercharged N2O (QF_upstream = 0 -- subcooled
@@ -56,7 +66,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "src", "model"))
 
 from full_system import evaluate_full_system
-from injector_two_phase import hem_critical_flow
+from injector_two_phase import hem_critical_flow, henry_fauske_critical_flow
 from n2o_properties import P_sat, rho_liquid_sat
 
 # ---------------------------------------------------------------------------
@@ -109,12 +119,12 @@ def run_validation():
     # ------------------------------------------------------------------
     # Main comparison table
     # ------------------------------------------------------------------
-    print("-" * 72)
+    print("-" * 80)
     print(f"  {'Case':<16} {'dP[bar]':>8} {'m_exp':>8} {'m_dot':>8} "
-          f"{'err%':>7} {'P_in[bar]':>10} {'regime':>5} {'iters':>6}")
+          f"{'err%':>7} {'P_in[bar]':>10} {'regime':>5} {'iters':>6}  {'HF':>7}")
     print(f"  {'':16} {'':8} {'[g/s]':>8} {'[g/s]':>8} "
           f"{'':7} {'':10} {'':5} {'':6}")
-    print(f"  {'-'*68}")
+    print(f"  {'-'*76}")
 
     results = []
     for label, dP_MPa, m_exp in CASES:
@@ -127,12 +137,18 @@ def run_validation():
         err = pct_error(m, m_exp * 1e-3)
         results.append((label, dP_MPa, m_exp, m, err, r))
 
+        # Henry-Fauske diagnostic flag (added September 2026). This is
+        # ALREADY computed inside dyer_mass_flow() (called by
+        # evaluate_full_system via _evaluate_injector), so it is read
+        # straight off the injector_result dict -- not recomputed here.
+        ir = r.get("injector_result") or {}
+        choked_flag = "CHOKED" if ir.get("choked") else "-"
         print(f"  {label:<16} {dP_MPa*10:>8.2f} {m_exp:>8.1f} "
               f"{m*1000:>8.2f} {err:>+7.1f}% "
               f"{r['P_injector_inlet']/1e5:>10.3f} "
-              f"{r['regime']:>5} {si['iterations']:>6}")
+              f"{r['regime']:>5} {si['iterations']:>6}  {choked_flag:>7}")
 
-    print(f"  {'-'*68}")
+    print(f"  {'-'*76}")
     errs = [r[4] for r in results]
     print(f"  {'Mean':>16} {'':8} {'':8} {'':8} "
           f"{sum(errs)/len(errs):>+7.1f}%")
@@ -159,10 +175,10 @@ def run_validation():
     print()
 
     # ------------------------------------------------------------------
-    # HEM critical flow reference
+    # HEM critical flow reference (equilibrium ceiling)
     # ------------------------------------------------------------------
     print("-" * 72)
-    print("HEM CRITICAL FLOW (standalone, not applied as cap in Dyer)")
+    print("HEM CRITICAL FLOW -- equilibrium ceiling (standalone reference)")
     print("-" * 72)
     print()
     crit = hem_critical_flow(Cd, A, T1, P1)
@@ -172,12 +188,36 @@ def run_validation():
     print()
     print("  Physical interpretation:")
     print("  The HEM maximum (41.1 g/s) is the isenthalpic two-phase choking")
-    print("  limit -- the physical ceiling set by the two-phase speed of sound.")
-    print("  The Dyer predictions (42.3 to 49.5 g/s) are all above this limit,")
-    print("  which is consistent with Waxman's observation that the Dyer model")
-    print("  accounts for non-equilibrium (partial vaporisation) and therefore")
-    print("  legitimately predicts flows slightly above the HEM-only ceiling.")
-    print("  The experimental values (44.0 to 48.0 g/s) confirm this.")
+    print("  limit -- the physical ceiling set by the two-phase speed of sound")
+    print("  UNDER THE ASSUMPTION OF FULL THERMODYNAMIC EQUILIBRIUM. The Dyer")
+    print("  predictions above are all correctly above this limit, consistent")
+    print("  with Waxman's observation that non-equilibrium (delayed-")
+    print("  nucleation) two-phase flow genuinely chokes at a HIGHER mass flux")
+    print("  than the equilibrium limit -- this is expected, not an error.")
+    print()
+
+    # ------------------------------------------------------------------
+    # Henry-Fauske critical flow (non-equilibrium ceiling) -- added
+    # September 2026, docs/future_work.md Priority 1
+    # ------------------------------------------------------------------
+    print("-" * 72)
+    print("HENRY-FAUSKE CRITICAL FLOW -- non-equilibrium ceiling (diagnostic)")
+    print("-" * 72)
+    print()
+    hf = henry_fauske_critical_flow(Cd, A, T1, P1)
+    print(f"  m_dot_crit = {hf['m_dot_crit']*1000:.1f} g/s  "
+          f"@  P2_crit = {hf['P2_crit']/1e5:.1f} bar  "
+          f"x_crit(equilibrium) = {hf['x_crit']:.4f}  N = {hf['N']:.3f}")
+    print()
+    print("  All 4 Dyer predictions above sit BELOW this ceiling (see 'HF'")
+    print("  column in the main table: none are flagged CHOKED), so applying")
+    print("  it as a diagnostic does not perturb the validated MAPE above.")
+    print("  This ceiling is NOT applied automatically to change m_dot_Dyer --")
+    print("  it is surfaced only as dyer_mass_flow()'s 'choked' flag, since it")
+    print("  is not itself experimentally confirmed outside this validated")
+    print("  8-14 bar pressure-drop band. See docs/future_work.md, Priority 1,")
+    print("  for the full reasoning (including why capping Dyer at the")
+    print("  EQUILIBRIUM HEM ceiling above was tried first and found wrong).")
     print()
 
     # ------------------------------------------------------------------
@@ -203,6 +243,11 @@ def run_validation():
     print("      m_dot values estimated from Nino & Razavi Fig. 2 (graph),")
     print("      not from a table. This bounds the achievable validation accuracy.")
     print()
+    print("  (e) The Henry-Fauske diagnostic ceiling is validated only in the")
+    print("      sense that it does not perturb these 4 known-good points --")
+    print("      it has not itself been checked against experimental data in")
+    print("      a regime where it actually binds (choked=True).")
+    print()
 
     # ------------------------------------------------------------------
     # Conclusions
@@ -219,16 +264,23 @@ def run_validation():
     print("     for the Waxman geometry (negligible line losses). Its benefit")
     print("     is realised in real motors with longer, narrower feed lines.")
     print()
-    print("  3. The two-phase line model (Priority 2) is not exercised here")
-    print("     (line losses are negligible). It is tested separately in")
-    print("     test_feed_line.py::TestTwoPhaseLineModel.")
+    print("  3. The two-phase line model (Priority 2 of the original roadmap)")
+    print("     is not exercised here (line losses are negligible). It is")
+    print("     tested separately in test_feed_line.py::TestTwoPhaseLineModel.")
     print()
     print("  4. The HEM critical flow (hem_critical_flow) correctly identifies")
-    print("     the physical ceiling at 41.1 g/s. The Dyer non-equilibrium")
-    print("     correction legitimately predicts above this, consistent with")
-    print("     the experimental data.")
+    print("     the EQUILIBRIUM physical ceiling at 41.1 g/s. The Dyer non-")
+    print("     equilibrium correction legitimately predicts above this,")
+    print("     consistent with the experimental data.")
     print()
-    print("  5. For injector sizing at realistic motor pressures (dP = 20-50 bar),")
+    print("  5. The Henry-Fauske non-equilibrium ceiling (added September 2026)")
+    print("     correctly sits above all 4 Dyer predictions, confirming it does")
+    print("     not perturb this validation. It is surfaced as a diagnostic")
+    print("     'choked' warning for operating points outside this validated")
+    print("     band, not applied as an automatic correction -- see")
+    print("     docs/future_work.md, Priority 1.")
+    print()
+    print("  6. For injector sizing at realistic motor pressures (dP = 20-50 bar),")
     print("     the model provides accuracy competitive with the state of the art")
     print("     in open-source tools. Remaining error is within experimental")
     print("     uncertainty when Cd is measured (not assumed from literature).")

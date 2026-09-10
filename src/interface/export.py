@@ -36,6 +36,7 @@ C_LIGHT  = colors.HexColor("#f0f4f8")
 C_MID    = colors.HexColor("#d0d8e4")
 C_ACCENT = colors.HexColor("#4a6fa5")
 C_WARN   = colors.HexColor("#b05020")
+C_CHOKE  = colors.HexColor("#b5650a")
 
 
 def _fig_to_image(fig, width_mm=85, height_mm=55):
@@ -124,8 +125,16 @@ def _make_pt_chart(T_tank, P_tank, P_inlet, P_chamber):
     return fig
 
 
-def _make_comparison_chart(m_spi, m_hem, m_dyer, m_target):
-    """Matplotlib bar chart for model comparison in Design mode PDF."""
+def _make_comparison_chart(m_spi, m_hem, m_dyer, m_target, m_dot_crit_HF=None):
+    """Matplotlib bar chart for model comparison in Design mode PDF.
+
+    m_dot_crit_HF : float or None, optional
+        Henry-Fauske non-equilibrium choking ceiling, kg/s (added
+        September 2026, docs/future_work.md Priority 1). Drawn as a
+        dashed reference line, diagnostic only -- see
+        injector_two_phase.dyer_mass_flow's docstring for why it is not
+        applied to m_dyer itself.
+    """
     fig, ax = plt.subplots(figsize=(4.5, 2.8))
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
@@ -137,6 +146,10 @@ def _make_comparison_chart(m_spi, m_hem, m_dyer, m_target):
                   linewidth=0.5, width=0.5)
     ax.axhline(m_target * 1000, color="#888888", linestyle=":",
                linewidth=1.2)
+    if m_dot_crit_HF is not None:
+        ax.axhline(m_dot_crit_HF * 1000, color="#b5650a", linestyle="-.",
+                   linewidth=1.2, label="Henry-Fauske ceiling (diagnostic)")
+        ax.legend(fontsize=6, loc="upper left")
     for bar, v in zip(bars, vals):
         ax.text(bar.get_x() + bar.get_width() / 2, v + max(vals) * 0.02,
                 f"{v:.0f}", ha="center", va="bottom", fontsize=7)
@@ -189,6 +202,9 @@ def generate_pdf(mode, inputs, results, segments_ui, model_segments):
     warn_style = ParagraphStyle("warn", fontSize=7, textColor=C_WARN,
                                  fontName="Helvetica-Oblique", spaceAfter=6,
                                  leading=10)
+    choke_style = ParagraphStyle("choke", fontSize=7, textColor=C_CHOKE,
+                                  fontName="Helvetica-Oblique", spaceAfter=6,
+                                  leading=10)
 
     story = []
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -315,6 +331,11 @@ def generate_pdf(mode, inputs, results, segments_ui, model_segments):
             res_data.append(["SPI over-prediction", f"{over:.1f}%"])
             res_data.append(["Dyer kappa", f"{ir['kappa']:.3f}"])
             res_data.append(["Exit vapour quality x", f"{ir['x_exit']:.3f}"])
+            if ir.get("m_dot_crit_HF") is not None:
+                res_data.append(["Non-equilibrium ceiling (Henry-Fauske)",
+                                  f"{ir['m_dot_crit_HF']*1000:.1f} g/s"])
+                res_data.append(["Ceiling exceeded (choked)?",
+                                  "YES — see note below" if ir.get("choked") else "No"])
         elif regime == "HEM_two_phase_inlet" and ir:
             res_data.append(["HEM exit vapour quality x",
                               f"{ir.get('x_exit', 0):.3f}"])
@@ -337,6 +358,11 @@ def generate_pdf(mode, inputs, results, segments_ui, model_segments):
                               f"{results.get('d_dyer', 0):.4f} mm"])
             res_data.append(["Dyer vs SPI area increase",
                               f"{results.get('pct', 0):.1f}%"])
+            if results.get("m_dot_crit_HF") is not None:
+                res_data.append(["Non-equilibrium ceiling (Henry-Fauske)",
+                                  f"{results['m_dot_crit_HF']*1000:.1f} g/s"])
+                res_data.append(["Ceiling exceeded (choked)?",
+                                  "YES — see note below" if results.get("choked") else "No"])
 
     tr = Table(res_data, colWidths=[90*mm, 58*mm])
     tr.setStyle(TableStyle([
@@ -351,6 +377,22 @@ def generate_pdf(mode, inputs, results, segments_ui, model_segments):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
     story.append(tr)
+
+    # ── Choking note (only shown when actually triggered) ─────────────────────
+    choked_flag = (ir.get("choked") if mode == "sizing" else results.get("choked"))
+    m_crit_flag = (ir.get("m_dot_crit_HF") if mode == "sizing"
+                   else results.get("m_dot_crit_HF"))
+    if choked_flag:
+        story.append(Paragraph(
+            f"<b>Non-equilibrium choking note:</b> the Dyer prediction above "
+            f"exceeds the Henry-Fauske (1971) non-equilibrium choking ceiling "
+            f"({m_crit_flag*1000:.1f} g/s at these tank/chamber conditions, "
+            f"independent of orifice area). This ceiling is theoretically "
+            f"sound but has only been confirmed not to perturb results in the "
+            f"Waxman-validated regime (8-14 bar pressure drop) -- it is NOT "
+            f"itself experimentally validated at these conditions. Treat it as "
+            f"a conservative alternative estimate. See docs/future_work.md, "
+            f"Priority 1.", choke_style))
 
     # ── Charts — show when trace is available (including two-phase inlet regime)
     if fl.get("trace"):
@@ -376,7 +418,8 @@ def generate_pdf(mode, inputs, results, segments_ui, model_segments):
         if mode == "design" and "m_spi" in results:
             fig3 = _make_comparison_chart(
                 results["m_spi"], results["m_hem"],
-                results["m_dyer"], results["m_target"])
+                results["m_dyer"], results["m_target"],
+                m_dot_crit_HF=results.get("m_dot_crit_HF"))
             img3 = _fig_to_image(fig3, width_mm=87, height_mm=54)
             story.append(Spacer(1, 4*mm))
             story.append(img3)

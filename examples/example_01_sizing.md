@@ -65,6 +65,14 @@ The team sized the injector using the SPI model and expects approximately 514 g/
 
 ---
 
+## Non-equilibrium choking diagnostic (added September 2026)
+
+Running this exact case in the tool now also shows a **choking warning**: the Dyer prediction here exceeds the Henry-Fauske (1971) non-equilibrium choking ceiling, which at these tank/chamber conditions works out to roughly **310–320 g/s** — below the 368.1 g/s Dyer prediction above.
+
+This does **not** change the 368.1 g/s figure — see `docs/future_work.md`, Priority 1, for why the ceiling is surfaced as a diagnostic warning rather than applied automatically: it is theoretically sound (a primary-source non-equilibrium critical flow model) but has only been confirmed *not* to interfere with the Waxman-validated cases (8–14 bar pressure drop); it has not itself been experimentally validated at this example's conditions (here, roughly 35.5 bar pressure drop, well outside that validated band). Treat the ceiling as a conservative, unconfirmed alternative estimate, and the 368.1 g/s Dyer value as the tool's primary (and Waxman-validated-methodology) answer. Re-run the tool for the exact current values.
+
+---
+
 ## Interpretation
 
 The SPI model over-predicts the mass flow by 28.5%. If the motor was designed around 514 g/s, the real O/F ratio will be lower than expected, reducing specific impulse and potentially compromising combustion stability.
@@ -84,4 +92,4 @@ The SPI model over-predicts the mass flow by 28.5%. If the motor was designed ar
 2. Set sidebar: T = 20 °C, P = 58 bar, Cd = 0.65, P_chamber = 22 bar.
 3. Set orifice: 6 holes, 1.5 mm diameter.
 4. Add feed line segments as listed above.
-5. Read the results — Dyer prediction should show **368.1 g/s** and SPI over-prediction **28.5%**.
+5. Read the results — Dyer prediction should show **368.1 g/s** and SPI over-prediction **28.5%**. An amber choking-ceiling warning should also appear underneath the Dyer caption (see note above).

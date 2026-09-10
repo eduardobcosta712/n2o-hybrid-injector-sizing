@@ -148,6 +148,12 @@ After entering all inputs, results appear immediately below the feed line:
 
 When Dyer is used, a caption shows kappa (non-equilibrium parameter), exit vapour quality x, and the HEM prediction for reference.
 
+### Non-equilibrium choking warning (added September 2026)
+
+Directly beneath that caption, an amber **"Non-equilibrium choking ceiling exceeded"** badge and warning box appear whenever the Dyer prediction exceeds the Henry-Fauske (1971) non-equilibrium choking ceiling for the current tank/chamber conditions. This is a **diagnostic warning only** — it does not change the displayed "Real mass flow" figure. The ceiling is theoretically sound (a primary-source non-equilibrium critical-flow model) but has only been confirmed not to interfere with the tool's validated reference case (Waxman 2013/2014, 8–14 bar pressure drop); outside that band it is an unconfirmed, conservative alternative estimate, not a certainty. If you see this warning, treat it as a prompt to think carefully about the operating point (and, ideally, to seek experimental confirmation) rather than as a correction to apply by hand. See `docs/future_work.md`, Priority 1, for the full reasoning.
+
+If the ceiling could not be computed at all (tank temperature above ≈307 K, near the critical point, where the required entropy data is unavailable), a grey caption states this instead of the warning.
+
 ### Diagrams
 
 Four interactive Plotly charts appear:
@@ -165,7 +171,7 @@ A fifth chart is available in the **Pressure drop by segment** expander: a horiz
 
 ### PDF export
 
-The **Download PDF report** button generates a one-page A4 summary including all inputs, feed line geometry, results, and the two main charts. Suitable for attaching to a project report.
+The **Download PDF report** button generates a one-page A4 summary including all inputs, feed line geometry, results, and the two main charts. When the non-equilibrium choking ceiling is exceeded, the results table and a short note both record this, alongside the ceiling value. Suitable for attaching to a project report.
 
 ---
 
@@ -189,9 +195,13 @@ A caption below the cards shows the percentage by which the Dyer area exceeds th
 
 > **Why Dyer area > SPI area?** The Dyer model predicts a lower mass flow than SPI for the same geometry (two-phase effects reduce effective density). To hit the target mass flow, the orifice area must be increased relative to what SPI would specify. If you size with SPI only, the system will under-deliver.
 
+### Non-equilibrium choking warning (added September 2026)
+
+Immediately below that caption, the same amber choking warning described for Sizing mode can appear here too — checked at the *target* mass flow and the tank/chamber conditions, before the combustion-stability check. **Important:** this condition is independent of the computed orifice area (both the Dyer prediction and the choking ceiling scale linearly with area), so if it appears, resizing the orifice will not resolve it — the message suggests adjusting tank or chamber pressure instead. As in Sizing mode, this is a diagnostic warning, not a correction applied to the Dyer area shown above.
+
 ### Diagrams
 
-1. **Model comparison bar chart** — SPI, HEM, Dyer, and target mass flow side by side for the Dyer area, showing the spread between model predictions.
+1. **Model comparison bar chart** — SPI, HEM, Dyer, and target mass flow side by side for the Dyer area. When available, the Henry-Fauske ceiling is drawn as an additional dash-dot reference line (orange normally, red if exceeded), showing the spread between all the model limits at a glance.
 2. **P-T diagram** — same as Sizing mode.
 3. **Sensitivity analysis** — for the Dyer area, how mass flow varies with tank temperature.
 4. **Subcooling margin** — along the feed line.

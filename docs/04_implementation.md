@@ -71,9 +71,9 @@ Run via `python n2o_properties.py`, which checks:
 
 **Two-phase HEM model (implemented August 2026).** The feed line model now handles two distinct flow regimes:
 
-**Single-phase region** (`P > P_sat(T_tank)`): Darcy-Weisbach with pure liquid properties — `rho_l(T_tank)` and `mu_l(T_tank)` from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (`MU_LIQUID_N2O = 1.5e-4 Pa·s`); now temperature-dependent.
+**Single-phase region** ($P > P_{sat}(T_{tank})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l(T_{tank})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (`MU_LIQUID_N2O = 1.5\times10^{-4}$ Pa·s); now temperature-dependent.
 
-**Two-phase region** ($P \leq P_{\mathrm{sat}}(T_{\mathrm{tank}})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
+**Two-phase region** ($P \leq P_{sat}(T_{tank})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
 
 $$x(s) = \frac{h_l(T_{tank}) - h_l(T_{sat}(P(s)))}{h_{fg}(T_{sat}(P(s)))}, \qquad \rho_{mix} = \frac{1}{\dfrac{1-x}{\rho_l} + \dfrac{x}{\rho_v}}, \qquad \mu_{mix} = (1-x)\,\mu_l + x\,\mu_v$$
 
@@ -170,7 +170,7 @@ Available as a standalone function in `injector_two_phase.py`. Implements Waxman
 
 $$\dot{m}_{crit} = \max_{P_2 < P_{sat}} \left[ C_d A \sqrt{2\,\rho_{mix}(P_2)\,\Delta P} \right]$$
 
-This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions (`T1 = 280 K`, `P1 = 4.36 MPa`): `m_dot_crit = 41.1 g/s` at `P2_crit = 30.4 bar`.
+This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\text{K}$, $P_1 = 4.36\,\text{MPa}$): $\dot{m}_{crit} = 41.1\,\text{g/s}$ at $P_{2,crit} = 30.4\,\text{bar}$.
 
 The function is **not applied automatically** in `dyer_mass_flow()` because the Dyer non-equilibrium correction legitimately predicts above the HEM-only ceiling (confirmed by Waxman experimental data: 44–48 g/s vs. HEM cap of 41.1 g/s).
 
@@ -186,7 +186,7 @@ The two required entropy functions, `s_liquid_sat(T)` and `s_vapor_sat(T)`, were
 
 **Table A.4 range gap.** While implementing this, a pre-existing gap surfaced: Table A.4 only covers 182.33–307.33 K, narrower than the module's main correlation range (up to 309.52 K, the critical point). `cp_liquid_sat`/`mu_liquid_sat` were previously checked against the wider range, so a call between 307.33 K and 309.52 K would silently fall through to `_interp`'s generic "should be unreachable" `RuntimeError`. This is now an explicit, named range check (`T_MIN_A4`, `T_MAX_A4`, `_check_range_a4`), applied consistently to all four Table-A.4 functions plus the two new entropy functions. `hem_critical_flow_isentropic()` checks `T_upstream` against this range up front and raises a `ValueError` pointing to `hem_critical_flow()` (isenthalpic) as a fallback, and to Priority 4 (CoolProp/REFPROP) as the eventual fix.
 
-**Kept side by side, not replaced.** `hem_critical_flow()` (isenthalpic) is unchanged and remains the version cited in `validation/waxman_2013_results.md`. `hem_critical_flow_isentropic()` is additive, for direct comparison and eventual use as the Dyer cap.
+**Kept side by side, not replaced.** `hem_critical_flow()` (isenthalpic) is unchanged and remains the version cited in `validation/waxman_2013_results.md`. `hem_critical_flow_isentropic()` is additive, for direct comparison — the thermodynamically correct *equilibrium* ceiling, kept for reference even though (see Addendum below) neither equilibrium ceiling turned out to be the right bound for Dyer's non-equilibrium prediction.
 
 **Validation.** At Waxman conditions ($T_1=280$ K, $P_1=4.36$ MPa, $D=1.5$ mm, $C_d=0.65$):
 
@@ -198,6 +198,37 @@ The two required entropy functions, `s_liquid_sat(T)` and `s_vapor_sat(T)`, were
 +1.43% difference — both remain below the experimental Dyer-regime range (44.0–48.0 g/s), consistent with the existing interpretation that Dyer's non-equilibrium correction legitimately predicts above either HEM-only ceiling.
 
 **What remains** (see `future_work.md`, Priority 1): deciding how `hem_critical_flow_isentropic()` should be applied automatically as a cap inside `dyer_mass_flow()`, and re-confirming the Waxman MAPE afterwards.
+
+### Addendum (September 2026) — the equilibrium HEM cap was retracted, then replaced with a validated non-equilibrium ceiling
+
+The original plan — applying `hem_critical_flow_isentropic()` (or the isenthalpic version) as an automatic `min(...)` cap on `dyer_mass_flow()` — was tested numerically and found to be **wrong**:
+
+- All 4 already-validated Waxman operating points have `m_dot_Dyer` 1.03×–1.21× **above** `hem_critical_flow()`'s ceiling (41.05 g/s), matching experiment (44.0–48.0 g/s) within the documented MAPE = 3.51%. This is correct, validated, non-equilibrium behaviour, not an artifact — capping at the equilibrium (HEM) ceiling would break it.
+- Capping only the HEM term before blending does not help either: `hem_mass_flow()` evaluated at the actual `P_downstream` already falls *below* the critical value once past the choke point (it follows the descending branch of the curve, not a physical plateau), so a `min()` cap there is a no-op exactly where it would be needed.
+
+The equilibrium HEM ceiling is simply the wrong ceiling for a non-equilibrium (Dyer) prediction; the physically appropriate one is a genuine non-equilibrium critical-flow model.
+
+### Henry-Fauske non-equilibrium critical flow — `henry_fauske_critical_flow()` (added September 2026)
+
+**Source.** Henry, R.E. & Fauske, H.K. (1971), *"The Two-Phase Critical Flow of One-Component Mixtures in Nozzles, Orifices, and Short Tubes,"* ASME J. Heat Transfer, 93(2), 179-187. Equations transcribed here from the simplified form presented in Simoneau, R.J., Henry, R.E., Hendricks, R.C. & Watterson, R. (1971), *"Two-Phase Critical Discharge of High Pressure Liquid Nitrogen,"* NASA TM X-67863, Eqs. (2)-(5) — supplied by the project author after initial web searches for the original 1971 ASME paper's equations returned only image-embedded formulas (unusable without risking fabricated coefficients, against this project's "no magic numbers without a traceable source" convention).
+
+**Theory.** For saturated/subcooled liquid at the nozzle inlet (P₀/P_c > 0.05, comfortably true here), five assumptions apply: negligible vapour before the throat (so the inlet-to-throat momentum balance is single-phase Bernoulli), incompressible liquid, equilibrium vapour formation *at* the throat, equal liquid/vapour velocity at the throat, and — the key non-equilibrium closure — a fractional mass-transfer rate:
+
+$$\eta = \frac{P_t}{P_0} = 1 - \frac{v_{l0}\,G_c^2}{2P_0} \qquad \text{(momentum, Eq. 2)}$$
+
+$$N = \min\!\left(1,\ \frac{x_E}{0.14}\right) \qquad \text{(Henry 1970 fit to Starkman et al. steam-water data)}$$
+
+$$G_c^2 = \left[\frac{N\,(v_{gE}-v_{l0})}{s_{gE}-s_{lE}}\,\frac{ds_{lE}}{dP}\right]^{-1} \qquad \text{(mass-transfer closure, Eq. 5)}$$
+
+where $x_E$ is the **equilibrium** quality at the throat — computed by the already-existing `vapor_quality_isentropic()`, reusing the same entropy machinery built for the (now-superseded) isentropic HEM scan. $ds_{lE}/dP$ comes from the chain rule $(ds_l/dT)/(dP_{sat}/dT)$, with $ds_l/dT$ from a small central finite difference on `s_liquid_sat(T)` (no closed-form derivative available, since $s_l$ comes from table interpolation) and $dP_{sat}/dT$ from the existing analytical `dP_sat_dT`. All volumes and entropies are converted to **specific** (per unit mass) quantities for Eq. 5's units to work out to a mass flux — $s_{liquid\_sat}$/$s_{vapor\_sat}$ are molar (kJ/(kmol·K)) and are divided by $M_{N_2O}$ ×1000 internally.
+
+**Solved by bisection, not fixed-point iteration.** Eqs. (2) and (5) are coupled ($G_c$ depends on properties at the unknown throat pressure $P_t$, which itself depends on $G_c$ via Eq. 2). A first, naive fixed-point implementation diverged: $G_c$ from Eq. 5 blows up as $P_t \to P_{sat}(T_0)$ from below (since $N\to0$ there), and the resulting momentum-implied $P_t$ from Eq. 2 goes deeply negative. Framing it instead as a residual $f(P_t) = P_{t,\text{momentum}}(G_c(P_t)) - P_t$ and bisecting is robust: the residual is strongly negative near $P_{sat}(T_0)$ and turns positive once $N$ has saturated at lower $P_t$, giving a reliable bracket.
+
+**Validation.** At Waxman conditions (T=280 K, P=4.36 MPa, D=1.5 mm, C_d=0.65): $\dot m_{crit}$ = **50.67 g/s**, above `hem_critical_flow_isentropic()`'s equilibrium 41.64 g/s (correct direction), and above all 4 validated Dyer predictions (42.25–49.55 g/s) — so applying it does not perturb them. Re-running the full Waxman validation through the coupled solver confirms **MAPE = 3.51%, unchanged**, `choked = False` at all 4 points.
+
+**Important caveat — surfaced, not hidden.** At operating points further from the Waxman geometry (e.g. `examples/example_01_sizing.md`'s 20 °C, 58→22 bar, 6×1.5 mm), the ceiling *does* bind, roughly 13–17% below the uncapped Dyer blend — and there is currently no experimental data point in this project's validation set where the ceiling actually changes the answer. Rather than silently override `m_dot_Dyer` with a value that is theoretically sound but empirically unconfirmed in the regime where it matters, `dyer_mass_flow()` returns both `m_dot_Dyer` (always unchanged) and `m_dot_crit_HF` + a `choked` boolean, side by side. This was an explicit design decision (see `future_work.md`, Priority 1) after discovering the size of the effect on already-published example numbers.
+
+**What remains.** Wire the `choked`/`m_dot_crit_HF` fields into `app.py`'s result cards as a visible warning (not yet done).
 
 ### File location
 
@@ -233,10 +264,12 @@ A Streamlit web app (`app.py`) wrapping `full_system.py`: editable tank, feed li
 
 Segment state is kept in `st.session_state`, since Streamlit re-runs the whole script on every interaction; without it, the segment list would reset on every slider move. All UI inputs are in display-friendly units (bar, °C, mm, g/s) and converted to SI at the UI boundary before calling into `full_system.py`, which continues to operate in SI throughout, per the project's units convention.
 
+**Henry-Fauske choking diagnostic (added September 2026).** Both modes now surface a warning (amber badge + `st.warning`) whenever `dyer_mass_flow()`'s `choked` flag is `True` — the Dyer prediction exceeds the non-equilibrium choking ceiling (`m_dot_crit_HF`). Design mode's warning explicitly notes the condition is independent of orifice area (both the Dyer prediction and the ceiling scale linearly with area, so resizing the orifice cannot resolve it — see `injector_two_phase.dyer_mass_flow`'s docstring). `plot_model_comparison()` (Design mode) draws the ceiling as a reference line, coloured red when exceeded. The PDF export (`export.py`) includes the same ceiling value and a note when triggered. None of this changes any displayed mass-flow number — it is a warning layer only, per the design decision in `future_work.md`, Priority 1.
+
 ### Running
 
 From the repository root: `streamlit run src/interface/app.py`. Requires `pip install streamlit matplotlib numpy`.
 
 ### File location
 
-`src/interface/app.py`, `src/interface/plotting.py`
+`src/interface/app.py`, `src/interface/plotting.py`, `src/interface/export.py`

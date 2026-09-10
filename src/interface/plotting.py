@@ -25,6 +25,7 @@ C_SAT     = "#94A3B8"    # slate-400 — saturation curve (reference, not data)
 C_TANK    = "#60A5FA"    # same as liquid — tank operating point
 C_INLET   = "#34D399"    # emerald-400 — injector inlet / safe margin
 C_CHAMBER = "#F87171"    # same as vapour — chamber (downstream)
+C_HF      = "#FB923C"    # orange-400 — Henry-Fauske non-equilibrium ceiling (diagnostic)
 C_GRID    = "rgba(148,163,184,0.12)"   # barely-there grid
 C_TEXT    = "#E2E8F0"    # slate-200 — primary text
 C_TEXT_2  = "#64748B"    # slate-500 — secondary text / axis labels
@@ -199,11 +200,29 @@ def plot_PT_diagram(T_tank, P_tank, P_injector_inlet, P_chamber):
     return fig
 
 
-def plot_model_comparison(m_spi, m_hem, m_dyer, m_target):
+def plot_model_comparison(m_spi, m_hem, m_dyer, m_target, m_dot_crit_HF=None,
+                          choked=False):
     """
     Bar chart comparing SPI, HEM, and Dyer mass flow predictions against
     the design target. Specific to Design mode: shows the magnitude of
     the two-phase correction and the spread between model limits.
+
+    Parameters
+    ----------
+    m_spi, m_hem, m_dyer, m_target : float
+        Mass flow rates, kg/s, as before.
+    m_dot_crit_HF : float or None, optional
+        Henry-Fauske non-equilibrium critical flow ceiling, kg/s (added
+        September 2026, docs/future_work.md Priority 1). When provided,
+        drawn as a reference line -- DIAGNOSTIC ONLY, since it is not
+        applied to m_dyer itself (see injector_two_phase.dyer_mass_flow
+        docstring for why). Omit or pass None to hide it (e.g. when the
+        ceiling could not be computed -- see "HF_unavailable_reason" in
+        the Dyer result).
+    choked : bool, optional
+        Whether m_dyer exceeds m_dot_crit_HF. Only affects styling (the
+        ceiling line is drawn in a warning colour when True). Ignored if
+        m_dot_crit_HF is None.
     """
     labels = ["SPI", "HEM", "Dyer (adopted)", "Target"]
     values = [m_spi * 1000, m_hem * 1000, m_dyer * 1000, m_target * 1000]
@@ -228,6 +247,24 @@ def plot_model_comparison(m_spi, m_hem, m_dyer, m_target):
                   annotation_text=f"Target: {m_target*1000:.1f} g/s",
                   annotation_font_color="rgba(150,150,150,0.7)",
                   annotation_font_size=10)
+
+    # Henry-Fauske non-equilibrium ceiling (diagnostic only -- see
+    # docstring). Drawn as a distinct dashed line, orange normally, red
+    # if the Dyer bar actually exceeds it (choked=True), so the chart
+    # itself flags the same condition the text warning describes.
+    if m_dot_crit_HF is not None:
+        hf_colour = C_CHAMBER if choked else C_HF
+        fig.add_hline(
+            y=m_dot_crit_HF * 1000,
+            line=dict(color=hf_colour, dash="dashdot", width=1.5),
+            annotation_text=(
+                f"Henry-Fauske ceiling (diagnostic): {m_dot_crit_HF*1000:.1f} g/s"
+                + (" — EXCEEDED" if choked else "")
+            ),
+            annotation_font_color=hf_colour,
+            annotation_font_size=10,
+            annotation_position="top left",
+        )
 
     fig.update_layout(
         **{k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("xaxis", "yaxis")},
