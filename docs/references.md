@@ -113,3 +113,29 @@ T_crit = 36.4 °C (309.52 K), P_crit = 72.45 bar — consistent with:
 ## Notes
 
 All numerical coefficients in `n2o_properties.py` and `injector_two_phase.py` are sourced from the references above and are documented with their source in the module docstrings. No coefficients were derived independently or taken from unverified sources, consistent with the project's policy of not using "magic numbers" without a traceable origin. The Henry-Fauske non-equilibrium factor N = x_E/0.14 was specifically deferred until a primary/near-primary source with legible equations (not image-embedded) could be obtained, rather than being implemented from partial or half-remembered recollection.
+
+---
+
+## Fuel grain sizing (`grain_sizing.py`, Priority 3)
+
+**Marxman regression rate correlation — theoretical basis:**
+
+**Marxman, G.A. (1964).** Combustion in the turbulent boundary layer on a vaporizing surface. *Tenth Symposium (International) on Combustion*, 1337–1349.
+*(Original turbulent-boundary-layer derivation of the G_o^n regression-rate scaling; predicts n ≈ 0.8, which real fitted data for most propellant combinations falls below — see below.)*
+
+**On why (a, n) are NOT shipped as fixed per-fuel defaults in this project** — evidence of scatter between independent studies of nominally the same fuel/oxidiser pair, consistent with the general understanding that these are test-article-specific empirical fits, not universal material constants:
+
+- Paraffin/N₂O regression rates of ≈2 mm/s, ≈3.5 mm/s, and 4–5 mm/s have each been separately reported in the literature for broadly comparable oxidiser mass flux ranges, with at least one research group (Libre-Space/ULB paraffin-N₂O studies) explicitly noting they could not fully reconcile their measured rate against other published values for the same propellant combination.
+- **Karabeyoglu, M.A., Cantwell, B.J., & Zilliac, G. (2005).** Development of Scalable Space-Time Averaged Regression Rate Expressions for Hybrid Rockets. AIAA 2005-3544. — reports HTPB/N₂O regression rates roughly 3–5× lower than paraffin/N₂O at comparable oxidiser mass flux, illustrating the fuel-to-fuel spread that compounds the study-to-study spread within a single fuel.
+
+**Fuel densities (genuine material properties, used as defaults in `FUEL_PROPERTIES`):**
+
+- **Paraffin wax**: 900.0 kg/m³ (theoretical/bulk), 894.0 kg/m³ (experimental, ~7% void fraction) — both reported in the same characterisation source; 900.0 kg/m³ used as the module default.
+- **PMMA**: 1185.2 kg/m³, measured value from **"Characterization of PolyMethylMethAcrylate as a Fuel for Hybrid Rocket Motors"** (AIAA), a specific clear-cast PMMA grain characterisation study — consistent with commercial PMMA sheet stock, typically quoted 1180–1190 kg/m³.
+- **HTPB**: 920.0 kg/m³, a standard value in the propulsion literature. (HTPB's *other* thermochemical properties — notably heat of formation — are much less consistently reported across sources; density specifically is not contested in the same way.)
+- **ABS**: 1050.0 kg/m³, standard commercial ABS resin bulk density (typically quoted 1.04–1.06 g/cm³); 3D-printed grains may have a somewhat lower effective density depending on infill fraction.
+
+**ABS as a hybrid fuel (comparison to HTPB):**
+
+**Whitmore, S.A. et al.** Analytical and Experimental Comparisons of HTPB and ABS as Hybrid Rocket Fuels. AIAA paper.
+*(ABS/N₂O regression rate and combustion performance reported comparable to, slightly below, HTPB/N₂O in direct side-by-side testing at equal grain geometry — cited in `grain_sizing.py`'s FUEL_PROPERTIES reference notes for ABS.)*

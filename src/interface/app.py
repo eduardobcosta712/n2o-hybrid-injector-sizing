@@ -22,6 +22,7 @@ from plotting import (plot_pressure_along_line, plot_PT_diagram, plot_model_comp
                       plot_tornado,
                       plot_segment_losses)
 from export import generate_pdf
+from grain_sizing import size_grain, FUEL_PROPERTIES
 
 M_N2O = 44.013
 
@@ -63,7 +64,7 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;}
 .insert-row{text-align:center;padding:.1rem 0;opacity:.4;transition:opacity .15s;}
 .insert-row:hover{opacity:1;}
 .divider{border:none;border-top:1px solid #1a2030;margin:1.3rem 0;}
-.block-container{padding-top:1.8rem;padding-bottom:1.8rem;}
+.block-container{padding-top:3.5rem;padding-bottom:1.8rem;}
 div[data-testid="stSidebarContent"]{background:#0a0e17;border-right:1px solid #151c28;}
 </style>
 """, unsafe_allow_html=True)
@@ -503,6 +504,21 @@ def render_result_cards(result):
         if x_in > 0:
             st.caption(f"Two-phase inlet: x_in = {x_in:.4f} · "
                        f"exit x = {ir.get('x_exit', 0):.3f} · HEM applied")
+        # NOTE (investigated September 2026 while working on this
+        # function for grain sizing): this branch deliberately returns
+        # True, NOT False, even though flashing was detected. This is
+        # correct, not a bug -- HEM_two_phase_inlet (added earlier)
+        # means the flashing case now DOES produce a real m_dot_real
+        # above, so the Sizing-mode caller's "if not ok:
+        # render_diagnostics(...)" should NOT fire here. render_diagnostics()
+        # itself is stale for this case (its text claims "injector models
+        # not evaluated" / "no reliable numerical estimate", both false
+        # once HEM_two_phase_inlet exists) -- an earlier attempt to "fix"
+        # this by returning False was reverted after checking that it
+        # would surface that stale, contradictory messaging underneath a
+        # perfectly valid result. render_diagnostics() remains correct
+        # and still used as-is for DESIGN mode's flashing case, where
+        # area sizing genuinely cannot proceed (see that branch below).
         return True
     spi_ok = result["spi_sufficient"]
     m_dot = result["m_dot_real"]
@@ -564,6 +580,163 @@ def render_result_cards(result):
     elif ir and ir.get("x_exit") is not None:
         st.caption(f"HEM two-phase inlet: exit vapour quality x = {ir['x_exit']:.3f}")
     return True
+
+# ── Grain sizing (fuel side) ──────────────────────────────────────────────────
+def render_grain_sizing(m_dot_ox, mode_key):
+    """
+    Priority 3 (docs/future_work.md): from the already-computed oxidiser
+    mass flow, size the initial fuel grain geometry via the Marxman
+    regression rate correlation (grain_sizing.py). a and n are REQUIRED
+    inputs -- not defaulted per fuel -- see grain_sizing.py's module
+    docstring and docs/03b_grain_sizing.md for why: published (a, n)
+    values for nominally the same fuel/oxidiser pair differ by 2-3x
+    between independent studies, so a shipped default would imply false
+    precision. Only fuel density (a genuine material property) is
+    defaulted, from FUEL_PROPERTIES.
+    """
+    with st.expander("Grain sizing (fuel side) — Priority 3", expanded=False):
+        st.caption(
+            "Sizes the INITIAL fuel grain geometry for a target O/F ratio, "
+            "given the oxidiser mass flow already computed above. Does not "
+            "simulate the full transient burn (port radius, O/F, and thrust "
+            "all drift as the grain regresses) — see docs/future_work.md, "
+            "Priority 8.")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            OF = st.number_input(
+                "Target O/F ratio", min_value=0.1, max_value=20.0,
+                value=6.0, step=0.1, key=f"{mode_key}_OF",
+                help="From thermochemical sizing (CEA, RPA, or equivalent) "
+                     "— not computed by this tool.")
+            fuel_name = st.selectbox(
+                "Fuel", list(FUEL_PROPERTIES.keys()), key=f"{mode_key}_fuel")
+            rho_default = FUEL_PROPERTIES[fuel_name]["rho_kg_m3"]
+            rho_fuel = st.number_input(
+                "Fuel density (kg/m³)", min_value=100.0, max_value=3000.0,
+                value=float(rho_default), step=1.0, key=f"{mode_key}_rho",
+                help="Defaulted from literature for the selected fuel — "
+                     "override if you have a measured value.")
+        with c2:
+            L_mm = st.number_input(
+                "Grain length (mm)", min_value=10.0, max_value=3000.0,
+                value=250.0, step=10.0, key=f"{mode_key}_L",
+                help="Direct input — usually set by available motor case "
+                     "length, not derived by this tool.")
+            N_ports = st.number_input(
+                "Number of ports", min_value=1, max_value=20, value=1,
+                step=1, key=f"{mode_key}_Nports",
+                help="More ports increase total burning perimeter for the "
+                     "same total port area (∝ √N) — a real design lever. "
+                     "Only circular ports are supported.")
+            burn_time_s = st.number_input(
+                "Burn duration (s, optional — 0 to skip)", min_value=0.0,
+                max_value=120.0, value=0.0, step=0.5, key=f"{mode_key}_tb",
+                help="If given, shows a conservative first-order burnback "
+                     "estimate — NOT a transient simulation.")
+
+        st.markdown('<div class="param-help">'
+                    '<b>a and n are required — no default is provided.</b> '
+                    'Published values for nominally the same fuel/oxidiser '
+                    'pair vary 2–3× between studies (see references.md); '
+                    'use your own or closely-matched test data.</div>',
+                    unsafe_allow_html=True)
+        ref = FUEL_PROPERTIES[fuel_name]["a_n_reference_range"]
+        st.caption(f"Literature reference for {fuel_name} (orientation "
+                   f"only, NOT a design value): {ref['a_note']} "
+                   f"n typical: {ref['n_typical']}")
+
+        c3, c4 = st.columns(2)
+        with c3:
+            a_coef = st.number_input(
+                "a (SI: G_o in kg/(m²·s), r_dot in m/s)",
+                min_value=0.0, value=0.0, format="%.6e",
+                key=f"{mode_key}_a",
+                help="Required. Convert a literature coefficient to SI "
+                     "units before entering it here — see grain_sizing.py's "
+                     "regression_rate() docstring on this unit trap.")
+        with c4:
+            n_exp = st.number_input(
+                "n (dimensionless exponent)",
+                min_value=0.0, max_value=1.5, value=0.0, step=0.01,
+                key=f"{mode_key}_n",
+                help="Required. Typically 0.4-0.8 depending on fuel.")
+
+        if a_coef <= 0 or n_exp <= 0:
+            st.info("Enter a and n (both required, both > 0) to size the grain.")
+            return
+
+        # Live unit-sanity check, shown BEFORE the user hits any error --
+        # added September 2026 after a real test case with n=0.8 failed
+        # almost every time: the root cause was a in the wrong unit
+        # system (literature a, n are frequently cgs/imperial), giving
+        # regression rates thousands of times too high. Typical hybrid
+        # regression rates are ~0.5-5 mm/s at G_o ~100-400 kg/(m²·s) --
+        # show this directly so a unit mismatch is visible immediately,
+        # not just after a cryptic solver error.
+        from grain_sizing import regression_rate
+        G_o_ref = 200.0  # kg/(m^2.s), a representative mid-range value
+        r_dot_ref_mm_s = regression_rate(a_coef, n_exp, G_o_ref) * 1000.0
+        if 0.2 <= r_dot_ref_mm_s <= 15.0:
+            st.caption(f"✓ Sanity check: at G_o = {G_o_ref:.0f} kg/(m²·s), "
+                       f"your a, n give r_dot = {r_dot_ref_mm_s:.2f} mm/s "
+                       f"— within the typical hybrid range (0.5–5 mm/s).")
+        else:
+            st.warning(
+                f"⚠ Sanity check: at G_o = {G_o_ref:.0f} kg/(m²·s), your "
+                f"a, n give r_dot = {r_dot_ref_mm_s:.3g} mm/s — typical "
+                f"hybrid regression rates are ~0.5–5 mm/s. This looks like "
+                f"a unit mismatch in `a` (literature values are often "
+                f"quoted in cgs or imperial units — G_o in g/(cm²·s), "
+                f"r_dot in mm/s or in/s — this tool requires SI "
+                f"throughout: G_o in kg/(m²·s), r_dot in m/s). Sizing "
+                f"will likely fail or give a nonsensical radius below.")
+
+        try:
+            result = size_grain(
+                m_dot_ox, OF, a_coef, n_exp, rho_fuel, L_mm / 1000.0,
+                N_ports=int(N_ports),
+                burn_time=burn_time_s if burn_time_s > 0 else None)
+        except (ValueError, RuntimeError) as e:
+            st.error(f"Grain sizing error: {e}")
+            return
+
+        g1, g2, g3, g4 = st.columns(4)
+        with g1:
+            st.markdown(f'<div class="result-card"><div class="label">'
+                        f'Fuel mass flow</div><div class="value">'
+                        f'{result["m_dot_fuel"]*1000:.1f}</div>'
+                        f'<div class="sub">g/s total</div></div>',
+                        unsafe_allow_html=True)
+        with g2:
+            st.markdown(f'<div class="result-card"><div class="label">'
+                        f'Initial port radius</div><div class="value">'
+                        f'{result["r_0"]*1000:.2f}</div>'
+                        f'<div class="sub">mm, per port</div></div>',
+                        unsafe_allow_html=True)
+        with g3:
+            st.markdown(f'<div class="result-card"><div class="label">'
+                        f'Initial G_o</div><div class="value">'
+                        f'{result["G_o_0"]:.1f}</div>'
+                        f'<div class="sub">kg/(m²·s)</div></div>',
+                        unsafe_allow_html=True)
+        with g4:
+            st.markdown(f'<div class="result-card"><div class="label">'
+                        f'Initial regression rate</div><div class="value">'
+                        f'{result["r_dot_0"]*1000:.3f}</div>'
+                        f'<div class="sub">mm/s</div></div>',
+                        unsafe_allow_html=True)
+
+        if result["r_final_estimate"] is not None:
+            st.caption(
+                f"After {burn_time_s:.1f} s at the INITIAL regression rate "
+                f"held constant (conservative — real rate falls as the "
+                f"port opens up, so this over-estimates burnback): final "
+                f"port radius ≈ {result['r_final_estimate']*1000:.2f} mm, "
+                f"fuel mass consumed ≈ "
+                f"{result['fuel_mass_consumed_estimate']*1000:.1f} g. "
+                f"Not a transient simulation — see docs/future_work.md, "
+                f"Priority 8.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LANDING
@@ -752,6 +925,9 @@ if st.session_state.page == "sizing":
                                      model_segments, Cd, A_total, roughness),
                         use_container_width=True,
                         config={"scrollZoom": True})
+
+                # Grain sizing (Priority 3, docs/future_work.md)
+                render_grain_sizing(result["m_dot_real"], "siz")
 
                 # PDF export
                 st.markdown('<div class="section-label" '
@@ -973,6 +1149,9 @@ elif st.session_state.page == "design":
                                      model_segments, Cd, A_dyer, roughness),
                         use_container_width=True,
                         config={"scrollZoom": True})
+
+                # Grain sizing (Priority 3, docs/future_work.md)
+                render_grain_sizing(m_dot_target, "des")
 
                 # PDF export
                 st.markdown('<div class="section-label" '

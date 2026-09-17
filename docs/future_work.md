@@ -20,6 +20,10 @@ technical importance per the project roadmap document.
 - Henry-Fauske (1971) non-equilibrium critical flow ceiling (henry_fauske_critical_flow) --
   surfaced as a diagnostic (m_dot_crit_HF, choked flag) alongside dyer_mass_flow(), not applied
   as an automatic cap; validated against Waxman (does not perturb MAPE = 3.51%) (September 2026)  ✅
+- Fuel grain sizing via the Marxman regression rate correlation (grain_sizing.py) -- initial port
+  radius, fuel mass flow, multi-port geometry, first-order conservative burnback estimate; a and n
+  are required user inputs (NOT shipped as fixed literature defaults -- see module docstring and
+  references.md for why), density defaults provided for paraffin/HTPB/ABS/PMMA (September 2026)  ✅
 - Definitive validation against Waxman (2013/2014): MAPE = 3.51%, all 4 cases within +/-5%  ✅
 - Sensitivity tornado plot  ✅
 - Dyer formula weight correction (Solomon 2011)  ✅
@@ -102,35 +106,49 @@ solver since the one-pass results used previously may differ slightly.
 
 ---
 
-## Priority 3 — OF ratio and fuel grain sizing
+## Priority 3 — OF ratio and fuel grain sizing ✅ RESOLVED (September 2026)
 
-**Motivation.** The model currently outputs $\dot{m}_{oxidizer}$ at the converged
-operating point. Given a target OF ratio (specified by the user from thermochemical
-sizing), the fuel mass flow rate follows directly:
+**Final state.** `grain_sizing.py` implements the Marxman regression rate correlation ($\dot r = a G_o^n$) for sizing the initial fuel grain geometry from a target O/F ratio and the oxidiser mass flow already computed by the rest of this tool. See `docs/03b_grain_sizing.md` for the full theoretical derivation.
 
-$$\dot{m}_{fuel} = \dot{m}_{oxidizer} / OF$$
+**Scope deliberately corrected relative to the original plan below** (kept for context; do not re-read it as the current spec):
 
-With the regression rate correlation for paraffin or HTPB (Marxman):
+1. **$a$ and $n$ are required user inputs, not fixed per-fuel defaults.** Researching citable coefficients surfaced genuine, large scatter between independent studies of nominally the same fuel/oxidiser pair (paraffin/N₂O regression rates of ≈2, ≈3.5, and 4–5 mm/s each separately reported at comparable oxidiser mass flux — see `references.md`). Unlike density, $a$ and $n$ are test-article-specific empirical fits (injector design, motor scale, chamber pressure range all matter), not universal material constants. Shipping a literature pair as a default would imply false precision. `FUEL_PROPERTIES` in `grain_sizing.py` provides **density only** as a safe default (paraffin, HTPB, ABS, PMMA — all properly sourced, see `references.md`), plus a labelled, non-authoritative reference range for $a, n$ per fuel.
+2. **Grain length $L$ is a required input, not a derived output.** The original plan implied deriving $L$ from an L/D heuristic; rather than use an unsourced ratio, $L$ is left as a direct input — most teams already know their available case length as a hard constraint.
+3. **No estimated $I_{sp}$ output.** That requires a chemical equilibrium code (CEA/RPA) this project does not implement or wrap. Get $I_{sp}$ at the design O/F from CEA/RPA directly.
+4. **Only circular ports (single- or multi-port) are supported.** Non-circular shapes (star, wagon-wheel) are tracked separately below, not delivered here.
 
-$$\dot{r} = a\, G_o^n, \qquad G_o = \dot{m}_{oxidizer} / A_{port}$$
+**What is delivered.** `size_grain()`: given $\dot m_{ox}$, target OF, $(a, n)$, fuel density, grain length, and number of ports, solves (by bisection, matching this project's existing convention for transcendental relationships) for the initial port radius, reports the initial oxidiser mass flux and regression rate, and — if a burn duration is supplied — a first-order, deliberately **conservative** (over-)estimate of final port radius and fuel mass consumed (using the *initial* regression rate held constant; real regression rate falls as the port opens up, so this over-estimates burnback, appropriate as a safety-margin check, not a transient simulation).
 
-the initial grain geometry (port radius $r_0$, length $L$) can be estimated to
-deliver the required $\dot{m}_{fuel}$ at the design burn duration.
+**Physical subtlety surfaced during testing, worth flagging prominently:** for $n>0.5$ (e.g. many HTPB fits), a *larger* target fuel flow requires a *smaller* port radius — the reverse of naive intuition — because $G_o \propto 1/r^2$ falls faster than the burning perimeter $\propto r$ grows. At $n=0.5$ exactly, fuel flow is independent of port radius entirely (a well-known, practically valuable property of $n\approx0.5$ fuels like paraffin). Both directions are explicitly tested (not assumed) in `test_grain_sizing.py`.
 
-**Why deferred.** Requires semi-empirical coefficients $a$, $n$ specific to
-the fuel (paraffin, HTPB) and oxidiser (N₂O) combination, which are sourced
-from static fire data or the literature. The model would expose these as
-user inputs — it does not model the combustion or thermal processes that
-govern regression rate. This is a post-processing step on the injector sizing
-output, not a change to the two-phase flow model.
+**Validation.** 36 tests (`test_grain_sizing.py`): known-value hand cross-checks, closed-form-vs-bisection agreement (both agree to <2e-4% relative), both directions of the $n$ vs. $0.5$ radius-flow relationship, the $n=0.5$ degenerate case (including its correctly-unreachable-target failure mode), multi-port perimeter scaling ($\propto\sqrt N$ at fixed total area, checked directly, not through the n-dependent solver), and edge cases (non-positive inputs, unbracketable targets).
 
-**Proposed inputs.** OF ratio (from CEA or equivalent), fuel type (dropdown
-with literature $a$, $n$ values for common fuels), burn duration, number of
-ports. Output: initial port radius, grain length, grain mass, estimated
-$I_{sp}$ at design OF.
+**What remains open.**
+1. **Non-circular port shapes** (star, wagon-wheel) — needs published closed-form perimeter-vs-burned-web geometry for specific classical shapes (solid-rocket grain design literature has this solved for some shapes) or a numerical burnback simulation; neither sourced yet. Tracked as a distinct future item, not re-merged into this priority.
+2. **Interface integration** — `app.py` now includes a "Grain sizing" section using `size_grain()` (added alongside this priority); see `04_implementation.md`, Section 4.7.
+3. **Full transient burn simulation** (radius, $G_o$, $\dot r$, O/F all evolving over the burn) remains Priority 8, unaffected by this work beyond providing its $t=0$ starting point.
 
-*Items implemented in this version are listed at the top. New items are added
-here as they are identified, in the priority order used throughout this file.*
+---
+
+*Original plan, superseded by the corrections above — kept only for historical context:*
+
+> **Motivation.** The model currently outputs $\dot{m}_{oxidizer}$ at the converged
+> operating point. Given a target OF ratio (specified by the user from thermochemical
+> sizing), the fuel mass flow rate follows directly:
+>
+> $$\dot{m}_{fuel} = \dot{m}_{oxidizer} / OF$$
+>
+> With the regression rate correlation for paraffin or HTPB (Marxman):
+>
+> $$\dot{r} = a\, G_o^n, \qquad G_o = \dot{m}_{oxidizer} / A_{port}$$
+>
+> the initial grain geometry (port radius $r_0$, length $L$) can be estimated to
+> deliver the required $\dot{m}_{fuel}$ at the design burn duration.
+>
+> **Proposed inputs.** OF ratio (from CEA or equivalent), fuel type (dropdown
+> with literature $a$, $n$ values for common fuels), burn duration, number of
+> ports. Output: initial port radius, grain length, grain mass, estimated
+> $I_{sp}$ at design OF.
 
 ---
 
@@ -150,6 +168,35 @@ Priority 4 below) would understate the real output uncertainty: the
 quoted confidence interval would reflect input-parameter noise only, not
 the model-form error already present in the property correlations.
 Fixing the property backbone first is the more useful order of operations.
+
+## Priority 3b — Non-circular grain port shapes (star, wagon-wheel)
+
+**Motivation.** Split off from Priority 3 above during implementation
+(September 2026): `grain_sizing.py` supports only circular ports
+(single- or multi-port). Non-circular cross-sections are a real, widely
+used technique to increase initial burning perimeter (hence fuel mass
+flow) without the geometric complexity of many small circular ports.
+
+**Why deferred separately.** Unlike a circular port, a non-circular
+port's burning perimeter does not stay self-similar as it regresses --
+sharp concave features (e.g. the inner points of a star) round off at
+a different rate than convex ones, and the perimeter-vs-burned-web
+relationship for an arbitrary shape has no simple closed form. Rigorous
+treatment needs either (a) published closed-form perimeter-vs-web
+formulas for specific classical shapes -- solid-rocket grain design
+literature has solved this for some standard shapes (star, wagon-wheel,
+etc.), analogous in spirit to how this project sourced the Henry-Fauske
+equations from a primary source rather than approximating from memory
+-- or (b) a numerical burnback simulation (e.g. level-set or polygon
+offsetting), which is a substantially larger implementation than
+anything else in this priority list.
+
+**Proposed approach.** Source specific classical-shape formulas (star
+grain is the most commonly documented case) before writing any code;
+implement as an additional port-shape option in `grain_sizing.py`
+alongside the existing circular case, not a replacement for it.
+
+---
 
 ## Priority 4 — Improved N₂O thermophysical properties
 

@@ -273,3 +273,42 @@ From the repository root: `streamlit run src/interface/app.py`. Requires `pip in
 ### File location
 
 `src/interface/app.py`, `src/interface/plotting.py`, `src/interface/export.py`
+
+---
+*Next section: 4.7 `grain_sizing.py` — fuel grain sizing via the Marxman regression rate correlation.*
+
+## 4.7 `grain_sizing.py` — Fuel grain sizing (added September 2026)
+
+### Purpose
+
+Implements Priority 3 of the roadmap: from the oxidiser mass flow already computed by the rest of this tool and a target O/F ratio, size the initial fuel grain geometry (port radius, given a required grain length and number of ports) via the Marxman regression rate correlation. See `docs/03b_grain_sizing.md` for the full theoretical derivation.
+
+### Theory implemented
+
+$$\dot m_{fuel} = \frac{\dot m_{ox}}{OF}, \qquad \dot r = a\,G_o^n, \qquad G_o = \frac{\dot m_{ox}}{A_{port}}$$
+
+Combining these for a single circular port of radius $r$ and length $L$ gives $\dot m_{fuel}(r) = K r^{1-2n}$ (see the theory doc for the full derivation of $K$), solved for $r_0$ by bisection — the same convention already used elsewhere in this project for transcendental relationships (`n2o_properties.T_sat`, `injector_two_phase.henry_fauske_critical_flow`).
+
+**Scope decisions, corrected relative to the original `future_work.md` sketch** (see that file, Priority 3, for the full reasoning):
+- $a$ and $n$ are **required inputs**, not fixed per-fuel defaults — researching citable values surfaced 2–3× scatter between independent studies of nominally the same fuel/oxidiser pair, meaning a shipped default would imply false precision.
+- Grain length $L$ is a **required input**, not derived from an unsourced L/D heuristic.
+- No specific-impulse output — requires a chemical equilibrium code (CEA/RPA) this project does not wrap.
+- Only circular ports (single- or multi-port) — non-circular shapes tracked separately as Priority 3b.
+
+`FUEL_PROPERTIES` provides density defaults (a genuine material property, safe to default) for four common fuels — paraffin wax, HTPB, ABS, PMMA — each cited in `references.md`, alongside a clearly non-authoritative $(a,n)$ reference range per fuel.
+
+### A physical subtlety worth restating here
+
+For $n>0.5$, the sign of the exponent $1-2n$ in $\dot m_{fuel}(r) = Kr^{1-2n}$ flips negative: a **larger** target fuel flow requires a **smaller** port radius, the reverse of naive intuition, because $G_o \propto 1/r^2$ falls faster than the burning perimeter $\propto r$ grows. At $n=0.5$ exactly, fuel flow is independent of port radius entirely. Both directions are explicitly tested in `test_grain_sizing.py`, since this is easy to get backwards (an earlier draft of the tests did).
+
+### Validation
+
+36 tests in `test_grain_sizing.py`: hand-computed known values; closed-form-vs-bisection cross-check (agreement to <2×10⁻⁴% relative); both directions of the $n$ vs. 0.5 radius-flow relationship, verified numerically rather than assumed; the $n=0.5$ degenerate case, including its correctly-unreachable-target failure mode (`RuntimeError`, not a silently wrong answer); multi-port perimeter scaling ($\propto\sqrt N$ at fixed total area, checked directly via pure geometry, independent of $n$); and edge cases (non-positive inputs, targets outside the bisection search bracket).
+
+### Interface integration
+
+`app.py` gained a "Grain sizing" expander (Sizing and Design modes both feed the already-computed $\dot m_{ox}$ into it): OF ratio, fuel dropdown (density auto-filled, editable), **required** $a$ and $n$ number inputs with the literature reference range shown as help text, grain length, number of ports, optional burn duration. Displays $\dot m_{fuel}$, initial port radius and diameter, initial $G_o$ and $\dot r$, and — when burn duration is given — the conservative final-radius/fuel-consumed estimate with an explicit caption that it is a first-order approximation, not a transient simulation.
+
+### File location
+
+`src/model/grain_sizing.py`

@@ -23,8 +23,8 @@ This project gives a hybrid propulsion team a way to predict, before testing, wh
 | Component | Description |
 |---|---|
 | **Theory docs** (`docs/`) | N₂O thermodynamics, SPI model derivation, HEM and Dyer two-phase models — written from first principles, no prior two-phase flow knowledge required |
-| **Calculation model** (`src/model/`) | Coupled iterative solver for the full tank → feed line → injector path: Darcy-Weisbach friction losses, SPI/HEM/Dyer injector models, self-consistent operating point, non-equilibrium choking diagnostic, validated against published data |
-| **Interactive tool** (`src/interface/`) | Streamlit web app — two modes (Sizing and Design), live diagrams, combustion stability check, non-equilibrium choking warning, sensitivity analysis, PDF report export |
+| **Calculation model** (`src/model/`) | Coupled iterative solver for the full tank → feed line → injector path: Darcy-Weisbach friction losses, SPI/HEM/Dyer injector models, self-consistent operating point, non-equilibrium choking diagnostic, fuel grain sizing (Marxman), validated against published data |
+| **Interactive tool** (`src/interface/`) | Streamlit web app — two modes (Sizing and Design), live diagrams, combustion stability check, non-equilibrium choking warning, fuel grain sizing panel, sensitivity analysis, PDF report export |
 | **Practical examples** (`examples/`) | Worked cases showing how to use the tool for real sizing scenarios |
 
 ---
@@ -94,7 +94,7 @@ The `henry_fauske_critical_flow()` function provides the physically appropriate 
 
 ---
 
-> **182 automated tests** pass locally (137 + 12 new in `test_n2o_properties.py` + 33 new in `test_injector_two_phase.py`, added September 2026) on Python 3.10 and 3.12 via GitHub Actions CI (pytest, 5 test modules covering all model components).
+> **218 automated tests** pass locally (182 from the previous update + 36 new in `test_grain_sizing.py`, added September 2026) on Python 3.10 and 3.12 via GitHub Actions CI (pytest, 6 test modules covering all model components).
 
 ## Scope and known limitations
 
@@ -116,6 +116,7 @@ n2o-hybrid-injector-sizing/
 │   ├── 01_n2o_thermodynamics.md
 │   ├── 02_spi_model.md
 │   ├── 03_two_phase_flow.md
+│   ├── 03b_grain_sizing.md
 │   ├── 04_implementation.md
 │   ├── future_work.md
 │   ├── user_manual.md
@@ -127,7 +128,8 @@ n2o-hybrid-injector-sizing/
 │   │   ├── feed_line.py
 │   │   ├── injector_spi.py
 │   │   ├── injector_two_phase.py
-│   │   └── full_system.py
+│   │   ├── full_system.py
+│   │   └── grain_sizing.py
 │   └── interface/
 │       ├── app.py
 │       ├── plotting.py
@@ -142,7 +144,8 @@ n2o-hybrid-injector-sizing/
 │   ├── test_feed_line.py
 │   ├── test_injector_spi.py
 │   ├── test_injector_two_phase.py
-│   └── test_full_system.py
+│   ├── test_full_system.py
+│   └── test_grain_sizing.py
 └── examples/
     ├── example_01_sizing.md
     ├── example_02_design.md

@@ -225,7 +225,8 @@ def fuel_mass_flow_rate_per_port(a, n, rho_fuel, L, r_port, m_dot_ox_per_port):
 
 def solve_initial_port_radius(m_dot_fuel_target_per_port, a, n, rho_fuel, L,
                                m_dot_ox_per_port,
-                               r_min=1e-4, r_max=1.0, tol=1e-9, max_iter=200):
+                               r_min=1e-6, r_max=1000.0, n_scan=400,
+                               tol=1e-9, max_iter=200):
     """
     Solve for the initial port radius r_0 that delivers a target fuel
     mass flow rate (per port), given the Marxman correlation and grain
@@ -260,12 +261,43 @@ def solve_initial_port_radius(m_dot_fuel_target_per_port, a, n, rho_fuel, L,
 
     Special case n = 0.5: m_dot_fuel_per_port becomes INDEPENDENT of
     r_port (the exponent 1 - 2n = 0) -- the target flow rate either
-    matches K exactly (any r_0 works; this function returns the
-    midpoint of the search bracket) or is unreachable at ANY port radius
-    for the given a, L (would require changing L or a instead). This
-    project's bisection will simply fail to bracket a root in the
-    unreachable case, raising RuntimeError with a clear explanation
-    rather than returning a meaningless value.
+    matches K exactly (any r_0 works) or is unreachable at ANY port
+    radius for the given a, L (would require changing L or a instead).
+
+    Bracket-finding strategy (revised September 2026 -- see history
+    note below). Rather than checking only the two endpoints of a fixed
+    [r_min, r_max] window (which fails whenever the true root sits
+    outside that window, even if the window was individually "generous"
+    -- the earlier [0.1 mm, 1 m] version routinely failed for entirely
+    reasonable (a, n) pairs, e.g. n = 0.8, once combined with realistic
+    m_dot_ox and OF), this function scans `n_scan` LOG-SPACED points
+    across the full [r_min, r_max] range (default 1 micron to 1 km --
+    deliberately many orders of magnitude beyond any physically sane
+    motor) and bisects within the first bracket where the residual
+    changes sign. This means: if a root exists anywhere in
+    [r_min, r_max] at all, it will be found, regardless of how far it
+    sits from either original endpoint. If NO sign change is found
+    across the entire scan, the target is genuinely unreachable with
+    these parameters -- overwhelmingly the most likely cause in
+    practice is a UNIT MISMATCH in `a` (see regression_rate()'s
+    docstring on this trap), not a geometry that is merely "a bit
+    outside the old default window". The error message reports the
+    full achievable range found across the scan and flags this
+    possibility explicitly.
+
+    History note: an earlier version of this function used a fixed
+    two-point bracket [0.1 mm, 1 m] and was found, in practice, to fail
+    "almost always" for realistic literature (a, n) values -- diagnosed
+    by checking one such failure by hand: at n = 0.8, the achievable
+    flow at r = 1 m was still ~1300x the target, meaning the true root
+    (if `a` were genuinely in the stated SI units) sat around 150 km --
+    which is not a "bracket too narrow" situation, it means the input
+    `a` was very likely off by orders of magnitude (a unit conversion
+    error). The wider log-spaced scan here does not change that
+    underlying diagnosis, but ensures the function never fails to find
+    a root that genuinely exists somewhere in a very wide, physically
+    reasonable range, and gives a much more informative error
+    (including the unit-mismatch hint) when it truly does not.
 
     Parameters
     ----------
@@ -282,13 +314,21 @@ def solve_initial_port_radius(m_dot_fuel_target_per_port, a, n, rho_fuel, L,
     m_dot_ox_per_port : float
         Oxidiser mass flow rate through this one port, kg/s.
     r_min, r_max : float, optional
-        Search bracket for the port radius, m. Defaults span 0.1 mm to
-        1 m, which comfortably covers realistic hybrid motor scales;
-        widen if sizing an unusually large or small motor.
+        Overall search range for the port radius, m. Defaults span
+        1 micron to 1 km -- deliberately far beyond any physically
+        sane motor, so failures reliably indicate a genuine parameter
+        problem (almost always a unit mismatch in `a`) rather than a
+        bracket that was merely too narrow.
+    n_scan : int, optional
+        Number of log-spaced points scanned across [r_min, r_max] to
+        locate a sign change before bisecting. Default 400 -- cheap
+        (a few hundred function evaluations) and fine enough not to
+        skip over a real root given how smooth m_dot_fuel(r) is (a
+        single power law in r).
     tol : float, optional
         Bisection convergence tolerance on r_port, m.
     max_iter : int, optional
-        Maximum bisection iterations.
+        Maximum bisection iterations within the located bracket.
 
     Returns
     -------
@@ -301,13 +341,13 @@ def solve_initial_port_radius(m_dot_fuel_target_per_port, a, n, rho_fuel, L,
         If m_dot_fuel_target_per_port <= 0, or a, rho_fuel, L,
         m_dot_ox_per_port are not positive.
     RuntimeError
-        If no root is bracketed in [r_min, r_max] -- the target fuel
-        flow rate is not achievable anywhere in this radius range with
-        the given a, n, rho_fuel, L (e.g. n very close to 0.5 and the
-        target not equal to the (nearly) r-independent achievable rate;
-        or L too short/long for any reasonable radius to reach the
-        target). The message reports the achievable range found at the
-        bracket endpoints so the next parameter to adjust is obvious.
+        If no sign change is found anywhere across the full log-spaced
+        scan of [r_min, r_max] -- the target fuel flow rate is not
+        achievable at ANY port radius in this (very wide) range with
+        the given a, n, rho_fuel, L. The message reports the minimum
+        and maximum achievable fuel flow found across the entire scan
+        and explicitly flags a likely unit mismatch in `a` as the most
+        common real-world cause (see regression_rate()'s docstring).
     """
     if m_dot_fuel_target_per_port <= 0:
         raise ValueError(
@@ -324,28 +364,56 @@ def solve_initial_port_radius(m_dot_fuel_target_per_port, a, n, rho_fuel, L,
                                               m_dot_ox_per_port)
                 - m_dot_fuel_target_per_port)
 
-    r_lo, r_hi = r_min, r_max
-    f_lo, f_hi = residual(r_lo), residual(r_hi)
+    # Log-spaced scan across the full range to locate a sign-change
+    # bracket, wherever it actually sits.
+    log_lo, log_hi = math.log10(r_min), math.log10(r_max)
+    r_points = [10 ** (log_lo + i * (log_hi - log_lo) / (n_scan - 1))
+                for i in range(n_scan)]
+    f_points = [residual(r) for r in r_points]
 
-    if f_lo * f_hi > 0:
+    bracket = None
+    for i in range(len(r_points) - 1):
+        if f_points[i] == 0:
+            return r_points[i]
+        if f_points[i] * f_points[i + 1] < 0:
+            bracket = (r_points[i], r_points[i + 1])
+            break
+
+    if bracket is None:
+        m_min = min(fuel_mass_flow_rate_per_port(a, n, rho_fuel, L, r,
+                                                   m_dot_ox_per_port)
+                     for r in (r_points[0], r_points[-1]))
+        m_max = max(fuel_mass_flow_rate_per_port(a, n, rho_fuel, L, r,
+                                                   m_dot_ox_per_port)
+                     for r in (r_points[0], r_points[-1]))
         raise RuntimeError(
-            f"solve_initial_port_radius: no root bracketed in "
-            f"[{r_min:.4g}, {r_max:.4g}] m. Achievable fuel mass flow at "
-            f"the bracket endpoints: {r_min:.4g} m -> "
-            f"{fuel_mass_flow_rate_per_port(a, n, rho_fuel, L, r_min, m_dot_ox_per_port)*1000:.3f} g/s, "
-            f"{r_max:.4g} m -> "
-            f"{fuel_mass_flow_rate_per_port(a, n, rho_fuel, L, r_max, m_dot_ox_per_port)*1000:.3f} g/s "
-            f"(target: {m_dot_fuel_target_per_port*1000:.3f} g/s). "
-            "If n is close to 0.5, fuel mass flow is nearly independent "
-            "of radius -- adjust L or a instead of radius. Otherwise, "
-            "widen r_min/r_max."
+            f"solve_initial_port_radius: no root found anywhere in "
+            f"[{r_min:.4g}, {r_max:.4g}] m (scanned {n_scan} log-spaced "
+            f"points across six orders of magnitude). Achievable fuel "
+            f"mass flow ranges from {m_min*1000:.4g} to {m_max*1000:.4g} "
+            f"g/s across this ENTIRE range, vs. a target of "
+            f"{m_dot_fuel_target_per_port*1000:.4g} g/s. Since this range "
+            f"already spans micron- to kilometre-scale ports, this is "
+            f"almost certainly NOT a bracket problem -- the overwhelmingly "
+            f"likely cause is a UNIT MISMATCH in `a`: literature values "
+            f"are frequently quoted in cgs or imperial units (e.g. G_o in "
+            f"g/(cm^2.s), r_dot in mm/s or in/s), and this function "
+            f"requires SI throughout (G_o in kg/(m^2.s), r_dot in m/s) -- "
+            f"see regression_rate()'s docstring for the conversion. As a "
+            f"sanity check, typical hybrid regression rates are "
+            f"0.5-5 mm/s at G_o on the order of 100-400 kg/(m^2.s); "
+            f"compute regression_rate(a, n, 200.0) and confirm it falls "
+            f"in a similar range before re-trying."
         )
+
+    r_lo, r_hi = bracket
+    f_lo = residual(r_lo)
 
     for _ in range(max_iter):
         r_mid = 0.5 * (r_lo + r_hi)
         f_mid = residual(r_mid)
         if f_lo * f_mid <= 0:
-            r_hi, f_hi = r_mid, f_mid
+            r_hi = r_mid
         else:
             r_lo, f_lo = r_mid, f_mid
         if (r_hi - r_lo) < tol:
