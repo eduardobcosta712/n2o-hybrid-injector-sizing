@@ -71,7 +71,7 @@ Run via `python n2o_properties.py`, which checks:
 
 **Two-phase HEM model (implemented August 2026).** The feed line model now handles two distinct flow regimes:
 
-**Single-phase region** ($P > P_{sat}(T_{tank})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l(T_{tank})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (`MU_LIQUID_N2O = 1.5\times10^{-4}$ Pa·s); now temperature-dependent.
+**Single-phase region** (P > P_sat(T_tank)): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l(T_{tank})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (mu_liquid_N2O = 1.5e-4 Pa·s); now temperature-dependent.
 
 **Two-phase region** ($P \leq P_{sat}(T_{tank})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
 
@@ -170,7 +170,7 @@ Available as a standalone function in `injector_two_phase.py`. Implements Waxman
 
 $$\dot{m}_{crit} = \max_{P_2 < P_{sat}} \left[ C_d A \sqrt{2\,\rho_{mix}(P_2)\,\Delta P} \right]$$
 
-This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\text{K}$, $P_1 = 4.36\,\text{MPa}$): $\dot{m}_{crit} = 41.1\,\text{g/s}$ at $P_{2,crit} = 30.4\,\text{bar}$.
+This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\text{K}$, $P_1 = 4.36\,\text{MPa}$): m_dot_crit = 41.1g/s at P2,crit = 30.4 bar.
 
 The function is **not applied automatically** in `dyer_mass_flow()` because the Dyer non-equilibrium correction legitimately predicts above the HEM-only ceiling (confirmed by Waxman experimental data: 44–48 g/s vs. HEM cap of 41.1 g/s).
 
@@ -220,7 +220,7 @@ $$N = \min\!\left(1,\ \frac{x_E}{0.14}\right) \qquad \text{(Henry 1970 fit to St
 
 $$G_c^2 = \left[\frac{N\,(v_{gE}-v_{l0})}{s_{gE}-s_{lE}}\,\frac{ds_{lE}}{dP}\right]^{-1} \qquad \text{(mass-transfer closure, Eq. 5)}$$
 
-where $x_E$ is the **equilibrium** quality at the throat — computed by the already-existing `vapor_quality_isentropic()`, reusing the same entropy machinery built for the (now-superseded) isentropic HEM scan. $ds_{lE}/dP$ comes from the chain rule $(ds_l/dT)/(dP_{sat}/dT)$, with $ds_l/dT$ from a small central finite difference on `s_liquid_sat(T)` (no closed-form derivative available, since $s_l$ comes from table interpolation) and $dP_{sat}/dT$ from the existing analytical `dP_sat_dT`. All volumes and entropies are converted to **specific** (per unit mass) quantities for Eq. 5's units to work out to a mass flux — $s_{liquid\_sat}$/$s_{vapor\_sat}$ are molar (kJ/(kmol·K)) and are divided by $M_{N_2O}$ ×1000 internally.
+where $x_E$ is the **equilibrium** quality at the throat — computed by the already-existing `vapor_quality_isentropic()`, reusing the same entropy machinery built for the (now-superseded) isentropic HEM scan. $ds_{lE}/dP$ comes from the chain rule $(ds_l/dT)/(dP_{sat}/dT)$, with $ds_l/dT$ from a small central finite difference on `s_liquid_sat(T)` (no closed-form derivative available, since $s_l$ comes from table interpolation) and $dP_{sat}/dT$ from the existing analytical `dP_sat_dT`. All volumes and entropies are converted to **specific** (per unit mass) quantities for Eq. 5's units to work out to a mass flux — $s_{liquid\_sat}$/s_vapor_sat are molar (kJ/(kmol·K)) and are divided by $M_{N_2O}$ ×1000 internally.
 
 **Solved by bisection, not fixed-point iteration.** Eqs. (2) and (5) are coupled ($G_c$ depends on properties at the unknown throat pressure $P_t$, which itself depends on $G_c$ via Eq. 2). A first, naive fixed-point implementation diverged: $G_c$ from Eq. 5 blows up as $P_t \to P_{sat}(T_0)$ from below (since $N\to0$ there), and the resulting momentum-implied $P_t$ from Eq. 2 goes deeply negative. Framing it instead as a residual $f(P_t) = P_{t,\text{momentum}}(G_c(P_t)) - P_t$ and bisecting is robust: the residual is strongly negative near $P_{sat}(T_0)$ and turns positive once $N$ has saturated at lower $P_t$, giving a reliable bracket.
 
