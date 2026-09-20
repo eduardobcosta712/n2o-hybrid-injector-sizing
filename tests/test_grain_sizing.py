@@ -17,6 +17,7 @@ import pytest
 from grain_sizing import (
     regression_rate, oxidizer_mass_flux, fuel_mass_flow_rate_per_port,
     solve_initial_port_radius, size_grain, FUEL_PROPERTIES,
+    a_from_reference_rate, PLAUSIBLE_PORT_RADIUS_RANGE_M,
 )
 
 
@@ -215,8 +216,15 @@ class TestSizeGrain:
         assert math.isclose(result["m_dot_fuel"], 0.5 / 6.0, rel_tol=1e-9)
 
     def test_higher_OF_gives_less_fuel_flow(self):
-        r1 = size_grain(0.5, 4.0, self.a, self.n, self.rho, self.L)
-        r2 = size_grain(0.5, 8.0, self.a, self.n, self.rho, self.L)
+        # OF=5.0 and OF=7.0 chosen (instead of the original 4.0/8.0) so
+        # both solved radii stay within PLAUSIBLE_PORT_RADIUS_RANGE_M
+        # for these a, n, rho, L -- OF=4.0 alone solves to r_0=2.8mm,
+        # correctly refused by the new plausibility guarantee (added
+        # September 2026); this test is about the OF trend, not about
+        # exercising that guarantee (see TestSizeGrain's dedicated
+        # plausibility tests below for that).
+        r1 = size_grain(0.5, 5.0, self.a, self.n, self.rho, self.L)
+        r2 = size_grain(0.5, 7.0, self.a, self.n, self.rho, self.L)
         assert r2["m_dot_fuel"] < r1["m_dot_fuel"]
 
     def test_multi_port_increases_total_perimeter_for_fixed_total_area(self):
@@ -248,10 +256,16 @@ class TestSizeGrain:
         # equally across N_ports -- this much is n-independent and
         # always true, unlike the resulting radius (see
         # TestSolveInitialPortRadius on why radius direction depends on
-        # n and is therefore not asserted here).
-        r1 = size_grain(0.5, 6.0, self.a, self.n, self.rho, self.L,
+        # n and is therefore not asserted here). a=4e-5, L=0.4 chosen
+        # (instead of the class-level a=8.24e-5, L=0.25) specifically so
+        # BOTH N_ports=1 and N_ports=4 solve to plausible radii here --
+        # the original combination correctly triggers the September
+        # 2026 plausibility guarantee at N_ports=4 (r_0 would be 344mm),
+        # which is not what this test is checking.
+        a_local, L_local = 4e-5, 0.4
+        r1 = size_grain(0.5, 6.0, a_local, self.n, self.rho, L_local,
                         N_ports=1)
-        r4 = size_grain(0.5, 6.0, self.a, self.n, self.rho, self.L,
+        r4 = size_grain(0.5, 6.0, a_local, self.n, self.rho, L_local,
                         N_ports=4)
         assert math.isclose(r4["m_dot_fuel_per_port"],
                             r1["m_dot_fuel_per_port"] / 4, rel_tol=1e-9)
@@ -304,6 +318,119 @@ class TestSizeGrain:
         with pytest.raises(ValueError):
             size_grain(0.5, 6.0, self.a, self.n, self.rho, self.L,
                       burn_time=-1.0)
+
+    # --- Physical-plausibility guarantee (added September 2026) ------------
+    # After a real test case "succeeded" mathematically at r_0 = 6.87 m --
+    # a genuine root of the equations, but useless as a design -- size_grain
+    # now refuses to return ANY result outside PLAUSIBLE_PORT_RADIUS_RANGE_M,
+    # raising RuntimeError instead. These tests exercise that guarantee
+    # directly, constructing inputs where a valid mathematical root exists
+    # (solve_initial_port_radius alone would succeed) but lands outside the
+    # plausible range -- distinguishing this from solve_initial_port_radius's
+    # own "no root at all" failure mode, already tested above.
+
+    def test_refuses_implausibly_large_radius(self):
+        # Construct a target that solve_initial_port_radius CAN satisfy,
+        # at exactly r=500mm -- deliberately just outside the plausible
+        # upper bound (300mm) so the guarantee, not the inner solver,
+        # is what fires.
+        target_fuel = fuel_mass_flow_rate_per_port(
+            self.a, self.n, self.rho, self.L, 0.5, 0.5)
+        OF = 0.5 / target_fuel
+        with pytest.raises(RuntimeError, match="physically plausible"):
+            size_grain(0.5, OF, self.a, self.n, self.rho, self.L, N_ports=1)
+
+    def test_refuses_implausibly_small_radius(self):
+        # Mirror check at the lower bound (5mm): construct a target
+        # matching r=2mm exactly, just inside the "too small" side.
+        target_fuel = fuel_mass_flow_rate_per_port(
+            self.a, self.n, self.rho, self.L, 0.002, 0.5)
+        OF = 0.5 / target_fuel
+        with pytest.raises(RuntimeError, match="physically plausible"):
+            size_grain(0.5, OF, self.a, self.n, self.rho, self.L, N_ports=1)
+
+    def test_accepts_radius_at_plausible_bound_edges(self):
+        # Sanity check that the bounds themselves are inclusive-ish and
+        # don't accidentally reject reasonable, common motor scales
+        # (e.g. r_0 = 20 mm, comfortably inside [5, 300] mm).
+        target_fuel = fuel_mass_flow_rate_per_port(
+            self.a, self.n, self.rho, self.L, 0.02, 0.5)
+        OF = 0.5 / target_fuel
+        result = size_grain(0.5, OF, self.a, self.n, self.rho, self.L,
+                            N_ports=1)
+        assert math.isclose(result["r_0"], 0.02, rel_tol=1e-3)
+
+    def test_error_message_reports_implied_regression_rate(self):
+        # The refusal message must include enough diagnostic detail
+        # (the regression rate implied AT the rejected radius) for a
+        # user to actually act on it -- not just "it failed".
+        target_fuel = fuel_mass_flow_rate_per_port(
+            self.a, self.n, self.rho, self.L, 0.5, 0.5)
+        OF = 0.5 / target_fuel
+        with pytest.raises(RuntimeError) as exc_info:
+            size_grain(0.5, OF, self.a, self.n, self.rho, self.L, N_ports=1)
+        msg = str(exc_info.value)
+        assert "mm/s" in msg
+        assert "kg/(m^2.s)" in msg or "kg/(m²" in msg
+
+
+# ---------------------------------------------------------------------------
+# a_from_reference_rate -- added September 2026, replaces asking users to
+# convert a Marxman `a` coefficient by hand (the single most common source
+# of unit-mismatch errors in practice -- see PLAUSIBLE_PORT_RADIUS_RANGE_M
+# tests above and grain_sizing.py's module docstring).
+# ---------------------------------------------------------------------------
+
+class TestAFromReferenceRate:
+
+    def test_known_value(self):
+        # a = (r_dot_ref_mm_s / 1000) / G_o_ref^n
+        # = (2.0/1000) / 200**0.6
+        expected = (2.0 / 1000.0) / 200.0 ** 0.6
+        assert math.isclose(a_from_reference_rate(2.0, 200.0, 0.6),
+                            expected, rel_tol=1e-9)
+
+    def test_round_trip_with_regression_rate(self):
+        # Converting a data point to `a` and then evaluating
+        # regression_rate() AT that same reference G_o must recover the
+        # original r_dot_ref (in m/s).
+        r_dot_ref_mm_s, G_o_ref, n = 3.2, 250.0, 0.55
+        a = a_from_reference_rate(r_dot_ref_mm_s, G_o_ref, n)
+        recovered_m_s = regression_rate(a, n, G_o_ref)
+        assert math.isclose(recovered_m_s * 1000.0, r_dot_ref_mm_s,
+                            rel_tol=1e-9)
+
+    def test_scales_linearly_with_reference_rate(self):
+        a1 = a_from_reference_rate(2.0, 200.0, 0.6)
+        a2 = a_from_reference_rate(4.0, 200.0, 0.6)
+        assert math.isclose(a2, 2 * a1, rel_tol=1e-9)
+
+    def test_positive_for_positive_inputs(self):
+        assert a_from_reference_rate(2.0, 200.0, 0.6) > 0
+
+    def test_raises_for_nonpositive_rate(self):
+        with pytest.raises(ValueError):
+            a_from_reference_rate(0.0, 200.0, 0.6)
+        with pytest.raises(ValueError):
+            a_from_reference_rate(-1.0, 200.0, 0.6)
+
+    def test_raises_for_nonpositive_G_o_ref(self):
+        with pytest.raises(ValueError):
+            a_from_reference_rate(2.0, 0.0, 0.6)
+        with pytest.raises(ValueError):
+            a_from_reference_rate(2.0, -50.0, 0.6)
+
+    def test_realistic_reference_point_gives_plausible_design(self):
+        # End-to-end check: a realistic literature-style data point
+        # (2 mm/s at 200 kg/(m^2.s), n=0.6), converted via this
+        # function and fed through the full size_grain() pipeline,
+        # must land within the plausible port-radius range -- i.e.
+        # this is the intended, correct way to avoid the unit-mismatch
+        # failures that motivated this function's existence.
+        a = a_from_reference_rate(2.0, 200.0, 0.6)
+        result = size_grain(0.5, 6.0, a, 0.6, 900.0, 0.25, N_ports=1)
+        r_lo, r_hi = PLAUSIBLE_PORT_RADIUS_RANGE_M
+        assert r_lo <= result["r_0"] <= r_hi
 
 
 # ---------------------------------------------------------------------------

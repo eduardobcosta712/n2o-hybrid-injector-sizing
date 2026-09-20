@@ -113,6 +113,74 @@ FUEL_PROPERTIES = {
 }
 
 
+# Physically plausible range for an INITIAL port radius, m -- from
+# roughly a large drinking straw (5 mm) up to a fairly large amateur/
+# small-commercial hybrid motor port (300 mm). Generous on both sides
+# deliberately (this is a plausibility check, not a hard physical
+# limit), but NOT the [1 micron, 1 km] mathematical search range used
+# internally by solve_initial_port_radius() -- that range exists to
+# guarantee a root is found if one exists at all; this range exists to
+# flag when a found root, while mathematically valid, is almost
+# certainly not what a real motor looks like (added September 2026,
+# after a real test case solved "successfully" to r_0 = 6.87 m -- the
+# solver found a genuine root, but that root is not remotely physical,
+# and the underlying cause is the same unit-mismatch-in-a issue the
+# pre-solve sanity check in app.py already warns about -- this is the
+# second half of that same protection, covering the case where the
+# user proceeds past that warning anyway).
+PLAUSIBLE_PORT_RADIUS_RANGE_M = (0.005, 0.3)
+
+
+def a_from_reference_rate(r_dot_ref_mm_s, G_o_ref, n):
+    """
+    Convert a single regression-rate DATA POINT -- exactly what a paper
+    or plot typically reports ("at G_o = G_o_ref, the measured
+    regression rate was r_dot_ref") -- into the Marxman coefficient a,
+    without requiring the user to invert r_dot = a * G_o^n by hand.
+
+    This exists specifically to remove the single most common source of
+    error in this module's practical use: `a`'s implied units depend on
+    n in a way that is very easy to get wrong when converting a
+    literature value by hand (see regression_rate()'s docstring below).
+    A regression rate in mm/s and a mass flux in kg/(m^2.s) are both
+    directly readable off a typical plot or table with no unit
+    ambiguity -- this function does the (n-dependent, error-prone)
+    conversion internally instead of asking the user to.
+
+        a = (r_dot_ref_mm_s / 1000) / G_o_ref ** n
+
+    Parameters
+    ----------
+    r_dot_ref_mm_s : float
+        Regression rate at the reference oxidiser mass flux, mm/s --
+        the conventional unit this is reported in in the literature.
+    G_o_ref : float
+        The oxidiser mass flux this regression rate was measured or
+        read off at, kg/(m^2.s) (SI -- this unit is standard enough in
+        the literature that it rarely needs conversion).
+    n : float
+        Marxman exponent, dimensionless -- safe to copy directly from a
+        source regardless of its unit system, since it carries no units.
+
+    Returns
+    -------
+    float
+        Marxman `a` coefficient in this module's SI convention, ready
+        to pass to regression_rate(), fuel_mass_flow_rate_per_port(),
+        solve_initial_port_radius(), and size_grain().
+
+    Raises
+    ------
+    ValueError
+        If r_dot_ref_mm_s or G_o_ref is not positive.
+    """
+    if r_dot_ref_mm_s <= 0:
+        raise ValueError(f"r_dot_ref_mm_s = {r_dot_ref_mm_s} must be positive.")
+    if G_o_ref <= 0:
+        raise ValueError(f"G_o_ref = {G_o_ref} must be positive.")
+    return (r_dot_ref_mm_s / 1000.0) / G_o_ref ** n
+
+
 def regression_rate(a, n, G_o):
     """
     Marxman regression rate correlation.
@@ -502,6 +570,46 @@ def size_grain(m_dot_ox, OF, a, n, rho_fuel, L, N_ports=1, burn_time=None):
 
     r_0 = solve_initial_port_radius(
         m_dot_fuel_per_port, a, n, rho_fuel, L, m_dot_ox_per_port)
+
+    # HARD physical-plausibility guarantee (added September 2026, after
+    # a real test case "succeeded" mathematically at r_0 = 6.87 m -- a
+    # genuine root of the equations, but not a usable design for any
+    # real motor). solve_initial_port_radius() searches a very wide
+    # mathematical range (1 micron to 1 km) specifically so it always
+    # finds a root if one exists -- but "a root exists" and "this is a
+    # sane motor" are different questions. This function refuses to
+    # return a result at all if r_0 falls outside
+    # PLAUSIBLE_PORT_RADIUS_RANGE_M, raising a RuntimeError with a
+    # concrete diagnostic (the regression rate this a, n actually imply
+    # AT the solved radius, compared against the typical hybrid range)
+    # instead of silently handing back a number that looks like a
+    # normal result. This is a genuine engineering constraint, not a
+    # narrower search bracket -- the caller (app.py) always ends up in
+    # its existing error-handling branch when this fires, so a
+    # nonsensical geometry can never be displayed as if it were valid.
+    r_lo_ok, r_hi_ok = PLAUSIBLE_PORT_RADIUS_RANGE_M
+    if not (r_lo_ok <= r_0 <= r_hi_ok):
+        G_o_check = oxidizer_mass_flux(m_dot_ox_per_port, r_0)
+        r_dot_check = regression_rate(a, n, G_o_check)
+        raise RuntimeError(
+            f"size_grain: the solved initial port radius, r_0 = "
+            f"{r_0*1000:.4g} mm, is outside the physically plausible "
+            f"range for a real motor "
+            f"({r_lo_ok*1000:.0f}-{r_hi_ok*1000:.0f} mm). This IS a "
+            f"genuine mathematical solution to the equations as given -- "
+            f"but it is not a usable design, so this function refuses to "
+            f"return it. At this solved radius, your a, n imply a "
+            f"regression rate of {r_dot_check*1000:.3g} mm/s at "
+            f"G_o = {G_o_check:.3g} kg/(m^2.s); typical hybrid fuels "
+            f"regress at 0.5-5 mm/s at G_o on the order of "
+            f"50-400 kg/(m^2.s). If that comparison looks far off, `a` "
+            f"is almost certainly in the wrong unit system -- use "
+            f"a_from_reference_rate(r_dot_ref_mm_s, G_o_ref, n) instead "
+            f"of computing `a` by hand (see that function's docstring). "
+            f"If the regression rate above looks reasonable, the target "
+            f"O/F, grain length, or number of ports is what needs "
+            f"adjusting instead -- see docs/03b_grain_sizing.md."
+        )
 
     G_o_0 = oxidizer_mass_flux(m_dot_ox_per_port, r_0)
     r_dot_0 = regression_rate(a, n, G_o_0)

@@ -73,7 +73,7 @@ Run via `python n2o_properties.py`, which checks:
 
 **Single-phase region** (P > P_sat(T_tank)): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l(T_{tank})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (mu_liquid_N2O = 1.5e-4 Pa·s); now temperature-dependent.
 
-**Two-phase region** ($P \leq P_{sat}(T_{tank})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
+**Two-phase region** (P <= Psat(T_tank)): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
 
 $$x(s) = \frac{h_l(T_{tank}) - h_l(T_{sat}(P(s)))}{h_{fg}(T_{sat}(P(s)))}, \qquad \rho_{mix} = \frac{1}{\dfrac{1-x}{\rho_l} + \dfrac{x}{\rho_v}}, \qquad \mu_{mix} = (1-x)\,\mu_l + x\,\mu_v$$
 

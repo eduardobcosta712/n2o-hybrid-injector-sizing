@@ -586,21 +586,51 @@ def render_grain_sizing(m_dot_ox, mode_key):
     """
     Priority 3 (docs/future_work.md): from the already-computed oxidiser
     mass flow, size the initial fuel grain geometry via the Marxman
-    regression rate correlation (grain_sizing.py). a and n are REQUIRED
-    inputs -- not defaulted per fuel -- see grain_sizing.py's module
-    docstring and docs/03b_grain_sizing.md for why: published (a, n)
-    values for nominally the same fuel/oxidiser pair differ by 2-3x
-    between independent studies, so a shipped default would imply false
-    precision. Only fuel density (a genuine material property) is
-    defaulted, from FUEL_PROPERTIES.
+    regression rate correlation (grain_sizing.py).
+
+    Redesigned September 2026 after two real test failures:
+      1. Entering a raw Marxman `a` coefficient by hand is extremely
+         easy to get wrong (its implied units depend on n) -- the fix
+         is to never ask for `a` directly. Instead the user enters a
+         regression-rate DATA POINT (mm/s at a stated G_o in
+         kg/(m^2.s)) exactly as it would be read off a plot or table in
+         a paper, and grain_sizing.a_from_reference_rate() converts it.
+      2. Even with that fix, a bad combination of inputs could in
+         principle still solve to a physically absurd port radius.
+         grain_sizing.size_grain() now REFUSES to return such a result
+         (raises RuntimeError instead) -- this function's job is just
+         to display that refusal clearly, not to re-implement the check.
+
+    a and n (or rather, the (r_dot_ref, G_o_ref) point they are derived
+    from) are REQUIRED inputs -- not defaulted per fuel -- see
+    grain_sizing.py's module docstring and docs/03b_grain_sizing.md for
+    why: published (a, n) values for nominally the same fuel/oxidiser
+    pair differ by 2-3x between independent studies, so a shipped
+    default would imply false precision. Only fuel density (a genuine
+    material property) is defaulted, from FUEL_PROPERTIES.
     """
     with st.expander("Grain sizing (fuel side) — Priority 3", expanded=False):
-        st.caption(
-            "Sizes the INITIAL fuel grain geometry for a target O/F ratio, "
-            "given the oxidiser mass flow already computed above. Does not "
-            "simulate the full transient burn (port radius, O/F, and thrust "
-            "all drift as the grain regresses) — see docs/future_work.md, "
-            "Priority 8.")
+        st.markdown(
+            "Sizes the **initial** fuel grain geometry for a target O/F "
+            "ratio, given the oxidiser mass flow already computed above. "
+            "Does not simulate the full transient burn (port radius, O/F, "
+            "and thrust all drift as the grain regresses) — see "
+            "docs/future_work.md, Priority 8.")
+
+        st.markdown(
+            '<div class="param-help">'
+            '<b>How to use this panel:</b><br>'
+            '1. Pick your fuel below (sets density; NOT the burn rate).<br>'
+            '2. Find ONE regression-rate data point for your fuel/N₂O '
+            'combination — from your own test data if you have it, or from '
+            'a paper\'s plot/table if not (see the literature note below '
+            'each fuel for where published values tend to cluster, but '
+            'note the ~2–3× spread between sources). You need: the '
+            'regression rate in mm/s, the oxidiser mass flux G_o it was '
+            'measured at in kg/(m²·s), and the exponent n.<br>'
+            '3. Enter those three numbers below exactly as read — no unit '
+            'conversion needed, that is done for you.</div>',
+            unsafe_allow_html=True)
 
         c1, c2 = st.columns(2)
         with c1:
@@ -635,70 +665,60 @@ def render_grain_sizing(m_dot_ox, mode_key):
                 help="If given, shows a conservative first-order burnback "
                      "estimate — NOT a transient simulation.")
 
-        st.markdown('<div class="param-help">'
-                    '<b>a and n are required — no default is provided.</b> '
-                    'Published values for nominally the same fuel/oxidiser '
-                    'pair vary 2–3× between studies (see references.md); '
-                    'use your own or closely-matched test data.</div>',
-                    unsafe_allow_html=True)
         ref = FUEL_PROPERTIES[fuel_name]["a_n_reference_range"]
-        st.caption(f"Literature reference for {fuel_name} (orientation "
-                   f"only, NOT a design value): {ref['a_note']} "
-                   f"n typical: {ref['n_typical']}")
+        st.caption(f"Literature note for {fuel_name} (orientation only, "
+                   f"NOT a value to type in blindly): {ref['a_note']} "
+                   f"n typically: {ref['n_typical']}")
 
-        c3, c4 = st.columns(2)
+        st.markdown(
+            '<div class="section-label" style="margin-top:.6rem">'
+            'Regression-rate data point (required)</div>',
+            unsafe_allow_html=True)
+        c3, c4, c5 = st.columns(3)
         with c3:
-            a_coef = st.number_input(
-                "a (SI: G_o in kg/(m²·s), r_dot in m/s)",
-                min_value=0.0, value=0.0, format="%.6e",
-                key=f"{mode_key}_a",
-                help="Required. Convert a literature coefficient to SI "
-                     "units before entering it here — see grain_sizing.py's "
-                     "regression_rate() docstring on this unit trap.")
+            r_dot_ref = st.number_input(
+                "Regression rate (mm/s)", min_value=0.0, max_value=50.0,
+                value=0.0, step=0.1, key=f"{mode_key}_rdotref",
+                help="Read this directly off your source at the G_o value "
+                     "entered alongside it. Typical range: 0.5-5 mm/s.")
         with c4:
+            G_o_ref = st.number_input(
+                "...at this G_o (kg/(m²·s))", min_value=0.0,
+                max_value=2000.0, value=0.0, step=10.0,
+                key=f"{mode_key}_Goref",
+                help="The oxidiser mass flux the regression rate above was "
+                     "measured/read at. Typical range: 50-400 kg/(m²·s).")
+        with c5:
             n_exp = st.number_input(
-                "n (dimensionless exponent)",
-                min_value=0.0, max_value=1.5, value=0.0, step=0.01,
-                key=f"{mode_key}_n",
-                help="Required. Typically 0.4-0.8 depending on fuel.")
+                "n (exponent)", min_value=0.0, max_value=1.5, value=0.0,
+                step=0.01, key=f"{mode_key}_n",
+                help="Dimensionless — safe to copy directly from your "
+                     "source regardless of its unit system.")
 
-        if a_coef <= 0 or n_exp <= 0:
-            st.info("Enter a and n (both required, both > 0) to size the grain.")
+        if r_dot_ref <= 0 or G_o_ref <= 0 or n_exp <= 0:
+            st.info("Enter all three values above (regression rate, its "
+                    "reference G_o, and n) to size the grain.")
             return
 
-        # Live unit-sanity check, shown BEFORE the user hits any error --
-        # added September 2026 after a real test case with n=0.8 failed
-        # almost every time: the root cause was a in the wrong unit
-        # system (literature a, n are frequently cgs/imperial), giving
-        # regression rates thousands of times too high. Typical hybrid
-        # regression rates are ~0.5-5 mm/s at G_o ~100-400 kg/(m²·s) --
-        # show this directly so a unit mismatch is visible immediately,
-        # not just after a cryptic solver error.
-        from grain_sizing import regression_rate
-        G_o_ref = 200.0  # kg/(m^2.s), a representative mid-range value
-        r_dot_ref_mm_s = regression_rate(a_coef, n_exp, G_o_ref) * 1000.0
-        if 0.2 <= r_dot_ref_mm_s <= 15.0:
-            st.caption(f"✓ Sanity check: at G_o = {G_o_ref:.0f} kg/(m²·s), "
-                       f"your a, n give r_dot = {r_dot_ref_mm_s:.2f} mm/s "
-                       f"— within the typical hybrid range (0.5–5 mm/s).")
-        else:
-            st.warning(
-                f"⚠ Sanity check: at G_o = {G_o_ref:.0f} kg/(m²·s), your "
-                f"a, n give r_dot = {r_dot_ref_mm_s:.3g} mm/s — typical "
-                f"hybrid regression rates are ~0.5–5 mm/s. This looks like "
-                f"a unit mismatch in `a` (literature values are often "
-                f"quoted in cgs or imperial units — G_o in g/(cm²·s), "
-                f"r_dot in mm/s or in/s — this tool requires SI "
-                f"throughout: G_o in kg/(m²·s), r_dot in m/s). Sizing "
-                f"will likely fail or give a nonsensical radius below.")
+        from grain_sizing import a_from_reference_rate
+        a_coef = a_from_reference_rate(r_dot_ref, G_o_ref, n_exp)
 
         try:
             result = size_grain(
                 m_dot_ox, OF, a_coef, n_exp, rho_fuel, L_mm / 1000.0,
                 N_ports=int(N_ports),
                 burn_time=burn_time_s if burn_time_s > 0 else None)
-        except (ValueError, RuntimeError) as e:
-            st.error(f"Grain sizing error: {e}")
+        except ValueError as e:
+            st.error(f"Grain sizing error (check your inputs): {e}")
+            return
+        except RuntimeError as e:
+            st.error(
+                "Grain sizing could not find a physically plausible "
+                "design with these inputs. This usually means the "
+                "regression-rate point above doesn't correspond to a "
+                "realistic design at this O/F and oxidiser flow, or the "
+                "grain length / port count need adjusting. Full detail "
+                f"from the solver: {e}")
             return
 
         g1, g2, g3, g4 = st.columns(4)
