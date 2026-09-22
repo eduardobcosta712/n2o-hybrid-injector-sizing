@@ -3,16 +3,18 @@ test_full_system.py
 
 Integration tests for full_system.py: the full tank → feed line →
 injector path under three operating regimes:
-  1. Flashing in the feed line (injector not evaluated)
+  1. Flashing in the feed line (two-phase inlet, HEM)
   2. No flashing, SPI sufficient
   3. No flashing, SPI not sufficient (Dyer used)
+plus the coupled-solver behaviour and the Design-mode sizing function.
 """
 
 import math
 import pytest
 
-from full_system import evaluate_full_system
-from n2o_properties import P_sat
+from full_system import evaluate_full_system, design_injector_area
+from n2o_properties import P_sat, rho_liquid_sat
+from injector_spi import spi_mass_flow
 
 
 # Shared feed line geometry (re-used across all test cases)
@@ -215,12 +217,12 @@ class TestCoupledSolver:
         fl_check = efl(m_conv, T_TANK, 55e5, SEGMENTS)
         P_check  = fl_check["P_final"]
         # Re-run injector at this P_inlet
-        from n2o_properties import rho_liquid_sat, nu_vapor_sat, T_sat
+        from n2o_properties import rho_liquid_sat, nu_vapor_sat, T_sat, M_N2O
         from injector_two_phase import dyer_mass_flow
         rho_l_up   = rho_liquid_sat(T_TANK)
         T_down     = T_sat(20e5)
         rho_l_down = rho_liquid_sat(T_down)
-        rho_v_down = 44.013 / nu_vapor_sat(T_down)
+        rho_v_down = M_N2O / nu_vapor_sat(T_down)
         ir = dyer_mass_flow(Cd, A, T_TANK, P_check, 20e5,
                             rho_l_up, rho_l_down, rho_v_down)
         m_check = ir["m_dot_Dyer"]
@@ -338,3 +340,46 @@ class TestPhysicsMonotonicity:
             r = evaluate_full_system(0.3, T_TANK, P_tank, SEGMENTS, Cd, A, 20e5)
             if r["m_dot_real"] is not None:
                 assert r["m_dot_real"] > 0
+
+
+# ---------------------------------------------------------------------------
+# design_injector_area -- Design-mode sizing
+# ---------------------------------------------------------------------------
+
+class TestDesignInjectorArea:
+    """
+    Design mode used to run the Dyer iteration unconditionally, which failed
+    ("math domain error") when the flow stays single-phase through the
+    orifice; design_injector_area selects SPI in that regime.
+    """
+
+    def test_dyer_regime_hits_the_target_flow(self):
+        T, Pin, Pc, Cd_, m = 288.15, 59.75e5, 20e5, 0.65, 0.5
+        d = design_injector_area(m, Cd_, T, Pin, Pc)
+        assert d["regime"] == "Dyer"
+        assert math.isclose(d["dyer_result"]["m_dot_Dyer"], m, rel_tol=1e-6)
+        assert d["A_recommended"] > d["A_spi"]
+
+    def test_spi_regime_returns_spi_area_instead_of_crashing(self):
+        # 0 degC, 60 bar tank, 50 bar chamber: P_chamber > P_sat -> SPI valid.
+        T, Pin, Pc, Cd_, m = 273.15, 59.9e5, 50e5, 0.65, 0.3
+        d = design_injector_area(m, Cd_, T, Pin, Pc)
+        assert d["regime"] == "SPI"
+        assert d["dyer_result"] is None
+        assert d["A_recommended"] == d["A_spi"]
+        # and the returned area really delivers the target under SPI
+        assert math.isclose(
+            spi_mass_flow(Cd_, d["A_recommended"], rho_liquid_sat(T), Pin - Pc),
+            m, rel_tol=1e-9)
+
+    def test_consistent_with_sizing_mode_at_the_designed_area(self):
+        # Design -> Sizing round trip: sizing the designed area must give back
+        # the target (short line, so the design-mode inlet pressure is nearly
+        # the tank pressure).
+        from feed_line import evaluate_feed_line
+        T, Ptank, Pc, Cd_, m = 293.15, 60e5, 20e5, 0.65, 0.4
+        seg = [{"type": "pipe", "L": 0.3, "D": 0.016}]
+        Pin = evaluate_feed_line(m, T, Ptank, seg)["P_final"]
+        d = design_injector_area(m, Cd_, T, Pin, Pc)
+        r = evaluate_full_system(m, T, Ptank, seg, Cd_, d["A_recommended"], Pc)
+        assert math.isclose(r["m_dot_real"], m, rel_tol=0.01)

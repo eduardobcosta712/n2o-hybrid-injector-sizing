@@ -30,9 +30,9 @@ If the grain has $N_{ports}$ identical circular ports sharing the oxidiser flow 
 
 ## 3b.4 From fuel mass flow to port radius
 
-The fuel mass flow from one circular port of radius $r$ and length $L$ is the volumetric burn rate of a thin annular shell at the surface, converted to mass via density:
+The fuel mass flow from one circular port of radius $r$ and length $L$ is the volumetric burn rate of a thin annular shell at the surface (perimeter $2\pi r$ times length $L$ times regression rate $\dot r$), converted to mass via density:
 
-$$\dot m_{fuel} = \rho_{fuel} \cdot \underbrace{(2\pi r)}_{\text{perimeter}} \cdot L \cdot \dot r = \rho_{fuel}\, 2\pi r L\, a\left(\frac{\dot m_{ox}}{\pi r^2}\right)^{\!n}$$
+$$\dot m_{fuel} = \rho_{fuel}\,(2\pi r)\,L\,\dot r = \rho_{fuel}\, 2\pi r L\, a\left(\frac{\dot m_{ox}}{\pi r^2}\right)^{n}$$
 
 Collecting the powers of $r$:
 
@@ -48,17 +48,29 @@ For $n < 0.5$ (exponent positive), increasing the radius increases fuel flow —
 
 For $n \neq 0.5$, the equation inverts in closed form:
 
-$$r_0 = \left(\frac{\dot m_{fuel}}{K}\right)^{\!\frac{1}{1-2n}}$$
+$$r_0 = \left(\frac{\dot m_{fuel}}{K}\right)^{\frac{1}{1-2n}}$$
 
-`grain_sizing.py` solves this by bisection regardless of $n$ (the same convention this project already uses for other transcendental relationships — saturation temperature inversion, the Henry-Fauske critical flow), which needs no special-casing at $n=0.5$ and gives a natural cross-check against the closed form in testing.
+`grain_sizing.py` solves this by a log-spaced scan followed by bisection regardless of $n$ (the same convention this project already uses for other transcendental relationships — saturation temperature inversion, the Henry-Fauske critical flow), which needs no special-casing at $n=0.5$ and gives a natural cross-check against the closed form in testing.
 
 ## 3b.5 Multiple ports: a real, simple design lever
 
 For a **fixed total port area**, splitting a single port into $N$ identical circular ports increases total burning perimeter by a factor of $\sqrt N$ (pure geometry — a circle of area $A$ has perimeter $2\sqrt{\pi A}$; $N$ circles of total area $A$, each of area $A/N$, have total perimeter $N \cdot 2\sqrt{\pi A/N} = 2\sqrt{N\pi A}$). More burning perimeter, for the same regression rate, means more fuel mass flow. This is a genuine, widely used hybrid motor design technique, and is simple to model exactly — unlike non-circular single-port shapes (star, wagon-wheel), which change perimeter-to-area relationship as they regress in ways that do not stay self-similar and need dedicated published geometric solutions this project does not yet implement (see `future_work.md`).
 
-## 3b.6 What this module deliberately does not do
+## 3b.6 Guarding against unit errors: from a data point to $a$
 
-- **No transient burn simulation.** The port radius, $G_o$, and regression rate all evolve as the grain burns back; this project computes only the **initial** ($t=0$) sizing point, plus an explicitly-flagged first-order, deliberately conservative estimate of how far the port grows over a given burn duration (holding the *initial* regression rate constant, which over-estimates the true burnback since real $\dot r$ falls as the port grows, for $n>0$ regardless of which side of 0.5 it's on relative to *radius growth* — the point is that $G_o$ itself always falls as the port opens up, for fixed $\dot m_{ox}$). A full transient model — tracking radius, $G_o$, $\dot r$, and hence O/F drift over the whole burn — is `future_work.md` Priority 8.
+The single most common practical failure of this module is a **unit mismatch in $a$**: its implied units depend on $n$, and literature values are frequently quoted in mixed systems (for example $G_o$ in kg/(m²·s) but $\dot r$ in mm/s, or cgs/imperial). A wrong-unit $a$ still produces a perfectly valid mathematical root — at an absurd port radius.
+
+Two protections, both added in September 2026 after real test failures:
+
+1. **The interface never asks for $a$.** The user enters one regression-rate *data point* exactly as it would be read off a plot or table — a rate in mm/s at a stated $G_o$ in kg/(m²·s) — plus the dimensionless $n$, and `a_from_reference_rate()` does the conversion:
+
+$$a = \frac{\dot r_{ref}\,[\text{m/s}]}{G_{o,ref}^{\,n}}$$
+
+2. **`size_grain()` refuses implausible results.** If the solved initial port radius falls outside 5–300 mm (`PLAUSIBLE_PORT_RADIUS_RANGE_M`), it raises a `RuntimeError` instead of returning a number that merely looks like a normal result. The message reports the regression rate the given $(a, n)$ imply at the rejected radius, to make a unit error obvious. (The underlying solver deliberately searches a far wider range, 1 µm to 1 km, so that it always finds a root when one exists; the plausibility check is a separate, engineering-level guarantee.)
+
+## 3b.7 What this module deliberately does not do
+
+- **No transient burn simulation.** The port radius, $G_o$, and regression rate all evolve as the grain burns back; this project computes only the **initial** ($t=0$) sizing point, plus an explicitly-flagged first-order, deliberately conservative estimate of how far the port grows over a given burn duration. That estimate holds the *initial* regression rate constant: since $G_o = \dot m_{ox}/(\pi r^2)$ falls as the port opens up, the true regression rate falls too, so the estimate over-states the burnback. A full transient model — tracking radius, $G_o$, $\dot r$, and hence O/F drift over the whole burn — is `future_work.md` Priority 8.
 - **No specific impulse estimate.** $I_{sp}$ requires a chemical equilibrium combustion code (CEA, RPA, or similar); this project does not implement or wrap one. Obtain $I_{sp}$ at the design O/F from CEA/RPA directly.
 - **No non-circular port shapes.** See Section 3b.5.
 - **Grain length is a required input, not a derived output**, deliberately — a length derived from an unsourced L/D heuristic would be exactly the kind of unjustified default this project avoids; most teams already know their available case length as a hard constraint.

@@ -11,22 +11,28 @@ technical importance per the project roadmap document.
 - HEM with two-phase inlet enthalpy  ✅
 - Coupled feed-line / injector solver (iterative, damped fixed-point)  ✅
 - Two-phase HEM pressure-drop model in feed line (rho_mix, mu_mix, x(s) per segment)  ✅
-- Saturated vapour viscosity mu_v(T) from NIST WebBook (Table A.3, Millat et al. 1991)  ✅
+- Saturated vapour viscosity mu_v(T) from NIST WebBook (Table A.3)  ✅
 - Saturated liquid Cp, mu_l, entropy (liquid+vapour) from NIST WebBook (Table A.4, Lemmon & Span 2006)  ✅
+- Temperature-dependent liquid viscosity mu_l(T) actually used in the feed line (September 2026 audit; documentation had claimed it earlier)  ✅
 - HEM isenthalpic critical flow (hem_critical_flow, Waxman Eq.5) -- standalone  ✅
 - HEM **isentropic** critical flow (hem_critical_flow_isentropic) -- standalone, kept side-by-side
   with the isenthalpic version for comparison; entropy functions s_liquid_sat/s_vapor_sat/s_fg
   added to n2o_properties.py (September 2026)  ✅
 - Henry-Fauske (1971) non-equilibrium critical flow ceiling (henry_fauske_critical_flow) --
   surfaced as a diagnostic (m_dot_crit_HF, choked flag) alongside dyer_mass_flow(), not applied
-  as an automatic cap; validated against Waxman (does not perturb MAPE = 3.51%) (September 2026)  ✅
+  as an automatic cap; validated against Waxman (does not perturb MAPE = 3.51%) (September 2026);
+  wired into the interface (warning badge in both modes, comparison-chart line, PDF note)  ✅
 - Fuel grain sizing via the Marxman regression rate correlation (grain_sizing.py) -- initial port
   radius, fuel mass flow, multi-port geometry, first-order conservative burnback estimate; a and n
-  are required user inputs (NOT shipped as fixed literature defaults -- see module docstring and
-  references.md for why), density defaults provided for paraffin/HTPB/ABS/PMMA (September 2026)  ✅
+  are required user inputs, entered as a regression-rate data point converted by
+  a_from_reference_rate(); results outside a plausible port-radius range are refused; density
+  defaults for paraffin/HTPB/ABS/PMMA (September 2026); integrated in the interface  ✅
 - Definitive validation against Waxman (2013/2014): MAPE = 3.51%, all 4 cases within +/-5%  ✅
 - Sensitivity tornado plot  ✅
 - Dyer formula weight correction (Solomon 2011)  ✅
+- Design-mode sizing logic extracted into a tested function (full_system.design_injector_area),
+  fixing a crash when the flow is single-phase through the orifice (September 2026 audit)  ✅
+- Explicit range errors for Table A.3 (mu_vapor_sat) and for T_sat(P) outside the correlation  ✅
 
 ---
 
@@ -51,33 +57,30 @@ confirms **MAPE = 3.51%, unchanged**, with `choked = False` at all 4
 points -- see `validation/waxman_2013_results.md`.
 
 **Design decision: diagnostic, not automatic override.** At operating
-points further from the Waxman geometry -- e.g.
-`examples/example_01_sizing.md`'s conditions (20°C, 58→22 bar, 6×1.5mm)
--- the Henry-Fauske ceiling *does* bind, roughly 13-17% below the
-uncapped Dyer blend. There is no experimental data point in this
-project's validation set where the ceiling actually changes the answer
-(all 4 Waxman points sit below it), so applying it as a silent
-`min(m_dot_Dyer, m_dot_crit_HF)` override would risk quietly changing
-already-published results with no empirical confirmation in the regime
-where it matters. Instead, `dyer_mass_flow()` now returns
-**both** values side by side -- `m_dot_Dyer` (unchanged) and
-`m_dot_crit_HF` plus a `choked` boolean flag -- so calling code can
-surface a warning when `choked = True` without silently altering the
-headline number. The Streamlit interface (`app.py`) should be updated
-to display this flag; not yet done, see below.
+points further from the Waxman geometry the Henry-Fauske ceiling *does*
+bind: 17% below the Dyer prediction in `examples/example_01_sizing.md`
+(315 vs 382 g/s), 10% below the target in `example_02_design.md`
+(452 vs 500 g/s), and it is also exceeded by the corrected design of
+`example_03_flashing.md`. There is no experimental data point in this
+project's validation set where the ceiling actually changes the answer,
+so applying it as a silent `min(m_dot_Dyer, m_dot_crit_HF)` override
+would risk quietly changing published results with no empirical
+confirmation in the regime where it matters. Instead, `dyer_mass_flow()`
+returns **both** values side by side -- `m_dot_Dyer` (unchanged) and
+`m_dot_crit_HF` plus a `choked` boolean flag -- and the interface shows
+a warning when `choked = True`.
 
 **What is genuinely still open.**
-1. Wire the `choked`/`m_dot_crit_HF` fields into `app.py`'s result
-   cards (a visible warning badge, similar to the existing combustion
-   stability indicator) -- currently only available programmatically.
-2. If/when experimental data becomes available at conditions where the
-   ceiling binds, validate it there and reconsider whether to promote
-   it to an automatic cap.
-3. `hem_critical_flow_isentropic()` and the entropy functions
+1. If/when experimental data becomes available at conditions where the
+   ceiling binds (roughly 20-50 bar pressure drop), validate it there
+   and reconsider whether to promote it to an automatic cap.
+2. `hem_critical_flow_isentropic()` and the entropy functions
    (`s_liquid_sat`, `s_vapor_sat`, `s_fg`) remain in the codebase as a
    correct, useful standalone diagnostic (the equilibrium ceiling), even
    though they turned out not to be the fix for Dyer's extreme-ΔP
    behaviour -- Henry-Fauske was.
+3. `apply_choking_limit()` (the retracted equilibrium-cap plan) is
+   deprecated and unused; delete it once no external script depends on it.
 
 **History (kept for context).** This priority went through three
 framings before landing here: (1) originally scoped as "build the
@@ -96,13 +99,30 @@ side-by-side diagnostic design above rather than an automatic cap.
 ## Priority 2 — Full-system experimental validation
 
 **Current state.** The Dyer injector model is validated against Waxman
-(2013/2014) with mean error −1.9% at moderate pressure drops. The coupled
-solver is new and not yet validated against full-system data.
+(2013/2014) with mean error −1.9% at pressure drops of 8-14 bar, using
+a line with negligible losses. Three parts of the model have **no
+experimental validation at all**:
+
+1. **Pressure drops of 20-50 bar** (the range of typical motor designs).
+   Every worked example lies here, and the Henry-Fauske diagnostic
+   flags all of them.
+2. **The coupled feed-line / injector solver** with a line that matters
+   (the Waxman line is short and wide).
+3. **The two-phase inlet path** (flashing in the line): the two-phase
+   line model and the HEM two-phase-inlet injector model are implemented
+   and unit tested only. In addition, the switch from Dyer to HEM at the
+   flashing threshold is discontinuous (HEM at x_inlet -> 0 gives roughly
+   half of the Dyer flow at the same conditions -- see
+   `examples/example_03_flashing.md`); a smooth transition, or at least
+   a quantified uncertainty band around the threshold, is worth
+   designing once data exist.
 
 **What is needed.** Experimental data covering the full path
 (tank → line → injector) with known geometry, discharge coefficient,
-and measured mass flow. The validation should be re-run after the coupled
-solver since the one-pass results used previously may differ slightly.
+and measured mass flow, ideally including runs at 20-50 bar drop and
+runs with and without flashing in the line. A team's own cold-flow
+(water or N₂O) data would already help calibrate Cd and check the
+line-loss model.
 
 ---
 
@@ -117,16 +137,15 @@ solver since the one-pass results used previously may differ slightly.
 3. **No estimated $I_{sp}$ output.** That requires a chemical equilibrium code (CEA/RPA) this project does not implement or wrap. Get $I_{sp}$ at the design O/F from CEA/RPA directly.
 4. **Only circular ports (single- or multi-port) are supported.** Non-circular shapes (star, wagon-wheel) are tracked separately below, not delivered here.
 
-**What is delivered.** `size_grain()`: given $\dot m_{ox}$, target OF, $(a, n)$, fuel density, grain length, and number of ports, solves (by bisection, matching this project's existing convention for transcendental relationships) for the initial port radius, reports the initial oxidiser mass flux and regression rate, and — if a burn duration is supplied — a first-order, deliberately **conservative** (over-)estimate of final port radius and fuel mass consumed (using the *initial* regression rate held constant; real regression rate falls as the port opens up, so this over-estimates burnback, appropriate as a safety-margin check, not a transient simulation).
+**What is delivered.** `size_grain()`: given $\dot m_{ox}$, target OF, $(a, n)$, fuel density, grain length, and number of ports, solves for the initial port radius, reports the initial oxidiser mass flux and regression rate, and — if a burn duration is supplied — a first-order, deliberately **conservative** (over-)estimate of final port radius and fuel mass consumed (using the *initial* regression rate held constant; real regression rate falls as the port opens up, so this over-estimates burnback, appropriate as a safety-margin check, not a transient simulation). Two protections against unit errors: the interface asks for a regression-rate data point (mm/s at a stated $G_o$) converted by `a_from_reference_rate()` instead of asking for $a$, and `size_grain()` refuses results outside a plausible port-radius range (5-300 mm).
 
 **Physical subtlety surfaced during testing, worth flagging prominently:** for $n>0.5$ (e.g. many HTPB fits), a *larger* target fuel flow requires a *smaller* port radius — the reverse of naive intuition — because $G_o \propto 1/r^2$ falls faster than the burning perimeter $\propto r$ grows. At $n=0.5$ exactly, fuel flow is independent of port radius entirely (a well-known, practically valuable property of $n\approx0.5$ fuels like paraffin). Both directions are explicitly tested (not assumed) in `test_grain_sizing.py`.
 
-**Validation.** 36 tests (`test_grain_sizing.py`): known-value hand cross-checks, closed-form-vs-bisection agreement (both agree to <2e-4% relative), both directions of the $n$ vs. $0.5$ radius-flow relationship, the $n=0.5$ degenerate case (including its correctly-unreachable-target failure mode), multi-port perimeter scaling ($\propto\sqrt N$ at fixed total area, checked directly, not through the n-dependent solver), and edge cases (non-positive inputs, unbracketable targets).
+**Validation.** 47 tests (`test_grain_sizing.py`): known-value hand cross-checks, closed-form-vs-bisection agreement, both directions of the $n$ vs. $0.5$ radius-flow relationship, the $n=0.5$ degenerate case, multi-port perimeter scaling, the plausibility guarantee, `a_from_reference_rate`, and edge cases. There is no experimental dataset for the grain sizing itself.
 
 **What remains open.**
-1. **Non-circular port shapes** (star, wagon-wheel) — needs published closed-form perimeter-vs-burned-web geometry for specific classical shapes (solid-rocket grain design literature has this solved for some shapes) or a numerical burnback simulation; neither sourced yet. Tracked as a distinct future item, not re-merged into this priority.
-2. **Interface integration** — `app.py` now includes a "Grain sizing" section using `size_grain()` (added alongside this priority); see `04_implementation.md`, Section 4.7.
-3. **Full transient burn simulation** (radius, $G_o$, $\dot r$, O/F all evolving over the burn) remains Priority 8, unaffected by this work beyond providing its $t=0$ starting point.
+1. **Non-circular port shapes** (star, wagon-wheel) — Priority 3b below.
+2. **Full transient burn simulation** (radius, $G_o$, $\dot r$, O/F all evolving over the burn) remains Priority 8, unaffected by this work beyond providing its $t=0$ starting point.
 
 ---
 
@@ -157,17 +176,20 @@ solver since the one-pass results used previously may differ slightly.
 Priorities 4 and 5 were swapped relative to the original roadmap draft:
 **improved N₂O thermophysical properties (CoolProp/REFPROP integration)**
 is now Priority 4, ahead of the **Monte Carlo uncertainty analysis**, now
-Priority 5.
+Priority 5. Priority 4 is now implemented (see above), which is what makes
+this swap concrete rather than theoretical: Priority 5's sampled property
+values are the CoolProp ones as of this section, not the superseded
+Perry/McGill correlations.
 
 **Rationale.** CoolProp directly improves the accuracy of every downstream
-model in this project — including the entropy data ($s_l$, $s_v$) needed
-for the isentropic cap in Priority 1 — whereas running a Monte Carlo
-analysis on top of correlations with a known, unquantified ~2–3%
-systematic error near the critical point (Perry/McGill vs. REFPROP, see
-Priority 4 below) would understate the real output uncertainty: the
-quoted confidence interval would reflect input-parameter noise only, not
-the model-form error already present in the property correlations.
-Fixing the property backbone first is the more useful order of operations.
+model in this project — including the entropy data ($s_l$, $s_v$) used by
+the choking models — whereas running a Monte Carlo analysis on top of
+correlations with a known, unquantified ~2–3% systematic error near the
+critical point (Perry/McGill vs. REFPROP, see Priority 4 below) would
+understate the real output uncertainty: the quoted confidence interval
+would reflect input-parameter noise only, not the model-form error
+already present in the property correlations. Fixing the property
+backbone first is the more useful order of operations.
 
 ## Priority 3b — Non-circular grain port shapes (star, wagon-wheel)
 
@@ -198,15 +220,50 @@ alongside the existing circular case, not a replacement for it.
 
 ---
 
-## Priority 4 — Improved N₂O thermophysical properties
+## Priority 4 — Improved N₂O thermophysical properties ⚠️ CODE DONE, NUMBERS UNCONFIRMED (September 2026)
 
-**Motivation.** The Perry/McGill correlations have ~2–3% error near the
-critical point vs. REFPROP. CoolProp (open source, no licence) provides
-REFPROP-quality properties and would improve accuracy in the critical region.
+**What was done.** `n2o_properties.py`'s thermodynamic functions (`P_sat`,
+`T_sat`, `rho_liquid_sat`, `nu_vapor_sat`, `h_liquid_sat`/`h_vapor_sat`/`h_fg`,
+`cp_liquid_sat`, `s_liquid_sat`/`s_vapor_sat`/`s_fg`) now call **CoolProp**
+(Bell et al., 2014), which implements the Lemmon & Span (2006) equation of
+state for N₂O directly, replacing the closed-form Perry/McGill correlations
+and McGill Table A.1. See `docs/04_implementation.md` §4.1 for the full
+description, including why viscosity (μ_l, μ_v) still comes from the NIST
+tables (CoolProp has no N₂O viscosity model) and why the old 307.33 K limit
+on the isentropic/Henry-Fauske choking models no longer applies (entropy now
+comes from the same equation of state as everything else, valid up to the
+critical point).
 
-**Why deferred.** The current property implementation is sufficient for
-design-regime accuracy. CoolProp integration would also enable the
-isentropic maximum search needed for choking (Priority 1).
+**What is NOT done: verified numbers.** This was implemented and tested in a
+sandbox with no network access, where the real CoolProp package could not be
+installed. It was verified against a stand-in built from the *same* legacy
+tables the integration is meant to move away from -- enough to confirm the
+code's logic, units, and error handling (215 tests pass), but **not** enough
+to confirm the accuracy improvement the integration is meant to deliver. The
+MAPE, the choking ceilings, and every example figure quoted elsewhere in this
+repository were computed **before** this integration and have not been
+regenerated with the real package.
+
+**Action needed (on a machine with network access):**
+```bash
+pip install CoolProp
+python src/model/n2o_properties.py
+pytest tests/ -v
+python validation/waxman_2013_validation.py
+```
+then regenerate `validation/waxman_2013_results.md`, all three files in
+`examples/`, and the numeric callouts in `docs/04_implementation.md` if any
+figure has moved by more than a per cent or two (expected, given the ~2-3 %
+P_sat error and 3-5 % h_fg error the Perry/McGill correlations were known to
+carry -- see "Error sources" there). If CoolProp cannot be installed at all,
+see `docs/references.md`, "CoolProp and alternatives", for the options
+(REFPROP, reverting to Perry/McGill, or implementing the equation of state
+by hand) and their trade-offs.
+
+**Open bibliographic point carried over.** The viscosity tables (A.3, A.4)
+are unaffected by this priority and still need their own source confirmed --
+see `docs/references.md`, "Open bibliographic points", including a possible
+lead (NISTIR 8209) turned up while researching this priority.
 
 ## Priority 5 — Quantitative uncertainty analysis (Monte Carlo)
 
@@ -227,16 +284,16 @@ correlation error.
 
 ## Priority 6 — Improved exporting of the results
 
-**Motivation.** The export.py files only informs the user about results already
-presented in the interface. In consequence, the exporting should also be expanded 
-to .JSON or .CSV files in order to export the test results to a global motor testing
-or CAD modeling.
+**Motivation.** `export.py` only reproduces, as a PDF, results already
+presented in the interface. The export should also be available as .JSON
+or .CSV files, so test results can feed a global motor testing or CAD
+modeling workflow.
 
-**Proposed approach.** Using a decoupled, schema-driven export architecture utilizing 
-a unified Data Transfer Object (DTO) to seamlessly stream simulation parameters,
-transient blowdown datasets, and hole-pattern geometric vectors into standardized 
-JSON state files, CSV numerical tables, CAD-compatible coordinate scripts, and automated
-PDF engineering reports.
+**Proposed approach.** A decoupled, schema-driven export architecture
+using a unified Data Transfer Object (DTO) to stream simulation
+parameters, transient blowdown datasets and hole-pattern geometric
+vectors into standardized JSON state files, CSV numerical tables,
+CAD-compatible coordinate scripts and automated PDF engineering reports.
 
 ---
 
@@ -261,3 +318,15 @@ predict how mass flow, tank pressure, and temperature evolve over the burn.
 implemented) as the inner loop, plus a tank thermodynamic model (Priority 7).
 
 ---
+
+## Audit follow-ups (September 2026) — open items needing the author
+
+Found by the September 2026 project audit; they cannot be settled from the repository alone.
+
+1. **NIST viscosity attribution** -- confirm which correlations the WebBook lists for N₂O viscosity, and fix the CSV header (Tables A.3/A.4 comment lines) and `references.md`. See "Open bibliographic points" in `references.md`.
+2. **Table A.1/A.2 data** -- compare against the McGill PDF: (a) $c_{vv}(250\,\text{K}) = 0.043798$ looks like a single outlier (expected ≈0.0348); (b) the Table A.2 entry for $dc_{vv}/dT$ at 255 K should be −742.1 by finite differences of A.1, the CSV has +742.1. Neither is used by the model. Add the finding to the CSV header comment.
+3. **Waxman CSV vs. validation conditions** -- decide whether `validation/waxman_2013_experimental_data.csv` (P1 = 4.96 MPa) and the validation script (P1 = 4.36 MPa, Niño & Razavi Table 4) describe the same test; document the relationship, or make the script read the CSV.
+4. **`plotting.py` micro-cleanups** (cosmetic, not blocking) -- `plot_sensitivity`: replace `T < 182.33 + 273.15 - 273.15 or T > 309.52` by `not (T_MIN <= T <= T_MAX)` and drop the unused `T_vals_C`; `plot_tornado`: remove the stale "temp bug fix" comment.
+5. **Dyer → HEM discontinuity** at the flashing threshold (see Priority 2, item 3).
+6. **`apply_choking_limit()`** -- delete (Priority 1, item 3).
+7. **Line pressure reaching zero** -- `evaluate_feed_line` does not raise when the pressure falls to zero inside an impossibly restrictive line; consider failing loudly at that point (careful: the coupled solver may visit such states in early iterations).

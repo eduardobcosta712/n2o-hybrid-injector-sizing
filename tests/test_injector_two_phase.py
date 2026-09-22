@@ -3,30 +3,52 @@ test_injector_two_phase.py
 
 Tests for injector_two_phase.py: vapour quality, HEM mixture density,
 HEM mass flow, Dyer non-equilibrium parameter, the full Dyer mass flow,
-and the isenthalpic/isentropic critical-flow choking scans.
+and the isenthalpic/isentropic/Henry-Fauske critical-flow (choking) models.
+
+Note on Waxman-condition numbers (September 2026): earlier versions of
+these tests pinned absolute values obtained with the Perry/McGill property
+set (HEM ceiling 41.1 g/s, Henry-Fauske 50.67 g/s, four Dyer predictions
+42.25-49.55 g/s). With the CoolProp property set those absolute values
+change slightly, so the tests now assert the RELATIONS that matter (the
+non-equilibrium ceiling lies above the equilibrium ceilings and above the
+Dyer predictions at the four Waxman points, computed live) plus loose
+range checks around the earlier values.
 """
 
 import math
+import warnings
 import pytest
 
 from injector_two_phase import (
     vapor_quality_isenthalpic, vapor_quality_isentropic, hem_mixture_density,
     hem_mass_flow, dyer_non_equilibrium_parameter, dyer_mass_flow,
     hem_critical_flow, hem_critical_flow_isentropic,
-    henry_fauske_critical_flow,
+    henry_fauske_critical_flow, apply_choking_limit,
 )
 from n2o_properties import (
-    P_sat, T_sat, rho_liquid_sat, nu_vapor_sat,
+    P_sat, T_sat, rho_liquid_sat, nu_vapor_sat, M_N2O,
     h_liquid_sat, h_fg, s_liquid_sat, s_fg,
-    T_MAX_A4,
+    T_MAX, T_MAX_A4,
 )
-
-M_N2O = 44.013  # kg/kmol
 
 
 def _rho_v(T):
     """Helper: saturated vapour density at T, kg/m³."""
     return M_N2O / nu_vapor_sat(T)
+
+
+# Waxman (2013/2014) test point: T1 = 280 K, P1 = 4.36 MPa, D = 1.5 mm
+# injector, Cd = 0.65; the four tabulated pressure drops (bar).
+WAX_T1, WAX_P1, WAX_CD = 280.0, 4.36e6, 0.65
+WAX_A = math.pi * (0.0015 / 2) ** 2
+WAX_DP_BAR = (8.4, 9.8, 10.9, 13.7)
+
+
+def _dyer_at_waxman_point(dP_bar):
+    P2 = WAX_P1 - dP_bar * 1e5
+    T2 = T_sat(P2)
+    return dyer_mass_flow(WAX_CD, WAX_A, WAX_T1, WAX_P1, P2,
+                          rho_liquid_sat(WAX_T1), rho_liquid_sat(T2), _rho_v(T2))
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +100,7 @@ class TestVaporQualityIsentropic:
         assert math.isclose(x, 0.0, abs_tol=1e-9)
 
     def test_between_zero_and_one(self):
-        T_up = 280.0   # within Table A.4's range (<= T_MAX_A4)
+        T_up = 280.0
         T_down = T_sat(20e5)
         s_up = s_liquid_sat(T_up)
         x = vapor_quality_isentropic(s_up, T_down)
@@ -96,7 +118,7 @@ class TestVaporQualityIsentropic:
         # h_l/h_fg, the other s_l/s_fg) -- they need not agree numerically,
         # but both should land in a physically sensible range for the
         # same operating point, confirming neither is silently reusing
-        # the other's tables.
+        # the other's properties.
         T_up = 280.0
         T_down = T_sat(20e5)
         x_h = vapor_quality_isenthalpic(h_liquid_sat(T_up), T_down)
@@ -158,6 +180,13 @@ class TestDyerKappa:
         kappa = dyer_non_equilibrium_parameter(P_sat(T) + 5e5, T, 20e5)
         assert kappa > 0
 
+    def test_equals_one_for_saturated_liquid_inlet(self):
+        # At P_up = P_sat (limit from above) kappa -> 1, NOT infinity: the
+        # blend is 50/50. (kappa diverges only as P_down -> P_sat.)
+        T = 293.15
+        kappa = dyer_non_equilibrium_parameter(P_sat(T) + 1.0, T, 20e5)
+        assert math.isclose(kappa, 1.0, rel_tol=1e-3)
+
     def test_two_phase_inlet_raises(self):
         # P_upstream <= P_sat(T_upstream) → fluid already two-phase → ValueError.
         T = 293.15
@@ -168,6 +197,18 @@ class TestDyerKappa:
         T = 293.15
         with pytest.raises(ValueError):
             dyer_non_equilibrium_parameter(P_sat(T), T, 20e5)
+
+    def test_downstream_above_psat_raises_clear_valueerror(self):
+        # Flow stays single-phase through the orifice: kappa is undefined
+        # (used to surface as a bare "math domain error" in Design mode).
+        T = 273.15
+        with pytest.raises(ValueError, match="single-phase"):
+            dyer_non_equilibrium_parameter(60e5, T, P_sat(T) + 5e5)
+
+    def test_downstream_exactly_at_psat_raises_valueerror_not_zerodivision(self):
+        T = 273.15
+        with pytest.raises(ValueError):
+            dyer_non_equilibrium_parameter(60e5, T, P_sat(T))
 
 
 # ---------------------------------------------------------------------------
@@ -259,20 +300,12 @@ class TestDyerMassFlow:
             assert result["choked"] is False
 
     def test_waxman_conditions_not_flagged_choked(self):
-        # The Waxman validated point (this class's default T/P/geometry
-        # is a different, but nearby, subcooled operating point) should
-        # not need the ceiling. Explicitly check the actual Waxman
-        # geometry here, since it is the one case with experimental
-        # confirmation.
-        T1, P1, Cd = 280.0, 4.36e6, 0.65
-        A = math.pi * (0.0015 / 2) ** 2
-        rho_l_up = rho_liquid_sat(T1)
-        for dP_bar in [8.4, 9.8, 10.9, 13.7]:  # the 4 validated cases
-            P2 = P1 - dP_bar * 1e5
-            T2 = T_sat(P2)
-            rho_l2 = rho_liquid_sat(T2)
-            rho_v2 = _rho_v(T2)
-            r = dyer_mass_flow(Cd, A, T1, P1, P2, rho_l_up, rho_l2, rho_v2)
+        # The Waxman validated points must not need the ceiling: the
+        # Henry-Fauske diagnostic must stay silent there, otherwise it would
+        # contradict the validation reported in the README. Explicitly checks
+        # the actual Waxman geometry, computed live.
+        for dP_bar in WAX_DP_BAR:
+            r = _dyer_at_waxman_point(dP_bar)
             assert r["choked"] is False, (
                 f"Waxman validated case at dP={dP_bar} bar was flagged "
                 "choked -- this would mean the HF ceiling now cuts into "
@@ -289,25 +322,25 @@ class TestDyerMassFlow:
 class TestHemCriticalFlow:
 
     # Waxman (2013/2014) conditions, per validation/waxman_2013_results.md
-    T1 = 280.0
-    P1 = 4.36e6
-    Cd = 0.65
-    D  = 0.0015
-    A  = math.pi * (D / 2.0) ** 2
+    T1 = WAX_T1
+    P1 = WAX_P1
+    Cd = WAX_CD
+    A  = WAX_A
 
-    def test_matches_documented_waxman_value(self):
-        # Documented in docs/04_implementation.md / future_work.md: 41.1 g/s
+    def test_close_to_documented_waxman_value(self):
+        # Documented in docs/04_implementation.md: 41.1 g/s with the earlier
+        # (Perry/McGill) property set. The CoolProp property set moves it by a
+        # few per cent (latent heat differed by 3-5 %), hence the +/-10 % band.
         crit = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
-        assert math.isclose(crit["m_dot_crit"] * 1000, 41.1, rel_tol=0.02)
+        assert math.isclose(crit["m_dot_crit"] * 1000, 41.1, rel_tol=0.10)
 
     def test_x_crit_in_range(self):
         crit = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
         assert 0.0 <= crit["x_crit"] <= 1.0
 
     def test_below_p_sat(self):
-        from n2o_properties import P_sat as P_sat_f
         crit = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
-        assert crit["P2_crit"] < P_sat_f(self.T1)
+        assert crit["P2_crit"] < P_sat(self.T1)
 
     def test_scales_linearly_with_area(self):
         crit1 = hem_critical_flow(self.Cd, self.A, self.T1, self.P1)
@@ -322,11 +355,10 @@ class TestHemCriticalFlow:
 class TestHemCriticalFlowIsentropic:
 
     # Same Waxman conditions as TestHemCriticalFlow, for direct comparison.
-    T1 = 280.0
-    P1 = 4.36e6
-    Cd = 0.65
-    D  = 0.0015
-    A  = math.pi * (D / 2.0) ** 2
+    T1 = WAX_T1
+    P1 = WAX_P1
+    Cd = WAX_CD
+    A  = WAX_A
 
     # --- Known-value / cross-check ---------------------------------------
 
@@ -375,15 +407,15 @@ class TestHemCriticalFlowIsentropic:
 
     # --- Edge cases -------------------------------------------------------
 
-    def test_raises_above_table_a4_range(self):
-        # T_upstream above 307.33 K: entropy data (Table A.4) unavailable.
-        # This is the exact domain restriction documented in the
-        # function's docstring and in future_work.md, Priority 1.
+    def test_raises_above_valid_temperature_range(self):
+        # T_upstream above the valid range of the saturation properties
+        # (the critical point). The former 307.33 K limit, which came from the
+        # NIST entropy table, no longer applies with CoolProp.
         with pytest.raises(ValueError):
-            hem_critical_flow_isentropic(self.Cd, self.A, T_MAX_A4 + 1.0, self.P1)
+            hem_critical_flow_isentropic(self.Cd, self.A, T_MAX + 1.0, self.P1)
 
-    def test_accepts_temperature_at_table_a4_boundary(self):
-        # T_upstream exactly at the boundary must be accepted (inclusive).
+    def test_accepts_temperature_at_former_table_a4_boundary(self):
+        # 307.33 K was the old entropy-table limit; it must still be accepted.
         crit = hem_critical_flow_isentropic(self.Cd, self.A, T_MAX_A4, 6.0e6)
         assert crit["m_dot_crit"] >= 0.0
 
@@ -404,17 +436,18 @@ class TestHemCriticalFlowIsentropic:
 
 class TestHenryFauskeCriticalFlow:
 
-    T1, P1, Cd = 280.0, 4.36e6, 0.65
-    D = 0.0015
-    A = math.pi * (D / 2.0) ** 2
+    T1, P1, Cd = WAX_T1, WAX_P1, WAX_CD
+    A = WAX_A
 
     # --- Known-value checks -------------------------------------------------
 
-    def test_matches_hand_validated_waxman_value(self):
+    def test_close_to_earlier_hand_validated_waxman_value(self):
         # Cross-checked by hand against Eqs. (2) and (5) at Waxman
-        # conditions during development: 50.67 g/s.
+        # conditions during development, with the earlier property set:
+        # 50.67 g/s. The CoolProp property set changes it slightly, hence
+        # the +/-10 % band; the relations below are the sharp tests.
         hf = henry_fauske_critical_flow(self.Cd, self.A, self.T1, self.P1)
-        assert math.isclose(hf["m_dot_crit"] * 1000, 50.67, rel_tol=0.01)
+        assert math.isclose(hf["m_dot_crit"] * 1000, 50.67, rel_tol=0.10)
 
     # --- Physical properties -------------------------------------------------
 
@@ -427,16 +460,16 @@ class TestHenryFauskeCriticalFlow:
         assert hf["m_dot_crit"] > hem_h["m_dot_crit"]
         assert hf["m_dot_crit"] > hem_s["m_dot_crit"]
 
-    def test_does_not_cut_into_validated_waxman_dyer_points(self):
-        # None of the 4 already-validated Waxman Dyer predictions may
-        # exceed this ceiling -- if they did, applying the ceiling would
-        # silently degrade the documented MAPE = 3.51% result.
+    def test_does_not_cut_into_the_dyer_predictions_at_the_waxman_points(self):
+        # None of the 4 Dyer predictions at the Waxman operating points (computed
+        # live) may exceed this ceiling -- if they did, applying the ceiling
+        # would silently degrade the validated agreement with experiment.
         hf = henry_fauske_critical_flow(self.Cd, self.A, self.T1, self.P1)
-        m_crit_gs = hf["m_dot_crit"] * 1000
-        for m_dyer_gs in (42.25, 44.60, 46.20, 49.55):  # from waxman_2013_results.md
-            assert m_dyer_gs <= m_crit_gs, (
-                f"Waxman Dyer value {m_dyer_gs} g/s exceeds HF ceiling "
-                f"{m_crit_gs:.2f} g/s -- would break the validated MAPE.")
+        for dP_bar in WAX_DP_BAR:
+            m_dyer = _dyer_at_waxman_point(dP_bar)["m_dot_Dyer"]
+            assert m_dyer <= hf["m_dot_crit"], (
+                f"Dyer at dP={dP_bar} bar ({m_dyer*1000:.2f} g/s) exceeds HF "
+                f"ceiling {hf['m_dot_crit']*1000:.2f} g/s")
 
     def test_N_in_valid_range(self):
         hf = henry_fauske_critical_flow(self.Cd, self.A, self.T1, self.P1)
@@ -470,9 +503,9 @@ class TestHenryFauskeCriticalFlow:
 
     # --- Edge cases -------------------------------------------------
 
-    def test_raises_above_table_a4_range(self):
+    def test_raises_above_valid_temperature_range(self):
         with pytest.raises(ValueError):
-            henry_fauske_critical_flow(self.Cd, self.A, T_MAX_A4 + 1.0, self.P1)
+            henry_fauske_critical_flow(self.Cd, self.A, T_MAX + 1.0, self.P1)
 
     def test_raises_when_upstream_already_two_phase(self):
         # P_upstream <= P_sat(T_upstream): mirrors
@@ -480,7 +513,18 @@ class TestHenryFauskeCriticalFlow:
         with pytest.raises(ValueError):
             henry_fauske_critical_flow(self.Cd, self.A, self.T1, P_sat(self.T1) - 1e3)
 
-    def test_accepts_temperature_at_table_a4_boundary(self):
+    def test_accepts_temperature_at_former_table_a4_boundary(self):
         # P_sat(307.33 K) ~= 69.5 bar -- must stay comfortably above it.
         hf = henry_fauske_critical_flow(self.Cd, self.A, T_MAX_A4, 75.0e5)
         assert hf["m_dot_crit"] > 0
+
+
+# ---------------------------------------------------------------------------
+# apply_choking_limit -- deprecated (retracted equilibrium-cap plan)
+# ---------------------------------------------------------------------------
+
+class TestDeprecatedChokingCap:
+
+    def test_apply_choking_limit_warns(self):
+        with pytest.warns(DeprecationWarning):
+            apply_choking_limit(0.05, WAX_CD, WAX_A, WAX_T1, WAX_P1)

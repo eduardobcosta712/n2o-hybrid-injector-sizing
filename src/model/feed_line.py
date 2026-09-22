@@ -14,7 +14,7 @@ Implements:
       and fittings, tracking pressure and subcooling margin along the way
 
 Assumption (declared per README.md "Scope and known limitations"):
-the feed line is treated as adiabatic — no heat exchange with the
+the feed line is treated as adiabatic -- no heat exchange with the
 environment, so fluid temperature is assumed constant along the line.
 Only pressure changes; see Section 1.6 of the theory docs for why this
 is a reasonable approximation for fast flows.
@@ -32,21 +32,21 @@ two-phase region, using the local pressure at that segment. This is
 more accurate than a single end-of-line flash because it accounts for
 the pressure evolution along the two-phase zone.
 
+Liquid viscosity (audit, September 2026): the liquid viscosity used for
+the Reynolds number and for the liquid part of mu_mix is, by default, the
+temperature-dependent saturated-liquid value mu_liquid_sat(T_tank)
+(Table A.4, NIST WebBook), as documented in docs/04_implementation.md.
+Earlier code versions silently kept the constant MU_LIQUID_N2O = 1.5e-4
+Pa.s; that constant is now only a fallback for T_tank above Table A.4's
+range (T > 307.33 K) or for callers that pass `mu=` explicitly.
+
 Units: SI throughout (Pa, kg/m^3, m, m/s, Pa.s, kg/s).
 """
 
 import math
 from n2o_properties import (P_sat, T_sat, rho_liquid_sat, degree_of_subcooling,
-                             h_liquid_sat, h_fg, nu_vapor_sat, mu_vapor_sat,
-                             mu_mixture, MU_LIQUID_N2O)
-
-M_N2O = 44.013  # kg/kmol, molar mass of N2O (for rho_v = M_N2O / nu_vapor_sat)
-
-# Approximate dynamic viscosity of saturated liquid N2O near room
-# temperature (Pa.s). Treated as a constant for this version of the model;
-# in reality it varies (mildly) with temperature -- see docs/future_work.md
-# for possible refinements.
-MU_LIQUID_N2O = 1.5e-4  # Pa.s, order-of-magnitude reference value
+                             h_liquid_sat, h_fg, nu_vapor_sat, mu_mixture,
+                             mu_liquid_sat, M_N2O, MU_LIQUID_N2O, T_MAX_A4)
 
 
 def reynolds_number(rho, v, D, mu=MU_LIQUID_N2O):
@@ -62,7 +62,9 @@ def reynolds_number(rho, v, D, mu=MU_LIQUID_N2O):
     D : float
         Pipe internal diameter, m.
     mu : float
-        Dynamic viscosity, Pa.s.
+        Dynamic viscosity, Pa.s. Defaults to the constant fallback
+        MU_LIQUID_N2O; evaluate_feed_line() passes the temperature-
+        dependent mu_liquid_sat(T_tank) instead.
 
     Returns
     -------
@@ -166,8 +168,26 @@ def velocity_from_mass_flow(m_dot, rho, D):
     return m_dot / (rho * A)
 
 
+def default_liquid_viscosity(T_tank):
+    """
+    Liquid viscosity used by evaluate_feed_line() when the caller does not
+    pass one: the saturated-liquid value mu_liquid_sat(T_tank) (Table A.4)
+    where the table covers T_tank, else the constant fallback
+    MU_LIQUID_N2O (T_tank between 307.33 K and the 309.52 K critical
+    point, where Table A.4 has no data).
+
+    Returns
+    -------
+    float
+        Dynamic viscosity, Pa.s.
+    """
+    if T_tank <= T_MAX_A4:
+        return mu_liquid_sat(T_tank)
+    return MU_LIQUID_N2O
+
+
 def evaluate_feed_line(m_dot, T_tank, P_tank, segments, roughness=1.5e-6,
-                        mu=MU_LIQUID_N2O):
+                        mu=None):
     """
     Step through a feed line made of straight segments and fittings,
     tracking pressure and subcooling margin from the tank to the
@@ -195,8 +215,10 @@ def evaluate_feed_line(m_dot, T_tank, P_tank, segments, roughness=1.5e-6,
           {"type": "fitting", "D": <diameter, m>, "K": <loss coeff.>}
     roughness : float
         Absolute pipe wall roughness, m. Applied to all "pipe" segments.
-    mu : float
-        Dynamic viscosity of the liquid, Pa.s.
+    mu : float or None
+        Dynamic viscosity of the liquid, Pa.s. If None (default), the
+        temperature-dependent saturated-liquid value is used (see
+        default_liquid_viscosity). Pass a number to override.
 
     Returns
     -------
@@ -205,10 +227,17 @@ def evaluate_feed_line(m_dot, T_tank, P_tank, segments, roughness=1.5e-6,
         "delta_T_sub_final": subcooling margin at the injector inlet, K
         "flashing_detected": True if pressure dropped below P_sat(T_tank)
                               at any point along the line
+        "x_inlet": vapour quality at the injector inlet (isenthalpic
+                   flash at P_final); 0.0 if no flashing
         "trace": list of dicts, one per segment, with the running P and
-                 delta_T_sub after that segment -- useful for plotting
-                 and for the interactive tool.
+                 delta_T_sub after that segment, plus the vapour quality
+                 x_quality, effective density rho_eff_kg_m3 and effective
+                 viscosity mu_eff_Pa_s used for that segment -- useful for
+                 plotting and for the interactive tool.
     """
+    if mu is None:
+        mu = default_liquid_viscosity(T_tank)
+
     # Liquid-phase properties (constant along the single-phase region)
     rho_l   = rho_liquid_sat(T_tank)
     h_up    = h_liquid_sat(T_tank)   # upstream enthalpy, kJ/kmol (conserved)
@@ -241,8 +270,14 @@ def evaluate_feed_line(m_dot, T_tank, P_tank, segments, roughness=1.5e-6,
             rho_v_local = M_N2O / nu_vapor_sat(T_sat_local)
             nu_mix      = (1.0 - x_current) / rho_l + x_current / rho_v_local
             rho_eff     = 1.0 / nu_mix
-            # McAdams mixture viscosity: (1-x)*mu_l + x*mu_v
-            mu_eff      = mu_mixture(x_current, T=T_sat_local, mu_l=mu)
+            # McAdams mixture viscosity: (1-x)*mu_l + x*mu_v.
+            # The vapour viscosity table (A.3) stops at T_MAX_A4 = 307.33 K;
+            # for a near-critical local saturation temperature above that,
+            # mu_v is evaluated at the table's last point (a small,
+            # documented approximation: mu_v changes slowly there and the
+            # mixture viscosity is dominated by the liquid fraction).
+            T_visc      = min(T_sat_local, T_MAX_A4)
+            mu_eff      = mu_mixture(x_current, T=T_visc, mu_l=mu)
         else:
             # Single-phase liquid: use pure liquid properties
             x_current = 0.0

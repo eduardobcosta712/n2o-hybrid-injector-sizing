@@ -12,9 +12,9 @@ import pytest
 from feed_line import (
     reynolds_number, darcy_friction_factor,
     friction_pressure_drop, fitting_pressure_drop,
-    velocity_from_mass_flow, evaluate_feed_line,
+    velocity_from_mass_flow, evaluate_feed_line, default_liquid_viscosity,
 )
-from n2o_properties import P_sat
+from n2o_properties import P_sat, mu_liquid_sat, MU_LIQUID_N2O, T_MAX_A4
 
 
 # ---------------------------------------------------------------------------
@@ -49,7 +49,7 @@ class TestDarcyFrictionFactor:
         assert math.isclose(f, 0.064, rel_tol=1e-9)
 
     def test_laminar_threshold(self):
-        # Re = 2299 → laminar; Re = 2300 → turbulent formula.
+        # Re = 2299 -> laminar; Re = 2300 -> turbulent formula.
         f_lam = darcy_friction_factor(2299, 1.5e-6, 0.008)
         f_turb = darcy_friction_factor(2300, 1.5e-6, 0.008)
         assert math.isclose(f_lam, 64 / 2299, rel_tol=1e-9)
@@ -178,6 +178,49 @@ class TestEvaluateFeedLine:
 
 
 # ---------------------------------------------------------------------------
+# Liquid viscosity used by the line
+# ---------------------------------------------------------------------------
+
+class TestFeedLineViscosity:
+    """The line uses the temperature-dependent mu_l(T) of Table A.4 by
+    default (as documented); the constant is only a fallback."""
+
+    SEGS = [{"type": "pipe", "L": 1.0, "D": 0.008},
+            {"type": "fitting", "D": 0.008, "K": 0.05},
+            {"type": "pipe", "L": 1.0, "D": 0.008}]
+
+    def test_default_is_temperature_dependent_liquid_viscosity(self):
+        assert math.isclose(default_liquid_viscosity(293.15), mu_liquid_sat(293.15))
+        r = evaluate_feed_line(0.4, 293.15, P_sat(293.15) + 8e5, self.SEGS)
+        assert math.isclose(r["trace"][0]["mu_eff_Pa_s"], mu_liquid_sat(293.15))
+
+    def test_explicit_mu_still_overrides(self):
+        r = evaluate_feed_line(0.4, 293.15, P_sat(293.15) + 8e5, self.SEGS, mu=1.5e-4)
+        assert math.isclose(r["trace"][0]["mu_eff_Pa_s"], 1.5e-4)
+
+    def test_fallback_constant_above_table_range(self):
+        assert default_liquid_viscosity(T_MAX_A4 + 0.5) == MU_LIQUID_N2O
+
+    def test_viscosity_model_is_a_small_effect_on_line_pressure_drop(self):
+        # Turbulent flow: friction depends only weakly on Re, so switching the
+        # viscosity model must not move the inlet pressure by more than 0.1 bar.
+        P_tank = P_sat(293.15) + 8e5
+        new = evaluate_feed_line(0.4, 293.15, P_tank, self.SEGS)["P_final"]
+        old = evaluate_feed_line(0.4, 293.15, P_tank, self.SEGS, mu=MU_LIQUID_N2O)["P_final"]
+        assert abs(new - old) < 0.1e5
+
+    def test_near_critical_two_phase_line_does_not_crash(self):
+        # T_tank above Tables A.3/A.4's 307.33 K: the local saturation
+        # temperature in the two-phase region is also above it. The vapour
+        # viscosity is then evaluated at the table's last point instead of
+        # failing.
+        T = 308.0
+        r = evaluate_feed_line(0.3, T, P_sat(T) + 0.2e5, self.SEGS)
+        assert r["flashing_detected"] is True
+        assert all(math.isfinite(s["mu_eff_Pa_s"]) for s in r["trace"])
+
+
+# ---------------------------------------------------------------------------
 # Two-phase feed line model — new tests for Priority 2 implementation
 # ---------------------------------------------------------------------------
 
@@ -253,8 +296,6 @@ class TestTwoPhaseLineModel:
             # And the dP in the last two-phase segment must exceed what
             # pure-liquid Darcy-Weisbach would give for the same geometry
             seg = two_phase[-1]
-            v_mix = 0.5 / (seg["rho_eff_kg_m3"] * math.pi * (0.006/2)**2)
-            v_liq = 0.5 / (rho_l * math.pi * (0.006/2)**2)
             # dP ~ rho * v^2, but rho*v^2 = m_dot^2 / (rho * A^2), so
             # dP_2ph / dP_1ph = rho_l / rho_mix > 1
             ratio = rho_l / seg["rho_eff_kg_m3"]

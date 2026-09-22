@@ -2,7 +2,7 @@
 app.py — N2O Hybrid Rocket Injector Sizing Tool (Streamlit interface).
 
 Two modes:
-  Sizing — known orifice area -> predicted real mass flow (SPI / Dyer)
+  Sizing — known orifice area -> predicted real mass flow (SPI / Dyer / HEM two-phase inlet)
   Design — target mass flow   -> required orifice area (SPI + Dyer correction)
 """
 
@@ -11,20 +11,15 @@ _MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mod
 sys.path.insert(0, os.path.abspath(_MODEL_DIR))
 
 import streamlit as st
-import json
-from n2o_properties import P_sat, T_sat, rho_liquid_sat, nu_vapor_sat
+from n2o_properties import P_sat, rho_liquid_sat
 from feed_line import evaluate_feed_line
-from injector_spi import spi_mass_flow, spi_sufficient, orifice_area_from_target_flow
-from injector_two_phase import dyer_mass_flow
-from full_system import evaluate_full_system
+from full_system import evaluate_full_system, design_injector_area
 from plotting import (plot_pressure_along_line, plot_PT_diagram, plot_model_comparison,
                       plot_line_profile, plot_subcooling_margin, plot_sensitivity,
                       plot_tornado,
                       plot_segment_losses)
 from export import generate_pdf
 from grain_sizing import size_grain, FUEL_PROPERTIES
-
-M_N2O = 44.013
 
 st.set_page_config(page_title="N2O Injector Sizing", page_icon=None, layout="wide")
 
@@ -157,11 +152,6 @@ def _run_feed_line(m_dot, T_tank, P_tank, seg_t, roughness):
     return evaluate_feed_line(m_dot, T_tank, P_tank,
                               [dict(s) for s in seg_t], roughness)
 
-@st.cache_data
-def _run_dyer(Cd, A, T_tank, P_inlet, P_chamber, rho_l_up, rho_l_down, rho_v_down):
-    return dyer_mass_flow(Cd, A, T_tank, P_inlet, P_chamber,
-                          rho_l_up, rho_l_down, rho_v_down)
-
 def _to_tuple(segments):
     return tuple(tuple(sorted(s.items())) for s in segments)
 
@@ -222,8 +212,9 @@ def render_sidebar():
         Pc_bar = st.number_input("Chamber pressure (bar)",
                                   min_value=1.0, max_value=65.0,
                                   value=float(Pc_default), step=0.5)
-        st.markdown('<div class="param-help">Typically 15-30% below tank '
-                    'pressure for combustion stability.</div>',
+        st.markdown('<div class="param-help">The injector pressure drop should '
+                    'be at least ~15-20% of the chamber pressure for combustion '
+                    'stability (see the indicator below).</div>',
                     unsafe_allow_html=True)
 
         st.markdown('<div class="section-label">Advanced</div>',
@@ -278,14 +269,14 @@ def render_sidebar():
                 f'&#9888; dP/Pc = {stab_pct:.0f}%<br>below 15% — instability risk</div>',
                 unsafe_allow_html=True)
         st.markdown('<div class="param-help">Injector pressure drop / chamber '
-                    'pressure. Min 15% recommended for combustion stability.</div>',
+                    'pressure (tank pressure minus chamber pressure, before line '
+                    'losses). Min 15% recommended for combustion stability.</div>',
                     unsafe_allow_html=True)
 
         return T_tank, P_tank, Cd, P_chamber, roughness
 
 # ── Segment list with insert-between ─────────────────────────────────────────
 def render_segments(mode_key):
-    from plotting import plot_line_profile
     st.markdown('<div class="section-label">Feed line geometry</div>',
                 unsafe_allow_html=True)
     st.caption("Tank exit to injector inlet. Use Insert buttons to add between components.")
@@ -337,8 +328,6 @@ def render_segments(mode_key):
                     label_visibility="collapsed",
                     help="Inner diameter in mm")
             with c4:
-                total_L = sum(s.get("L_mm", 0) for s in st.session_state.segments
-                              if s["type"] == "pipe")
                 st.markdown(
                     f'<div style="padding-top:.45rem;color:#3d4a5c;'
                     f'font-size:.75rem;">'
@@ -415,9 +404,20 @@ def render_segments(mode_key):
     return model_segments
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────
-def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None):
+def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None,
+                       mode="sizing"):
+    """
+    Corrective suggestions when flashing is detected in the feed line.
+
+    Shown in BOTH modes (audit, September 2026). The header differs:
+      - Sizing mode: the injector result above is a HEM two-phase-inlet
+        estimate (physically implemented, not validated against data) --
+        the panel explains how to remove the flashing.
+      - Design mode: area sizing is not offered while the line flashes.
+    """
     Psat = P_sat(T_tank)
     suggestions = []
+    margin_bar = (P_tank - Psat) / 1e5
     pipe_segs = [s for s in st.session_state.segments if s["type"] == "pipe"]
     total_L = sum(s["L_mm"] for s in pipe_segs) / 1000.0
     min_D = min((s["D_mm"] for s in pipe_segs), default=8.0)
@@ -428,6 +428,12 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None):
             f"<b>Raise tank pressure</b> to at least {Psat/1e5+1:.1f} bar "
             f"(P_sat at {T_tank-273.15:.1f} deg C = {Psat/1e5:.2f} bar). "
             f"Current: {P_tank/1e5:.1f} bar.")
+    elif margin_bar < 5.0:
+        suggestions.append(
+            f"<b>Increase the subcooling margin</b>: only {margin_bar:.2f} bar "
+            f"above P_sat ({Psat/1e5:.2f} bar at {T_tank-273.15:.1f} deg C). "
+            "Aim for at least 5 bar before line losses, by raising tank "
+            "pressure (e.g. helium supercharge) or lowering tank temperature.")
     if total_L > 1.5:
         suggestions.append(
             f"<b>Shorten the feed line</b>: {total_L:.1f} m total. "
@@ -435,7 +441,8 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None):
     if min_D < 10.0:
         suggestions.append(
             f"<b>Increase pipe inner diameter</b> (min {min_D:.0f} mm). "
-            "Pressure drop scales as 1/D^4.")
+            "At fixed flow, friction loss in a pipe scales as roughly 1/D^5 "
+            "(fitting losses as 1/D^4).")
     if high_k:
         suggestions.append(
             f"<b>Review {len(high_k)} high-K fitting(s)</b> (K > 1.0). "
@@ -444,8 +451,13 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None):
         suggestions.append(
             f"<b>Pre-cool the oxidiser</b>: at {T_tank-273.15:.1f} deg C, "
             f"P_sat = {Psat/1e5:.2f} bar — margin is critically small.")
+
+    if mode == "sizing":
+        header = "Flashing detected in the feed line — how to remove it"
+    else:
+        header = "Flashing detected in the feed line — area sizing not available"
     st.markdown(
-        '<div class="diag-box"><h4>Flashing detected — injector models not evaluated</h4>'
+        f'<div class="diag-box"><h4>{header}</h4>'
         "<ul>" + "".join(f"<li>{s}</li>" for s in suggestions) +
         ("" if suggestions else "<li>Review line geometry and tank pressure.</li>") +
         "</ul></div>", unsafe_allow_html=True)
@@ -455,21 +467,28 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None):
             dP = max(P_tank - P_chamber, 0.0)
             m_spi_ref = Cd * A_injector * math.sqrt(2 * rho_sat * dP)
             st.markdown(
-                f'<div class="estimate-box"><h4>Reference — SPI prediction (not valid here)</h4>'
-                f"<p>The SPI model (single-phase liquid, no flashing) would predict "
-                f"<strong>{m_spi_ref*1000:.1f} g/s</strong>. "
-                f"Because flashing has begun in the feed line, the real mass flow will be "
-                f"<strong>substantially lower</strong> — documented cases show reductions "
-                f"of 3 to 10 times below the SPI value under these conditions. "
-                f"No reliable numerical estimate can be given without modelling two-phase "
-                f"flow in the feed line itself (outside the current scope). "
-                f"Fix the feed line flashing first, then re-evaluate.</p>"
+                f'<div class="estimate-box"><h4>Reference — naive SPI prediction (not valid here)</h4>'
+                f"<p>A single-phase SPI calculation with the full tank-to-chamber "
+                f"pressure drop would predict <strong>{m_spi_ref*1000:.1f} g/s</strong>. "
+                f"Because the fluid flashes in the feed line, the real flow is "
+                f"lower; the HEM two-phase-inlet estimate is shown in the result "
+                f"cards above. That estimate is physically implemented and unit "
+                f"tested but has <strong>not been validated</strong> against "
+                f"experimental data. Fix the feed-line flashing first, then "
+                f"re-evaluate.</p>"
                 f"</div>", unsafe_allow_html=True)
         except Exception:
             pass
 
 # ── Result cards ──────────────────────────────────────────────────────────────
 def render_result_cards(result):
+    """
+    Render the four result cards for a Sizing-mode result. Returns nothing:
+    the caller decides what else to show (diagnostics when flashing, the
+    diagrams in every case). (Audit, September 2026: this function used to
+    return a boolean that was always True, with a dead "if not ok" branch
+    in the caller -- both removed.)
+    """
     if result["feed_line_result"]["flashing_detected"]:
         ir     = result.get("injector_result") or {}
         m_2p   = result.get("m_dot_real")
@@ -503,23 +522,9 @@ def render_result_cards(result):
                             unsafe_allow_html=True)
         if x_in > 0:
             st.caption(f"Two-phase inlet: x_in = {x_in:.4f} · "
-                       f"exit x = {ir.get('x_exit', 0):.3f} · HEM applied")
-        # NOTE (investigated September 2026 while working on this
-        # function for grain sizing): this branch deliberately returns
-        # True, NOT False, even though flashing was detected. This is
-        # correct, not a bug -- HEM_two_phase_inlet (added earlier)
-        # means the flashing case now DOES produce a real m_dot_real
-        # above, so the Sizing-mode caller's "if not ok:
-        # render_diagnostics(...)" should NOT fire here. render_diagnostics()
-        # itself is stale for this case (its text claims "injector models
-        # not evaluated" / "no reliable numerical estimate", both false
-        # once HEM_two_phase_inlet exists) -- an earlier attempt to "fix"
-        # this by returning False was reverted after checking that it
-        # would surface that stale, contradictory messaging underneath a
-        # perfectly valid result. render_diagnostics() remains correct
-        # and still used as-is for DESIGN mode's flashing case, where
-        # area sizing genuinely cannot proceed (see that branch below).
-        return True
+                       f"exit x = {ir.get('x_exit', 0):.3f} · HEM applied "
+                       "(not validated against experimental data)")
+        return
     spi_ok = result["spi_sufficient"]
     m_dot = result["m_dot_real"]
     ir = result["injector_result"]
@@ -554,13 +559,12 @@ def render_result_cards(result):
         st.caption(f"Dyer: kappa = {ir['kappa']:.3f}  |  "
                    f"exit vapour quality x = {ir['x_exit']:.3f}  |  "
                    f"HEM prediction: {ir['m_dot_HEM']*1000:.1f} g/s")
-        # Henry-Fauske non-equilibrium choking diagnostic (added September
-        # 2026, docs/future_work.md Priority 1). Surfaced as a warning,
-        # NOT applied to m_dot itself -- see injector_two_phase.dyer_mass_flow
-        # docstring for why: the ceiling is theoretically sound (Henry &
-        # Fauske 1971) but only confirmed not to perturb the 4 validated
-        # Waxman points; at other conditions (e.g. this exact scenario)
-        # it may be the more conservative, if unconfirmed, estimate.
+        # Henry-Fauske non-equilibrium choking diagnostic (docs/future_work.md
+        # Priority 1). Surfaced as a warning, NOT applied to m_dot itself --
+        # see injector_two_phase.dyer_mass_flow docstring for why: the ceiling
+        # is theoretically sound (Henry & Fauske 1971) but only confirmed not
+        # to perturb the 4 validated Waxman points; at other conditions it may
+        # be the more conservative, if unconfirmed, estimate.
         if ir.get("choked"):
             st.markdown(
                 '<div class="badge-choke">&#9888; Non-equilibrium choking ceiling '
@@ -579,7 +583,6 @@ def render_result_cards(result):
                        f"{ir['HF_unavailable_reason']}")
     elif ir and ir.get("x_exit") is not None:
         st.caption(f"HEM two-phase inlet: exit vapour quality x = {ir['x_exit']:.3f}")
-    return True
 
 # ── Grain sizing (fuel side) ──────────────────────────────────────────────────
 def render_grain_sizing(m_dot_ox, mode_key):
@@ -588,26 +591,21 @@ def render_grain_sizing(m_dot_ox, mode_key):
     mass flow, size the initial fuel grain geometry via the Marxman
     regression rate correlation (grain_sizing.py).
 
-    Redesigned September 2026 after two real test failures:
-      1. Entering a raw Marxman `a` coefficient by hand is extremely
-         easy to get wrong (its implied units depend on n) -- the fix
-         is to never ask for `a` directly. Instead the user enters a
-         regression-rate DATA POINT (mm/s at a stated G_o in
-         kg/(m^2.s)) exactly as it would be read off a plot or table in
-         a paper, and grain_sizing.a_from_reference_rate() converts it.
-      2. Even with that fix, a bad combination of inputs could in
-         principle still solve to a physically absurd port radius.
-         grain_sizing.size_grain() now REFUSES to return such a result
-         (raises RuntimeError instead) -- this function's job is just
-         to display that refusal clearly, not to re-implement the check.
+    The user never enters the Marxman coefficient `a` directly (its implied
+    units depend on n and are very easy to get wrong). Instead they enter a
+    regression-rate DATA POINT (mm/s at a stated G_o in kg/(m^2.s)), exactly
+    as it would be read off a plot or table in a paper, and
+    grain_sizing.a_from_reference_rate() converts it.
 
-    a and n (or rather, the (r_dot_ref, G_o_ref) point they are derived
-    from) are REQUIRED inputs -- not defaulted per fuel -- see
-    grain_sizing.py's module docstring and docs/03b_grain_sizing.md for
-    why: published (a, n) values for nominally the same fuel/oxidiser
-    pair differ by 2-3x between independent studies, so a shipped
-    default would imply false precision. Only fuel density (a genuine
-    material property) is defaulted, from FUEL_PROPERTIES.
+    grain_sizing.size_grain() REFUSES to return a physically absurd port
+    radius (raises RuntimeError) -- this function's job is just to display
+    that refusal clearly, not to re-implement the check.
+
+    (a, n), i.e. the data point they are derived from, are REQUIRED inputs --
+    not defaulted per fuel -- see grain_sizing.py's module docstring and
+    docs/03b_grain_sizing.md: published (a, n) values for nominally the same
+    fuel/oxidiser pair differ by 2-3x between independent studies. Only fuel
+    density (a genuine material property) is defaulted, from FUEL_PROPERTIES.
     """
     with st.expander("Grain sizing (fuel side) — Priority 3", expanded=False):
         st.markdown(
@@ -773,9 +771,11 @@ if st.session_state.page == "landing":
         standard SPI model to over-predict flow by a factor of several times when
         the fluid approaches its saturation pressure along the feed path.
         The model chains three physics blocks: feed line pressure drop
-        (Darcy-Weisbach), injector sufficiency check (SPI), and two-phase
-        correction (Dyer/NHNE), with a non-equilibrium choking ceiling
-        (Henry-Fauske) surfaced as a diagnostic warning.
+        (Darcy-Weisbach, with a two-phase HEM model once flashing starts),
+        injector regime selection (SPI / Dyer / HEM), and a self-consistent
+        coupled solver, with a non-equilibrium choking ceiling
+        (Henry-Fauske) surfaced as a diagnostic warning. A fuel grain sizing
+        panel (Marxman) completes the fuel side.
     </div>""", unsafe_allow_html=True)
 
     col1, col2 = st.columns(2, gap="large")
@@ -809,9 +809,15 @@ if st.session_state.page == "landing":
                 balance with the environment not modelled.</li>
             <li>Dyer model uses <strong>literature reference values</strong> for
                 Cd and weighting, not team-calibrated data.</li>
-            <li>When flashing is detected in the feed line, injector models are
-                <strong>not evaluated</strong>. A conservative upper-bound
-                estimate is provided instead.</li>
+            <li>The Dyer injector model is validated against experiment only for
+                pressure drops of <strong>8-14 bar</strong> (Waxman); typical motor
+                designs use larger drops, where the result is an unvalidated
+                model estimate.</li>
+            <li>When flashing is detected in the feed line, the injector is
+                evaluated with a <strong>HEM two-phase-inlet</strong> model
+                (Sizing mode); this path is implemented and unit tested but
+                <strong>not validated</strong> against experimental data. Design
+                mode does not size an area while the line flashes.</li>
             <li>A <strong>non-equilibrium choking ceiling</strong> (Henry-Fauske,
                 1971) is shown as a diagnostic warning when the Dyer prediction
                 exceeds it — theoretically sound, but only confirmed not to
@@ -855,13 +861,14 @@ if st.session_state.page == "sizing":
                     unsafe_allow_html=True)
 
     m_dot_line = st.number_input(
-        "Design mass flow for line evaluation (g/s)",
+        "Initial mass-flow guess for the coupled solver (g/s)",
         min_value=10.0, max_value=5000.0, value=500.0, step=10.0,
-        help="Used only to compute the feed line pressure drop. "
-             "The injector result is independent of this value.")
-    st.markdown('<div class="param-help">This value is used to calculate '
-                'the velocity (and friction losses) in the feed line. '
-                'It does not affect the injector model directly.</div>',
+        help="Starting point of the iteration only. The solver converges to "
+             "the self-consistent operating point, so the result does not "
+             "depend on this value (it only affects convergence speed).")
+    st.markdown('<div class="param-help">The model iterates until the feed-line '
+                'losses and the injector flow are mutually consistent. A value '
+                'near your design mass flow converges fastest.</div>',
                 unsafe_allow_html=True)
 
     model_segments = render_segments("siz")
@@ -874,108 +881,107 @@ if st.session_state.page == "sizing":
             result = _run_full_system(m_dot_line / 1000.0, T_tank, P_tank,
                                       seg_t, Cd, A_total, P_chamber, roughness)
             st.markdown('<hr class="divider">', unsafe_allow_html=True)
-            ok = render_result_cards(result)
-            if not ok:
+            render_result_cards(result)
+            if result["feed_line_result"]["flashing_detected"]:
                 render_diagnostics(T_tank, P_tank, P_chamber, Cd,
-                                    A_injector=A_total)
-            else:
-                ir = result.get("injector_result")
-                # Combustion stability check on actual injector dP
-                P_inlet = result["P_injector_inlet"]
-                actual_dP = P_inlet - P_chamber
-                stab = actual_dP / P_chamber * 100
-                if stab < 15:
-                    st.warning(f"Injector dP/Pc = {stab:.1f}% — below the 15% "
-                               "minimum recommended for combustion stability. "
-                               "Consider increasing the pressure drop (smaller orifice "
-                               "or higher tank pressure).")
+                                    A_injector=A_total, mode="sizing")
 
-                # Segment losses table
-                with st.expander("Pressure drop by segment"):
-                    st.plotly_chart(
-                        plot_segment_losses(
-                            result["feed_line_result"]["trace"],
-                            model_segments),
-                        use_container_width=True,
-                        config={"scrollZoom": False})
+            # Combustion stability check on actual injector dP
+            P_inlet = result["P_injector_inlet"]
+            actual_dP = P_inlet - P_chamber
+            stab = actual_dP / P_chamber * 100
+            if stab < 15:
+                st.warning(f"Injector dP/Pc = {stab:.1f}% — below the 15% "
+                           "minimum recommended for combustion stability. "
+                           "Consider increasing the pressure drop (smaller orifice "
+                           "or higher tank pressure).")
 
-                # Main diagrams
-                st.markdown('<div class="section-label" '
-                            'style="margin-top:1.4rem">Diagrams</div>',
-                            unsafe_allow_html=True)
-                pc1, pc2 = st.columns(2)
-                with pc1:
-                    st.plotly_chart(
-                        plot_pressure_along_line(
-                            result["feed_line_result"]["trace"],
-                            P_tank, T_tank, model_segments),
-                        use_container_width=True,
-                        config={"scrollZoom": True})
-                with pc2:
-                    st.plotly_chart(
-                        plot_PT_diagram(T_tank, P_tank,
-                                        result["P_injector_inlet"], P_chamber),
-                        use_container_width=True,
-                        config={"scrollZoom": True})
+            # Segment losses table
+            with st.expander("Pressure drop by segment"):
+                st.plotly_chart(
+                    plot_segment_losses(
+                        result["feed_line_result"]["trace"],
+                        model_segments),
+                    use_container_width=True,
+                    config={"scrollZoom": False})
 
-                # Subcooling margin chart
-                pc3, pc4 = st.columns(2)
-                with pc3:
-                    st.plotly_chart(
-                        plot_subcooling_margin(
-                            result["feed_line_result"]["trace"],
-                            P_tank, T_tank, model_segments),
-                        use_container_width=True,
-                        config={"scrollZoom": True})
-                with pc4:
-                    st.plotly_chart(
-                        plot_sensitivity(T_tank, P_tank, P_chamber,
-                                         model_segments, Cd, A_total, roughness),
-                        use_container_width=True,
-                        config={"scrollZoom": True})
+            # Main diagrams
+            st.markdown('<div class="section-label" '
+                        'style="margin-top:1.4rem">Diagrams</div>',
+                        unsafe_allow_html=True)
+            pc1, pc2 = st.columns(2)
+            with pc1:
+                st.plotly_chart(
+                    plot_pressure_along_line(
+                        result["feed_line_result"]["trace"],
+                        P_tank, T_tank, model_segments),
+                    use_container_width=True,
+                    config={"scrollZoom": True})
+            with pc2:
+                st.plotly_chart(
+                    plot_PT_diagram(T_tank, P_tank,
+                                    result["P_injector_inlet"], P_chamber),
+                    use_container_width=True,
+                    config={"scrollZoom": True})
 
-                with st.expander("Sensitivity tornado — all inputs", expanded=False):
-                    st.caption(
-                        "One-at-a-time sensitivity: each input is varied "
-                        "±5 K / ±5% / ±0.05 Cd / ±0.05 mm / ±20% line length, "
-                        "all others fixed. Widest bar = most critical to measure."
-                    )
-                    st.plotly_chart(
-                        plot_tornado(T_tank, P_tank, P_chamber,
+            # Subcooling margin chart
+            pc3, pc4 = st.columns(2)
+            with pc3:
+                st.plotly_chart(
+                    plot_subcooling_margin(
+                        result["feed_line_result"]["trace"],
+                        P_tank, T_tank, model_segments),
+                    use_container_width=True,
+                    config={"scrollZoom": True})
+            with pc4:
+                st.plotly_chart(
+                    plot_sensitivity(T_tank, P_tank, P_chamber,
                                      model_segments, Cd, A_total, roughness),
-                        use_container_width=True,
-                        config={"scrollZoom": True})
+                    use_container_width=True,
+                    config={"scrollZoom": True})
 
-                # Grain sizing (Priority 3, docs/future_work.md)
-                render_grain_sizing(result["m_dot_real"], "siz")
+            with st.expander("Sensitivity tornado — all inputs", expanded=False):
+                st.caption(
+                    "One-at-a-time sensitivity: each input is varied "
+                    "±5 K / ±5% / ±0.05 Cd / ±0.05 mm / ±20% line length, "
+                    "all others fixed. Widest bar = most critical to measure."
+                )
+                st.plotly_chart(
+                    plot_tornado(T_tank, P_tank, P_chamber,
+                                 model_segments, Cd, A_total, roughness),
+                    use_container_width=True,
+                    config={"scrollZoom": True})
 
-                # PDF export
-                st.markdown('<div class="section-label" '
-                            'style="margin-top:1rem">Export</div>',
-                            unsafe_allow_html=True)
-                result_copy = dict(result)
-                result_copy["_T_tank"] = T_tank
-                result_copy["_P_tank"] = P_tank
-                result_copy["_P_chamber"] = P_chamber
-                pdf_bytes = generate_pdf(
-                    mode="sizing",
-                    inputs={"T_tank_C": T_tank - 273.15,
-                            "P_tank_bar": P_tank / 1e5,
-                            "Cd": Cd,
-                            "P_chamber_bar": P_chamber / 1e5,
-                            "N_holes": N_holes,
-                            "d_mm": d_mm,
-                            "A_total": A_total,
-                            "roughness_um": roughness * 1e6},
-                    results=result_copy,
-                    segments_ui=st.session_state.segments,
-                    model_segments=model_segments)
-                st.download_button(
-                    label="Download PDF report",
-                    data=pdf_bytes,
-                    file_name="n2o_injector_sizing_report.pdf",
-                    mime="application/pdf")
-        except ValueError as e:
+            # Grain sizing (Priority 3, docs/future_work.md)
+            render_grain_sizing(result["m_dot_real"], "siz")
+
+            # PDF export
+            st.markdown('<div class="section-label" '
+                        'style="margin-top:1rem">Export</div>',
+                        unsafe_allow_html=True)
+            result_copy = dict(result)
+            result_copy["_T_tank"] = T_tank
+            result_copy["_P_tank"] = P_tank
+            result_copy["_P_chamber"] = P_chamber
+            pdf_bytes = generate_pdf(
+                mode="sizing",
+                inputs={"T_tank_C": T_tank - 273.15,
+                        "P_tank_bar": P_tank / 1e5,
+                        "Cd": Cd,
+                        "P_chamber_bar": P_chamber / 1e5,
+                        "N_holes": N_holes,
+                        "d_mm": d_mm,
+                        "A_total": A_total,
+                        "roughness_um": roughness * 1e6},
+                results=result_copy,
+                segments_ui=st.session_state.segments,
+                model_segments=model_segments)
+            st.download_button(
+                label="Download PDF report",
+                data=pdf_bytes,
+                file_name="n2o_injector_sizing_report.pdf",
+                mime="application/pdf")
+        except (ValueError, RuntimeError) as e:
             st.error(f"Model error: {e}")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1009,6 +1015,9 @@ elif st.session_state.page == "design":
         try:
             m_dot_target = m_dot_target_gs / 1000.0
             seg_t = _to_tuple(model_segments)
+            # The feed line is evaluated at the TARGET flow (not coupled):
+            # the target is, by definition, the flow the designed injector
+            # will deliver.
             fl = _run_feed_line(m_dot_target, T_tank, P_tank, seg_t, roughness)
             P_inlet = fl["P_final"]
 
@@ -1035,26 +1044,20 @@ elif st.session_state.page == "design":
                                 '<div class="sub">Fix line first</div>'
                                 '</div>', unsafe_allow_html=True)
                 st.caption(f"Two-phase inlet (x = {x_in:.4f}) — fix the feed line to enable area sizing.")
-                render_diagnostics(T_tank, P_tank, P_chamber, Cd)
+                render_diagnostics(T_tank, P_tank, P_chamber, Cd, mode="design")
             else:
-                dP_inj = P_inlet - P_chamber
-                rho_l_up = rho_liquid_sat(T_tank)
-                A_spi = orifice_area_from_target_flow(
-                    m_dot_target, Cd, rho_l_up, dP_inj)
-                A_iter = A_spi
-                T_down = T_sat(P_chamber)
-                rho_l_down = rho_liquid_sat(T_down)
-                rho_v_down = M_N2O / nu_vapor_sat(T_down)
-                for _ in range(40):
-                    dr = _run_dyer(Cd, A_iter, T_tank, P_inlet, P_chamber,
-                                   rho_l_up, rho_l_down, rho_v_down)
-                    if abs(dr["m_dot_Dyer"] - m_dot_target) / m_dot_target < 1e-7:
-                        break
-                    A_iter *= m_dot_target / dr["m_dot_Dyer"]
-                A_dyer = A_iter
-                d_spi  = math.sqrt(4 * A_spi  / (N_holes * math.pi)) * 1000
-                d_dyer = math.sqrt(4 * A_dyer / (N_holes * math.pi)) * 1000
-                pct = (A_dyer - A_spi) / A_spi * 100
+                # SPI vs Dyer selection and the area iteration live in
+                # full_system.design_injector_area (unit tested).
+                sizing = design_injector_area(m_dot_target, Cd, T_tank,
+                                              P_inlet, P_chamber)
+                use_dyer = sizing["regime"] == "Dyer"
+                dr = sizing["dyer_result"]
+                A_spi = sizing["A_spi"]
+                A_rec = sizing["A_recommended"]
+                d_spi = math.sqrt(4 * A_spi / (N_holes * math.pi)) * 1000
+                d_rec = math.sqrt(4 * A_rec / (N_holes * math.pi)) * 1000
+                pct = (A_rec - A_spi) / A_spi * 100
+                rec_name = "Dyer" if use_dyer else "Recommended (SPI)"
 
                 r1, r2, r3, r4 = st.columns(4)
                 with r1:
@@ -1071,31 +1074,37 @@ elif st.session_state.page == "design":
                                 unsafe_allow_html=True)
                 with r3:
                     st.markdown(f'<div class="result-card">'
-                                f'<div class="label">Dyer area</div>'
+                                f'<div class="label">{rec_name} area</div>'
                                 f'<div class="value" style="color:#2d6a4f">'
-                                f'{A_dyer*1e6:.3f}</div>'
+                                f'{A_rec*1e6:.3f}</div>'
                                 f'<div class="sub">mm2 total</div></div>',
                                 unsafe_allow_html=True)
                 with r4:
                     st.markdown(f'<div class="result-card">'
-                                f'<div class="label">Dyer hole diameter</div>'
+                                f'<div class="label">{rec_name} hole diameter</div>'
                                 f'<div class="value" style="color:#2d6a4f">'
-                                f'{d_dyer:.3f}</div>'
+                                f'{d_rec:.3f}</div>'
                                 f'<div class="sub">mm x {N_holes}</div></div>',
                                 unsafe_allow_html=True)
 
-                st.caption(
-                    f"Dyer area is {pct:.1f}% larger than SPI — the additional area "
-                    "compensates for two-phase flow reduction so the system delivers "
-                    "the target mass flow.")
+                if use_dyer:
+                    st.caption(
+                        f"Dyer area is {pct:.1f}% larger than SPI — the additional area "
+                        "compensates for two-phase flow reduction so the system delivers "
+                        "the target mass flow.")
+                else:
+                    st.info(
+                        "The chamber pressure is at or above P_sat(T_tank): the flow "
+                        "stays single-phase through the orifice, so SPI is valid and no "
+                        "two-phase (Dyer) correction is needed. The recommended area "
+                        "equals the SPI area.")
 
-                # Henry-Fauske non-equilibrium choking diagnostic (added
-                # September 2026, docs/future_work.md Priority 1). "choked"
-                # here is independent of A_dyer: since both the Dyer
+                # Henry-Fauske non-equilibrium choking diagnostic. "choked"
+                # here is independent of A_rec: since both the Dyer
                 # prediction and the ceiling scale linearly with area, no
                 # amount of resizing the orifice escapes this warning if
                 # it is triggered by the tank/chamber conditions themselves.
-                if dr.get("choked"):
+                if dr is not None and dr.get("choked"):
                     st.markdown(
                         '<div class="badge-choke">&#9888; Non-equilibrium choking '
                         'ceiling exceeded</div>', unsafe_allow_html=True)
@@ -1110,7 +1119,7 @@ elif st.session_state.page == "design":
                         f"not experimentally confirmed outside the Waxman reference "
                         f"conditions (where it does not bind). See "
                         f"docs/future_work.md, Priority 1.")
-                elif dr.get("HF_unavailable_reason"):
+                elif dr is not None and dr.get("HF_unavailable_reason"):
                     st.caption(f"Non-equilibrium ceiling check unavailable: "
                                f"{dr['HF_unavailable_reason']}")
 
@@ -1121,37 +1130,47 @@ elif st.session_state.page == "design":
                     st.warning(f"Injector dP/Pc = {stab:.1f}% — below the 15% "
                                "minimum recommended for combustion stability.")
 
+                # Coupled operating point of the designed system (used by the plots)
+                result_check = _run_full_system(
+                    m_dot_target, T_tank, P_tank, seg_t,
+                    Cd, A_rec, P_chamber, roughness)
+
                 st.markdown('<div class="section-label" '
                             'style="margin-top:1.4rem">Diagrams</div>',
                             unsafe_allow_html=True)
                 pc1, pc2 = st.columns(2)
                 with pc1:
-                    st.plotly_chart(
-                        plot_model_comparison(
-                            dr["m_dot_SPI"], dr["m_dot_HEM"],
-                            dr["m_dot_Dyer"], m_dot_target,
-                            m_dot_crit_HF=dr.get("m_dot_crit_HF"),
-                            choked=dr.get("choked", False)),
-                        use_container_width=True,
-                        config={"scrollZoom": False})
+                    if use_dyer:
+                        st.plotly_chart(
+                            plot_model_comparison(
+                                dr["m_dot_SPI"], dr["m_dot_HEM"],
+                                dr["m_dot_Dyer"], m_dot_target,
+                                m_dot_crit_HF=dr.get("m_dot_crit_HF"),
+                                choked=dr.get("choked", False)),
+                            use_container_width=True,
+                            config={"scrollZoom": False})
+                    else:
+                        st.plotly_chart(
+                            plot_pressure_along_line(
+                                result_check["feed_line_result"]["trace"],
+                                P_tank, T_tank, model_segments),
+                            use_container_width=True,
+                            config={"scrollZoom": True})
                 with pc2:
                     st.plotly_chart(
                         plot_PT_diagram(T_tank, P_tank, P_inlet, P_chamber),
                         use_container_width=True,
                         config={"scrollZoom": True})
 
-                # Sensitivity for the Dyer area
+                # Sensitivity for the recommended area
                 pc3, pc4 = st.columns(2)
                 with pc3:
                     st.plotly_chart(
                         plot_sensitivity(T_tank, P_tank, P_chamber,
-                                         model_segments, Cd, A_dyer, roughness),
+                                         model_segments, Cd, A_rec, roughness),
                         use_container_width=True,
                         config={"scrollZoom": True})
                 with pc4:
-                    result_check = _run_full_system(
-                        m_dot_target, T_tank, P_tank, seg_t,
-                        Cd, A_dyer, P_chamber, roughness)
                     st.plotly_chart(
                         plot_subcooling_margin(
                             result_check["feed_line_result"]["trace"],
@@ -1161,12 +1180,12 @@ elif st.session_state.page == "design":
 
                 with st.expander("Sensitivity tornado — all inputs", expanded=False):
                     st.caption(
-                        "One-at-a-time sensitivity at the Dyer design point. "
+                        "One-at-a-time sensitivity at the recommended-area design point. "
                         "Widest bar = most critical input to measure accurately."
                     )
                     st.plotly_chart(
                         plot_tornado(T_tank, P_tank, P_chamber,
-                                     model_segments, Cd, A_dyer, roughness),
+                                     model_segments, Cd, A_rec, roughness),
                         use_container_width=True,
                         config={"scrollZoom": True})
 
@@ -1181,13 +1200,17 @@ elif st.session_state.page == "design":
                     "feed_line_result": result_check["feed_line_result"],
                     "P_injector_inlet": P_inlet,
                     "_T_tank": T_tank, "_P_tank": P_tank, "_P_chamber": P_chamber,
-                    "A_spi": A_spi, "A_dyer": A_dyer,
-                    "d_spi": d_spi, "d_dyer": d_dyer, "pct": pct,
-                    "m_spi": dr["m_dot_SPI"], "m_hem": dr["m_dot_HEM"],
-                    "m_dyer": dr["m_dot_Dyer"], "m_target": m_dot_target,
-                    "m_dot_crit_HF": dr.get("m_dot_crit_HF"),
-                    "choked": dr.get("choked", False),
+                    "design_regime": sizing["regime"],
+                    "A_spi": A_spi, "A_dyer": A_rec,
+                    "d_spi": d_spi, "d_dyer": d_rec, "pct": pct,
                 }
+                if use_dyer:
+                    export_results.update({
+                        "m_spi": dr["m_dot_SPI"], "m_hem": dr["m_dot_HEM"],
+                        "m_dyer": dr["m_dot_Dyer"], "m_target": m_dot_target,
+                        "m_dot_crit_HF": dr.get("m_dot_crit_HF"),
+                        "choked": dr.get("choked", False),
+                    })
                 pdf_bytes = generate_pdf(
                     mode="design",
                     inputs={"T_tank_C": T_tank - 273.15,
@@ -1206,5 +1229,5 @@ elif st.session_state.page == "design":
                     file_name="n2o_injector_design_report.pdf",
                     mime="application/pdf")
 
-        except ValueError as e:
+        except (ValueError, RuntimeError) as e:
             st.error(f"Model error: {e}")

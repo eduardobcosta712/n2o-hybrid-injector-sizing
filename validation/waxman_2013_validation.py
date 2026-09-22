@@ -5,7 +5,14 @@ Definitive validation of the complete injector model against experimental
 data from Waxman (2013/2014), via the tabulated operating points of
 Nino & Razavi (2019).
 
+Run from anywhere:   python validation/waxman_2013_validation.py
+
 References:
+    Waxman, B. S., Zimmerman, J. E., Cantwell, B., and Zilliac, G. (2013).
+    Mass Flow Rate and Isolation Characteristics of Injectors for Use with
+    Self-Pressurizing Oxidizers in Hybrid Rockets. AIAA 2013-3636.
+    (Source of the model equations, Eq. 5 and Eq. 9, and of the Cd data.)
+
     Waxman, B. S. (2014). An Investigation of Injectors for Use with High
     Vapour Pressure Propellants with Applications to Hybrid Rockets.
     PhD thesis, Stanford University. (Original dataset.)
@@ -19,14 +26,16 @@ References:
     One-Component Mixtures in Nozzles, Orifices, and Short Tubes. ASME
     J. Heat Transfer, 93(2), 179-187.
     (Non-equilibrium critical flow ceiling, checked as a diagnostic in
-    Section on Henry-Fauske below -- added September 2026.)
+    the Henry-Fauske section below -- added September 2026.)
 
-MODEL STATE AT TIME OF VALIDATION (September 2026):
+MODEL STATE AT TIME OF VALIDATION (September 2026, after the project audit):
     - Coupled feed-line / injector solver (damped fixed-point, alpha=0.5)
     - SPI / Dyer / HEM two-phase inlet regime selection
     - Two-phase HEM pressure-drop model in feed line (rho_mix, mu_mix)
+    - Liquid viscosity in the line: mu_liquid_sat(T) (Table A.4); the
+      Waxman line is short and wide, so this has no measurable effect here
     - Properties: N2O saturation table A.1 (McGill/Perry) + A.3 (mu_v,
-      NIST/Millat 1991) + A.4 (cp_l, mu_l, s_l, s_v, NIST/Lemmon 2006)
+      NIST) + A.4 (cp_l, mu_l, s_l, s_v, NIST)
     - Dyer formula: corrected weights (Waxman 2013 Eq.9 / Solomon 2011)
     - HEM critical flow (equilibrium): hem_critical_flow() (isenthalpic)
       and hem_critical_flow_isentropic() -- standalone diagnostics
@@ -40,13 +49,20 @@ DOMAIN:
     The Palacz & Cieslik (2021) dataset (QF_upstream = 0.4-0.5, self-
     pressurized) is outside this domain and not used here.
 
+    The validated pressure-drop band is 8-14 bar. The model is NOT
+    experimentally validated at the 20-50 bar drops typical of motor
+    designs (see the conclusions below).
+
 INJECTOR GEOMETRY (Waxman Table 1 / Nino & Razavi Table 2):
     D = 1.50 mm, L = 18.4 mm, L/D = 12.3, square-edge inlet
-    Cd = 0.65 (Waxman Fig.15 at this supercharge level)
+    Cd = 0.65 (conservative; Waxman's measured Cd for this injector is 0.71)
 
 UPSTREAM CONDITIONS (Nino & Razavi Table 4):
     T1 = 280 K, P1 = 4.36 MPa, P1_super = 0.62 MPa
     Upstream chamber: ID = 25.4 mm, L ~ 50 mm -> negligible line losses
+    (NOTE: validation/waxman_2013_experimental_data.csv records a different,
+    raw extraction of Waxman's paper -- P1 = 4.96 MPa -- and is NOT read by
+    this script; see the note in waxman_2013_results.md.)
 
 EXPERIMENTAL OPERATING POINTS (Nino & Razavi Table 4 / Fig. 2):
     Case I   (pre-critical):   dP = 0.84 MPa, m_exp = 44.0 g/s
@@ -62,11 +78,16 @@ import math
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "src", "model"))
+# This file lives in <repo>/validation/, so the model directory is one level
+# up: <repo>/src/model. (Before the September 2026 audit the path was built
+# relative to validation/ itself, so `python validation/waxman_2013_validation.py`
+# failed with ModuleNotFoundError.)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "src", "model"))
 
 from full_system import evaluate_full_system
-from injector_two_phase import hem_critical_flow, henry_fauske_critical_flow
+from injector_two_phase import (hem_critical_flow, hem_critical_flow_isentropic,
+                                 henry_fauske_critical_flow)
 from n2o_properties import P_sat, rho_liquid_sat
 
 # ---------------------------------------------------------------------------
@@ -74,7 +95,7 @@ from n2o_properties import P_sat, rho_liquid_sat
 # ---------------------------------------------------------------------------
 T1   = 280.0    # K
 P1   = 4.36e6   # Pa  (4.36 MPa -- Nino & Razavi Table 4)
-Cd   = 0.65     # discharge coefficient (Waxman Fig.15, square-edge)
+Cd   = 0.65     # discharge coefficient (conservative literature estimate)
 D    = 0.0015   # m   (1.50 mm)
 A    = math.pi * (D / 2.0) ** 2  # single orifice area
 
@@ -97,7 +118,6 @@ def pct_error(pred, exp):
 
 def run_validation():
     Psat = P_sat(T1)
-    rho_l = rho_liquid_sat(T1)
 
     print("=" * 72)
     print("VALIDATION REPORT -- Waxman (2013/2014) via Nino & Razavi (2019)")
@@ -121,10 +141,10 @@ def run_validation():
     # ------------------------------------------------------------------
     print("-" * 80)
     print(f"  {'Case':<16} {'dP[bar]':>8} {'m_exp':>8} {'m_dot':>8} "
-          f"{'err%':>7} {'P_in[bar]':>10} {'regime':>5} {'iters':>6}  {'HF':>7}")
+          f"{'err%':>7} {'P_in[bar]':>10} {'regime':>7} {'iters':>6}  {'HF':>7}")
     print(f"  {'':16} {'':8} {'[g/s]':>8} {'[g/s]':>8} "
-          f"{'':7} {'':10} {'':5} {'':6}")
-    print(f"  {'-'*76}")
+          f"{'':7} {'':10} {'':7} {'':6}")
+    print(f"  {'-'*78}")
 
     results = []
     for label, dP_MPa, m_exp in CASES:
@@ -137,18 +157,18 @@ def run_validation():
         err = pct_error(m, m_exp * 1e-3)
         results.append((label, dP_MPa, m_exp, m, err, r))
 
-        # Henry-Fauske diagnostic flag (added September 2026). This is
-        # ALREADY computed inside dyer_mass_flow() (called by
-        # evaluate_full_system via _evaluate_injector), so it is read
-        # straight off the injector_result dict -- not recomputed here.
+        # Henry-Fauske diagnostic flag. This is ALREADY computed inside
+        # dyer_mass_flow() (called by evaluate_full_system via
+        # _evaluate_injector), so it is read straight off the
+        # injector_result dict -- not recomputed here.
         ir = r.get("injector_result") or {}
         choked_flag = "CHOKED" if ir.get("choked") else "-"
         print(f"  {label:<16} {dP_MPa*10:>8.2f} {m_exp:>8.1f} "
               f"{m*1000:>8.2f} {err:>+7.1f}% "
               f"{r['P_injector_inlet']/1e5:>10.3f} "
-              f"{r['regime']:>5} {si['iterations']:>6}  {choked_flag:>7}")
+              f"{r['regime']:>7} {si['iterations']:>6}  {choked_flag:>7}")
 
-    print(f"  {'-'*76}")
+    print(f"  {'-'*78}")
     errs = [r[4] for r in results]
     print(f"  {'Mean':>16} {'':8} {'':8} {'':8} "
           f"{sum(errs)/len(errs):>+7.1f}%")
@@ -178,18 +198,21 @@ def run_validation():
     # HEM critical flow reference (equilibrium ceiling)
     # ------------------------------------------------------------------
     print("-" * 72)
-    print("HEM CRITICAL FLOW -- equilibrium ceiling (standalone reference)")
+    print("HEM CRITICAL FLOW -- equilibrium ceilings (standalone reference)")
     print("-" * 72)
     print()
     crit = hem_critical_flow(Cd, A, T1, P1)
-    print(f"  m_dot_crit = {crit['m_dot_crit']*1000:.1f} g/s  "
+    crit_s = hem_critical_flow_isentropic(Cd, A, T1, P1)
+    print(f"  isenthalpic: m_dot_crit = {crit['m_dot_crit']*1000:.2f} g/s  "
           f"@  P2_crit = {crit['P2_crit']/1e5:.1f} bar  "
           f"x_crit = {crit['x_crit']:.4f}")
+    print(f"  isentropic:  m_dot_crit = {crit_s['m_dot_crit']*1000:.2f} g/s  "
+          f"@  P2_crit = {crit_s['P2_crit']/1e5:.1f} bar  "
+          f"x_crit = {crit_s['x_crit']:.4f}")
     print()
     print("  Physical interpretation:")
-    print("  The HEM maximum (41.1 g/s) is the isenthalpic two-phase choking")
-    print("  limit -- the physical ceiling set by the two-phase speed of sound")
-    print("  UNDER THE ASSUMPTION OF FULL THERMODYNAMIC EQUILIBRIUM. The Dyer")
+    print("  The HEM maximum (~41 g/s) is the two-phase choking limit UNDER")
+    print("  THE ASSUMPTION OF FULL THERMODYNAMIC EQUILIBRIUM. The Dyer")
     print("  predictions above are all correctly above this limit, consistent")
     print("  with Waxman's observation that non-equilibrium (delayed-")
     print("  nucleation) two-phase flow genuinely chokes at a HIGHER mass flux")
@@ -197,8 +220,7 @@ def run_validation():
     print()
 
     # ------------------------------------------------------------------
-    # Henry-Fauske critical flow (non-equilibrium ceiling) -- added
-    # September 2026, docs/future_work.md Priority 1
+    # Henry-Fauske critical flow (non-equilibrium ceiling)
     # ------------------------------------------------------------------
     print("-" * 72)
     print("HENRY-FAUSKE CRITICAL FLOW -- non-equilibrium ceiling (diagnostic)")
@@ -257,33 +279,36 @@ def run_validation():
     print("-" * 72)
     print()
     print("  1. The Dyer model is validated in its correct domain (QF_upstream=0,")
-    print("     moderate delta_P, design regime). Mean error = -1.9%,")
+    print("     8-14 bar pressure drop). Mean error = -1.9%,")
     print(f"     all {len(errs)} cases within +/-5%.")
     print()
     print("  2. The coupled solver introduces negligible change vs. one-pass")
     print("     for the Waxman geometry (negligible line losses). Its benefit")
     print("     is realised in real motors with longer, narrower feed lines.")
     print()
-    print("  3. The two-phase line model (Priority 2 of the original roadmap)")
-    print("     is not exercised here (line losses are negligible). It is")
-    print("     tested separately in test_feed_line.py::TestTwoPhaseLineModel.")
+    print("  3. The two-phase line model is not exercised here (line losses are")
+    print("     negligible). It is tested separately in")
+    print("     test_feed_line.py::TestTwoPhaseLineModel, but has NOT been")
+    print("     validated against experimental data.")
     print()
-    print("  4. The HEM critical flow (hem_critical_flow) correctly identifies")
-    print("     the EQUILIBRIUM physical ceiling at 41.1 g/s. The Dyer non-")
-    print("     equilibrium correction legitimately predicts above this,")
-    print("     consistent with the experimental data.")
+    print("  4. The HEM critical flow correctly identifies the EQUILIBRIUM")
+    print("     ceiling (~41 g/s). The Dyer non-equilibrium correction")
+    print("     legitimately predicts above this, consistent with experiment.")
     print()
-    print("  5. The Henry-Fauske non-equilibrium ceiling (added September 2026)")
-    print("     correctly sits above all 4 Dyer predictions, confirming it does")
-    print("     not perturb this validation. It is surfaced as a diagnostic")
-    print("     'choked' warning for operating points outside this validated")
-    print("     band, not applied as an automatic correction -- see")
-    print("     docs/future_work.md, Priority 1.")
+    print("  5. The Henry-Fauske non-equilibrium ceiling correctly sits above all")
+    print("     4 Dyer predictions, confirming it does not perturb this")
+    print("     validation. It is surfaced as a diagnostic 'choked' warning for")
+    print("     operating points outside this validated band, not applied as an")
+    print("     automatic correction -- see docs/future_work.md, Priority 1.")
     print()
-    print("  6. For injector sizing at realistic motor pressures (dP = 20-50 bar),")
-    print("     the model provides accuracy competitive with the state of the art")
-    print("     in open-source tools. Remaining error is within experimental")
-    print("     uncertainty when Cd is measured (not assumed from literature).")
+    print("  6. SCOPE OF THE EVIDENCE. Typical motor designs use pressure drops of")
+    print("     20-50 bar, several times larger than the validated 8-14 bar band.")
+    print("     The model has NOT been validated there; the Henry-Fauske")
+    print("     diagnostic, in fact, flags the Dyer prediction as exceeding the")
+    print("     non-equilibrium ceiling at such conditions (see the worked")
+    print("     examples). Predictions at 20-50 bar should be read as model")
+    print("     estimates with unquantified error, to be confirmed by a")
+    print("     cold-flow / hot-fire measurement, not as validated numbers.")
     print()
 
 

@@ -2,86 +2,63 @@
 
 This document tracks the computational implementation of the model described in Sections 1–3, module by module, in the order they were built. Each section documents: the theory being translated into code, the implementation itself, its validation, and any issues encountered along the way — including issues that turned out to be informative rather than mere bugs.
 
+Numbers quoted in the "Validation" paragraphs were regenerated in the September 2026 audit by running the current code; see each module's section below for what changed and why.
+
 ## 4.1 `n2o_properties.py` — Saturated N₂O properties
 
 ### Purpose
 
-Every other module in this project depends on this one: the subcooling margin (Section 1.4), the flashing criterion (Section 1.6), and the SPI/HEM/Dyer models (Sections 2–3) all require, at minimum, $P_{sat}(T)$ and its inverse $T_{sat}(P)$. This module implements those, plus saturated liquid density.
+Every other module in this project depends on this one: the subcooling margin (Section 1.4), the flashing criterion (Section 1.6), and the SPI/HEM/Dyer models (Sections 2–3) all require, at minimum, $P_{sat}(T)$ and its inverse $T_{sat}(P)$. This module implements those, plus saturated liquid/vapour density, enthalpy, entropy, and the molar mass constant `M_N2O` (defined once here and imported by every other module).
 
-### Source of the correlations
+### CoolProp integration (September 2026, Priority 4)
 
-Rather than deriving an equation of state from scratch (outside the scope of this project, and unnecessary — accurate, experimentally-fitted correlations already exist in the literature), this module uses published correlations for N₂O saturated properties, originally from Perry's Chemical Engineers' Handbook (Green & Perry, 2008), re-transcribed with full coefficients in Jean-Philyppe, J. (2023), *"A computational model for the design of a nitrous oxide-paraffin wax hybrid rocket engine,"* McGill Rocket Team technical report, arXiv:2302.06725, Appendix A.1. Full citation in `references.md`.
+**What changed.** The closed-form Perry/McGill correlations and the McGill Table A.1 (nu_v, h_l, h_v) that the thermodynamic functions used until September 2026 have been replaced by **CoolProp** (Bell et al., 2014), which implements the **Lemmon & Span (2006)** fundamental equation of state for nitrous oxide directly — the same equation of state the NIST WebBook itself uses. `P_sat`, `T_sat`, `rho_liquid_sat`, `nu_vapor_sat`, `h_liquid_sat`/`h_vapor_sat`/`h_fg`, `cp_liquid_sat`, and `s_liquid_sat`/`s_vapor_sat`/`s_fg` all now call `CoolProp.CoolProp.PropsSI` for a saturated state (`Q=0` or `Q=1`) at a given temperature or pressure.
 
-The saturation pressure correlation is:
+**Why.** The Perry/McGill correlations carried a documented ~2–3 % error in $P_{sat}$ near the critical point and a 3–5 % error in $h_{fg}$ (Section 4.4, "Error sources"); both feed directly into the Dyer $\kappa$ weighting and the vapour-quality calculations that are the whole point of this project. CoolProp removes that error source and, since entropy now comes from the same equation of state as everything else, also removes the old 307.33 K ceiling on the isentropic choking models (Section 4.4): the valid range is now `[T_MIN, T_MAX]`, about 0.01 K above the triple point to 0.02 K below the critical point (evaluating a saturated state exactly at either endpoint is ill-conditioned for most equation-of-state implementations, hence the small margins).
 
-$$P_{sat}(T) = \exp\left[c_1 + \frac{c_2}{T} + c_3 \ln T + c_4 T^{c_5}\right]$$
+**What did NOT change.** Viscosity ($\mu_l$, $\mu_v$) still comes from the NIST WebBook tables (A.3, A.4), interpolated exactly as before: CoolProp's fluid page for nitrous oxide lists only the equation of state and a surface-tension correlation, not a viscosity model, so there is nothing to switch to there. These tables still stop at 307.33 K. The molar-quantity API (`nu_vapor_sat` in m³/kmol, `h_liquid_sat` in kJ/kmol, …) is unchanged, so `feed_line.py`, `injector_spi.py`, `injector_two_phase.py` and `full_system.py` needed no change to their own formulas — only `injector_two_phase.py`'s domain-check messages, which used to name "Table A.4" for the entropy range, were updated to name the new, wider range.
 
-with T in Kelvin, P in Pa, valid for T ∈ [182.33, 309.52] K (triple point to near the critical point), and coefficients $c_1 = 96.512$, $c_2 = -4045$, $c_3 = -12.277$, $c_4 = 2.886 \times 10^{-5}$, $c_5 = 2$.
+**Requirement.** `pip install CoolProp`. Importing `n2o_properties.py` without it raises a clear `ImportError` naming the install command, rather than failing deeper in the module with an opaque `NameError`.
 
-The saturated liquid molar volume correlation is:
+**Reference-state note.** CoolProp's zero of enthalpy and entropy is not the one the NIST tables in the CSV use. Every physical quantity in this project is a *difference* of enthalpy or entropy taken from the *same* source (e.g. $x = (h_{up} - h_l)/h_{fg}$), so the arbitrary reference cancels and this has no effect on any result.
 
-$$\nu_l(T) = \frac{c_2^{\,1 + (1 - T/c_3)^{c_4}}}{c_1}$$
+**Verification status — action needed.** This integration was written and tested in a sandboxed environment with no network access, where the real CoolProp package could not be installed (`pip install CoolProp` failed with "no matching distribution"). It was therefore verified two ways that do **not** need CoolProp installed:
+1. **API and error-handling correctness**, against a purpose-built stand-in for `PropsSI` that reproduces saturated-state queries from the *legacy* Perry/McGill/NIST tables via linear interpolation. This is enough to confirm the module's logic, units, caching, and range checks are correct, and that `tests/test_n2o_properties.py` and every downstream test pass end to end (215 tests). It is **not** enough to confirm the numerical improvement CoolProp is meant to deliver, because the stand-in's own accuracy is limited by the same sparse, linearly-interpolated tables the integration was meant to move away from.
+2. **Every reference-independent identity available without a second data source** (Clausius–Clapeyron for $dP_{sat}/dT$ against a finite difference of $P_{sat}$ itself, cross-checks of $h_{fg}$ and entropy differences against the legacy tables to their known accuracy) — see the test module for the exact tolerances and why each is loose or tight.
 
-with coefficients $c_1 = 2.781$, $c_2 = 0.27244$, $c_3 = 309.57$, $c_4 = 0.2882$, converted to density via $\rho_l = M_{N_2O} / \nu_l$, with $M_{N_2O} = 44.013$ kg/kmol.
+**Before trusting any number from this tool, run, on a machine with the real CoolProp installed:**
+```bash
+pip install CoolProp
+python src/model/n2o_properties.py        # self-check against literature references
+pytest tests/ -v                           # full suite, including the legacy cross-checks
+python validation/waxman_2013_validation.py
+```
+and regenerate the examples and the validation report if any number moves by more than a per cent or two (expected, given the ~2–3 % $P_{sat}$ error and 3–5 % $h_{fg}$ error the Perry/McGill correlations were known to carry). The MAPE, all example figures, and the Henry-Fauske ceilings quoted elsewhere in this repository as of this section's writing were computed **before** this integration (with the Perry/McGill/NIST property set) and have not yet been regenerated with the real CoolProp package — see the banner at the top of `validation/waxman_2013_results.md` and each file in `examples/`.
 
-Both correlations are implemented with an explicit valid-range check (`_check_range`): any call with T outside [182.33, 309.52] K raises an error rather than silently extrapolating, since the fit is not guaranteed valid there.
+**Alternatives, if CoolProp genuinely cannot be installed** (e.g. a fully offline machine): see `docs/references.md`, "CoolProp and alternatives", for a short comparison (REFPROP, reverting to the Perry/McGill correlations, or implementing the Lemmon & Span equation of state by hand).
 
-### Inverting $P_{sat}(T)$: Newton-Raphson with step damping
+### Closed-form correlations kept as legacy cross-checks
 
-The design tool needs $T_{sat}(P)$ (saturation temperature given a pressure) as often as $P_{sat}(T)$ — this is the function used to compute the subcooling margin $\Delta T_{sub} = T_{sat}(P) - T$ at any point along the feed system. The correlation above cannot be algebraically inverted for $T$ in closed form ($T$ appears inside a fraction, a logarithm, and raised to a power simultaneously), so $T_{sat}(P)$ is solved numerically via Newton-Raphson, using the analytically-differentiated $dP_{sat}/dT$.
+The Perry/McGill correlations and McGill Table A.1 remain in the codebase — the correlations as private helper functions inside `tests/test_n2o_properties.py`, the table in `n2o_saturation_table.csv` — used **only** as independent cross-checks in the test suite (e.g. `TestPsat.test_agrees_with_perry_correlation`), not by the model itself. Full citations remain in `docs/references.md`.
 
-**Issue encountered and resolved.** An initial, undamped Newton-Raphson implementation (fixed default initial guess of 250 K) failed for target pressures corresponding to temperatures far from the guess: for example, inverting $P_{sat}(293.15\ \text{K})$ from a starting guess of 250 K produced a single Newton step of $-67$ K, overshooting directly past the correlation's valid upper bound (309.52 K) in one iteration.
+### Tabulated viscosity: $\mu_v(T)$, $\mu_l(T)$
 
-This is a known failure mode of plain Newton-Raphson: $P_{sat}(T)$ becomes increasingly steep (non-linear) approaching the critical point (Section 1.5), so the local linear approximation used by each Newton step can be inaccurate over large distances from the current estimate, producing an overshooting correction.
+**Table A.3** (NIST WebBook): saturated vapour dynamic viscosity $\mu_v(T)$ at 26 points (182–307 K), linearly interpolated in `mu_vapor_sat(T)`. **Table A.4** (NIST WebBook): saturated liquid dynamic viscosity $\mu_l(T)$, used the same way in `mu_liquid_sat(T)`. Both raise a named `ValueError` outside their range (182.33–307.33 K), narrower than the thermodynamic range now available from CoolProp; `feed_line.py` clamps the local saturation temperature to 307.33 K before calling `mu_vapor_sat` when it is exceeded (Section 4.2). The literature attribution of the underlying viscosity correlations is unverified — see `docs/references.md`, "Open bibliographic points".
 
-**Fix.** Each Newton step is clamped to a maximum magnitude (`max_step`, default 20 K), and the resulting temperature estimate is additionally clamped to stay strictly inside $[T_{min}, T_{max}]$ after every iteration. This is a standard *damped* (or *safeguarded*) Newton's method: convergence takes a few more iterations when the initial guess is far from the root, but every intermediate step is guaranteed to remain within the domain where the correlation is valid.
-
-This issue is noted here deliberately, rather than corrected silently, because it is informative: it confirms that care is needed specifically in the region nearest the critical point — which is precisely the region of greatest interest for this project (Section 3.2), since that is where N₂O's flashing behavior is most sensitive.
-
-### Tabulated saturated properties: $\nu_v(T)$, $h_l(T)$, $h_v(T)$, $h_{fg}(T)$, $\mu_v(T)$, $\mu_l(T)$, $c_{pl}(T)$
-
-The HEM/Dyer two-phase injector model (Section 3.4) and the two-phase feed-line model (Section 4.2) require several saturated properties beyond the closed-form correlations. These are stored in `n2o_saturation_table.csv` across four sections:
-
-**Table A.1** (McGill/Perry, arXiv:2302.06725): $\nu_v$, $h_l$, $h_v$ at 27 saturation points (182–309 K). $h_{fg}(T) = h_v(T) - h_l(T)$ directly — not via Clausius-Clapeyron, which amplifies numerical error near the critical point.
-
-**Table A.2** (McGill/Perry): derivatives of Table A.1 (not currently used).
-
-**Table A.3** (NIST WebBook, Millat et al. 1991 viscosity correlation, downloaded August 2026): saturated vapour dynamic viscosity $\mu_v(T)$ in 26 points (182–307 K). Uncertainty ~2% for T > 150 K. Used in `mu_vapor_sat(T)` and `mu_mixture(x, T)` for the two-phase feed-line model.
-
-**Table A.4** (NIST WebBook, Lemmon & Span 2006 EOS + Laesecke & Hafer 1998 liquid viscosity, downloaded August 2026): isobaric heat capacity of saturated liquid $c_{pl}(T)$, saturated liquid dynamic viscosity $\mu_l(T)$, and liquid/vapour entropy $s_l(T)$, $s_v(T)$. Used in `cp_liquid_sat(T)` and `mu_liquid_sat(T)`. Entropy data is available for future use in the isentropic choking limit (see `future_work.md`, Priority 1).
-
-Note: $\mu_l(T)$ replaces the previous constant `MU_LIQUID_N2O = 1.5e-4 Pa·s` in the feed-line model. The constant is retained as a fallback where T is not known.
+Table A.4 also still carries $c_{pl}(T)$ and $s_l(T)$/$s_v(T)$ columns (NIST); these are **not read by the model** any more (CoolProp supplies $c_{pl}$ and entropy) and are used in the tests purely as an independent cross-check, since they come from the same equation of state as CoolProp and should therefore agree tightly.
 
 ### Validation
 
-Run via `python n2o_properties.py`, which checks:
-
-1. **$P_{sat}(T)$ against reference values** quoted in `01_n2o_thermodynamics.md`: agreement within $+2.6\%$ at 0 °C, $+0.9\%$ at 20 °C, and $-4.8\%$ at 34 °C. The larger discrepancy near the critical point is consistent with the physical sensitivity discussed in Section 3.2 — small differences between independently-sourced reference values are expected to be amplified there, rather than indicating an implementation error.
-2. **$T_{sat}(P)$ as the exact numerical inverse of $P_{sat}(T)$**: recovered temperatures agree with the original inputs to within $10^{-12}$ K across the tested range, confirming the damped Newton-Raphson solver is implemented correctly.
-3. **Saturated liquid density at 20 °C**: 784.8 kg/m³ computed, against a typical literature reference value of ≈786 kg/m³ (agreement within 0.15%).
+Every numeric self-check in the module's `__main__` block, and the reference-value tests in `tests/test_n2o_properties.py`, run against the sandbox stand-in as described above. **Re-run them with the real CoolProp installed before relying on any figure quoted elsewhere in this repository.**
 
 ### File location
 
-`src/model/n2o_properties.py`, reading `src/model/n2o_saturation_table.csv`
+`src/model/n2o_properties.py`, reading `src/model/n2o_saturation_table.csv` (viscosity and legacy cross-check data only)
 
 ---
 *Next section: 4.2 `feed_line.py` — pressure drop and subcooling margin along the feed line (Darcy-Weisbach friction losses, fitting losses).*
 
 ## 4.2 `feed_line.py` — Feed line pressure drop and subcooling margin
-
-**Two-phase HEM model (implemented August 2026).** The feed line model now handles two distinct flow regimes:
-
-**Single-phase region** (P > P_sat(T_tank)): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l(T_{tank})$ from `mu_liquid_sat(T)` (Table A.4, NIST). Previously a constant (mu_liquid_N2O = 1.5e-4 Pa·s); now temperature-dependent.
-
-**Two-phase region** (P <= Psat(T_tank)): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
-
-$$x(s) = \frac{h_l(T_{tank}) - h_l(T_{sat}(P(s)))}{h_{fg}(T_{sat}(P(s)))}, \qquad \rho_{mix} = \frac{1}{\dfrac{1-x}{\rho_l} + \dfrac{x}{\rho_v}}, \qquad \mu_{mix} = (1-x)\,\mu_l + x\,\mu_v$$
-
-where $\mu_v$ comes from `mu_vapor_sat(T)` (NIST WebBook / Millat et al. 1991, interpolated from `n2o_saturation_table.csv` Table A.3). The per-segment trace includes `x_quality`, `rho_eff_kg_m3`, and `mu_eff_Pa_s` for inspection and plotting.
-
-**Physical significance.** With typical conditions (N₂O at 20°C, $x \approx 0.05$), $\rho_{mix} \approx 60\text{–}100\,\text{kg/m}^3$ versus $\rho_l \approx 785\,\text{kg/m}^3$ — a factor of 8–13× reduction. Since $\Delta P \propto \dot{m}^2 / (\rho_{mix} A^2)$, the two-phase friction losses in this region are correspondingly 8–13× larger than the single-phase model would predict. This is the dominant effect; the viscosity correction ($\mu_{mix}$ vs $\mu_l$) is secondary.
-
-**`x_inlet` output.** The final `x_inlet` is computed via isenthalpic flash at $P_{final}$, which feeds directly into `hem_mass_flow_two_phase_inlet` in `full_system.py` when `flashing_detected = True`.
 
 ### Purpose
 
@@ -90,20 +67,48 @@ Implements Module 1 from the implementation plan (Section 3.5 synthesis): tracks
 ### Theory implemented
 
 - **Reynolds number**, $Re = \rho v D / \mu$, to classify the flow regime.
-- **Darcy friction factor** f: exact laminar solution `f = 64/Re` for Re < 2300; the explicit **Swamee-Jain approximation** to the (implicit) Colebrook equation for Re ≥ 2300,
-$$f = \frac{0.25}{\left[\log_{10}\left(\dfrac{\varepsilon/D}{3.7} + \dfrac{5.74}{Re^{0.9}}\right)\right]^2}$$
+- **Darcy friction factor** $f$: exact laminar solution $f = 64/Re$ for $Re < 2300$; the explicit **Swamee-Jain approximation** to the (implicit) Colebrook equation for $Re \geq 2300$,
+
+$$f = \frac{0.25}{\left[\log_{10}\left(\frac{\varepsilon/D}{3.7} + \frac{5.74}{Re^{0.9}}\right)\right]^2}$$
+
 chosen over solving Colebrook directly because it is explicit (no iteration needed) while remaining within ~1% of the implicit solution for the range of interest. The 2300–4000 transitional regime is conservatively treated with the turbulent formula, documented as a deliberate simplification in the function's docstring.
 - **Darcy-Weisbach friction loss**, $\Delta P = f (L/D)(\rho v^2/2)$, and **fitting (minor) losses**, $\Delta P = K(\rho v^2/2)$.
 - The line is assumed **adiabatic** (constant temperature, per the Section 1.6/2.1 justification): only pressure is tracked segment by segment; temperature stays fixed at the tank value throughout.
 
+**Scaling with diameter.** At fixed mass flow the velocity scales as $1/D^2$, so a fitting loss scales as $1/D^4$ and a pipe friction loss as roughly $1/D^5$ (slightly less, since $f$ rises weakly as $Re$ falls). Widening a line is therefore an even more effective remedy than the $1/D^4$ rule of thumb suggests.
+
+### Liquid viscosity
+
+The liquid viscosity used for $Re$ and for the liquid part of $\mu_{mix}$ is, by default, the temperature-dependent saturated-liquid value $\mu_l(T_{tank})$ = `mu_liquid_sat(T_tank)` (Table A.4). A constant `MU_LIQUID_N2O = 1.5e-4` Pa·s is kept only as a fallback for $T_{tank} > 307.33$ K (outside Table A.4) or when the caller passes `mu=` explicitly. *(Audit, September 2026: earlier documentation stated that the model already used $\mu_l(T)$, but the code silently kept the constant. Making the code match the documentation changes the inlet pressure of the worked examples by less than 0.1 bar, because friction is only weakly dependent on $Re$ in turbulent flow, and leaves the Waxman validation unchanged.)*
+
+### Two-phase HEM model
+
+The feed line model handles two distinct flow regimes:
+
+**Single-phase region** ($P > P_{sat}(T_{tank})$): Darcy-Weisbach with pure liquid properties — $\rho_l(T_{tank})$ and $\mu_l(T_{tank})$.
+
+**Two-phase region** ($P \leq P_{sat}(T_{tank})$): once flashing is detected, all subsequent segments use HEM mixture properties updated at each segment's local pressure:
+
+$$x(s) = \frac{h_l(T_{tank}) - h_l\big(T_{sat}(P(s))\big)}{h_{fg}\big(T_{sat}(P(s))\big)}$$
+
+$$\rho_{mix} = \frac{1}{\frac{1-x}{\rho_l} + \frac{x}{\rho_v}}$$
+
+$$\mu_{mix} = (1-x)\,\mu_l + x\,\mu_v$$
+
+where $\mu_v$ comes from `mu_vapor_sat(T)` (NIST WebBook, Table A.3). For a near-critical local saturation temperature above Table A.3's 307.33 K limit, $\mu_v$ is evaluated at the table's last point (a small, documented approximation). The per-segment trace includes `x_quality`, `rho_eff_kg_m3`, and `mu_eff_Pa_s` for inspection and plotting.
+
+**Physical significance.** With typical conditions (N₂O at 20 °C, $x \approx 0.05$), $\rho_{mix} \approx 60 \text{ to } 100\ \text{kg/m}^3$ versus $\rho_l \approx 785\ \text{kg/m}^3$ — a factor of 8–13× reduction. Since $\Delta P \propto \dot{m}^2 / (\rho_{mix} A^2)$, the two-phase friction losses in this region are correspondingly 8–13× larger than the single-phase model would predict. This is the dominant effect; the viscosity correction ($\mu_{mix}$ vs $\mu_l$) is secondary.
+
+**`x_inlet` output.** The final `x_inlet` is computed via isenthalpic flash at $P_{final}$, which feeds directly into `hem_mass_flow_two_phase_inlet` in `full_system.py` when `flashing_detected = True`.
+
 ### Validation
 
-Two cases were run with an identical line geometry (2 m of 8 mm ID tubing, one ball valve, one 90° elbow), differing only in initial tank subcooling:
+Two cases were run with an identical line geometry (2 m of 8 mm ID tubing, one ball valve, one 90° elbow, 0.5 kg/s), differing only in initial tank subcooling:
 
-- **Case A — tank exactly at saturation** ($\Delta T_{sub} = 0$ initially): the very first segment already pushes the margin negative (−1.07 K), and the flag `flashing_detected` correctly triggers. This is expected, not a bug: with zero initial margin, *any* pressure drop, however small, crosses the saturation curve — the code is correctly enforcing the definition from Section 1.4 in the least forgiving case.
-- **Case B — tank with 5 bar of initial subcooling**: the identical line geometry produces essentially the same pressure drop (≈2.63 bar) but the final margin stays positive (+2.05 K), and no flashing is flagged. Same hardware, different outcome — driven entirely by how much margin the tank started with.
+- **Case A — tank exactly at saturation** ($\Delta T_{sub} = 0$ initially): the very first segment already pushes the margin negative ($-1.01$ K), and the flag `flashing_detected` correctly triggers. This is expected, not a bug: with zero initial margin, *any* pressure drop, however small, crosses the saturation curve — the code is correctly enforcing the definition from Section 1.4 in the least forgiving case.
+- **Case B — tank with 5 bar of initial subcooling**: the same line loses about 2.5 bar but the final margin stays positive ($+2.16$ K), and no flashing is flagged. Same hardware, different outcome — driven entirely by how much margin the tank started with.
 
-**Known limitation surfaced by this comparison.** The pressure drop is nearly identical between the two cases because `rho_liquid_sat(T_tank)` depends only on temperature, not pressure, in the current implementation — consistent with the incompressibility assumption underlying the SPI model (Section 2.4), but a simplification worth stating explicitly: for feed lines with much larger pressure excursions than in this example, real liquid density would vary somewhat with pressure too, an effect this module does not capture.
+**Known limitations.** (i) `rho_liquid_sat(T_tank)` depends only on temperature, not pressure — consistent with the incompressibility assumption underlying the SPI model (Section 2.4), but for lines with much larger pressure excursions real liquid density would vary somewhat with pressure too. (ii) The two-phase line model has been unit tested but not validated against experimental data. (iii) If the pressure reaches zero or below inside the line (an impossibly restrictive line at the requested flow), the model does not raise an error at that point; the downstream injector evaluation then fails with a `ValueError`.
 
 ### File location
 
@@ -132,7 +137,7 @@ If this fails, the flow crosses the saturation curve somewhere inside the orific
 
 ### Validation
 
-A deliberately demanding test case was used: N₂O at 20 °C, $P_{upstream} = 50$ bar (already slightly below $P_{sat}(20°C) \approx 51.4$ bar — i.e. entering the orifice already at the edge of saturation), $P_{downstream} = 20$ bar. The `spi_sufficient` criterion correctly returns `False`, and `spi_mass_flow` reports 169.0 g/s — a number now understood to be *not* the physically correct flow rate for this operating point, but rather the reference value SPI would (incorrectly) predict by assuming single-phase liquid throughout. This value is retained as the comparison baseline for validating the Dyer model in Section 4.4, where it is expected to predict a lower, more physically realistic mass flow (per the two-phase choking discussion in Section 3.3).
+A deliberately demanding test case was used: N₂O at 20 °C, $P_{upstream} = 50$ bar (already slightly below $P_{sat}(20\,^\circ\text{C}) = 51.4$ bar — i.e. entering the orifice already at the edge of saturation), $P_{downstream} = 20$ bar, $A = 3.79$ mm². The `spi_sufficient` criterion correctly returns `False`, and `spi_mass_flow` reports 169.0 g/s — a number now understood to be *not* the physically correct flow rate for this operating point, but rather the reference value SPI would (incorrectly) predict by assuming single-phase liquid throughout. This value is retained as the comparison baseline for validating the Dyer model in Section 4.4.
 
 ### File location
 
@@ -145,48 +150,58 @@ A deliberately demanding test case was used: N₂O at 20 °C, $P_{upstream} = 50
 
 ### Purpose
 
-Implements the two-phase injector models from Section 3.4: HEM (full thermodynamic equilibrium) and Dyer (weighted blend of SPI and HEM), used when `spi_sufficient` returns `False`.
+Implements the two-phase injector models from Section 3.4: HEM (full thermodynamic equilibrium) and Dyer (weighted blend of SPI and HEM), used when `spi_sufficient` returns `False`, plus the choking diagnostics.
 
 ### Theory implemented
 
-Vapor quality at the orifice exit is obtained assuming an isenthalpic process and full equilibrium at the exit (exit sits on the saturation curve at T(downstream) = T(sat)(P(downstream))):
+Vapor quality at the orifice exit is obtained assuming an isenthalpic process and full equilibrium at the exit (exit sits on the saturation curve at $T_{down} = T_{sat}(P_{down})$):
 
-$$x = \frac{h_{upstream} - h_l(T_{downstream})}{h_{fg}(T_{downstream})}$$
+$$x = \frac{h_{upstream} - h_l(T_{down})}{h_{fg}(T_{down})}$$
 
 The HEM mixture density follows from the mass-weighted average of the two phases' specific volumes, and $\dot m_{HEM}$ from the same orifice equation used throughout the project, with $\rho_{HEM}$ in place of the pure-liquid density. Dyer blends $\dot m_{SPI}$ and $\dot m_{HEM}$ via the non-equilibrium parameter $\kappa$:
 
-$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}, \qquad \dot m_{Dyer} = \frac{\dot m_{SPI}}{1+\kappa} + \frac{\kappa}{1+\kappa}\dot m_{HEM}$$
+$$\kappa = \sqrt{\frac{P_{upstream} - P_{downstream}}{P_{sat}(T_{upstream}) - P_{downstream}}}$$
 
-**Domain restriction.** $\kappa$ requires $P_{upstream} > P_{sat}(T_{upstream})$ — the fluid must still be liquid at the orifice inlet, consistent with this model addressing vaporization *inside* the orifice (Section 3.1), not an already-two-phase feed line (that case is `feed_line.py`'s `flashing_detected`). Enforced with an explicit `ValueError` rather than an extreme or undefined $\kappa$.
+$$\dot m_{Dyer} = \frac{\kappa}{1+\kappa}\,\dot m_{SPI} + \frac{1}{1+\kappa}\,\dot m_{HEM}$$
+
+*Correction (audit, September 2026):* earlier versions of this section wrote the weights the other way round (the original, uncorrected Dyer et al. 2007 form). The implementation, `03_two_phase_flow.md`, and the Waxman validation all use the corrected weights of Solomon (2011) and Waxman (2013, Eq. 9), shown above.
+
+**Domain restrictions**, both enforced with an explicit `ValueError`:
+
+1. $P_{upstream} > P_{sat}(T_{upstream})$ — the fluid must still be liquid at the orifice inlet, consistent with this model addressing vaporization *inside* the orifice (Section 3.1), not an already-two-phase feed line (that case is handled by `hem_mass_flow_two_phase_inlet`, below).
+2. $P_{downstream} < P_{sat}(T_{upstream})$ — the pressure must actually cross saturation inside the orifice; otherwise $\kappa$ is undefined and SPI applies. (Added in the audit: Design mode used to run the Dyer iteration unconditionally and failed with "math domain error" when the chamber pressure was above $P_{sat}$; sizing now goes through `full_system.design_injector_area`, which selects SPI in that regime.)
 
 ### Validation
 
-An operating point with the inlet modestly subcooled (55 bar at 20 °C, $P_{sat}(20°C) \approx 51.4$ bar) but a large enough pressure drop (to 20 bar) to cross saturation inside the orifice: Dyer predicts 128.8 g/s against SPI's 182.6 g/s (≈30% lower) — consistent with the expected direction of the two-phase correction (Section 3.3). The injector_spi.py example point (50 bar upstream) was found to already violate the domain restriction above and was not reused here.
+An operating point with the inlet modestly subcooled (55 bar at 20 °C, $P_{sat}(20\,^\circ\text{C}) = 51.4$ bar) but a large enough pressure drop (to 20 bar) to cross saturation inside the orifice ($A = 3.79$ mm², $C_d = 0.65$): Dyer predicts 131.7 g/s against SPI's 182.6 g/s (27.9% lower; $\kappa = 1.056$) — consistent with the expected direction of the two-phase correction (Section 3.3). The `injector_spi.py` example point (50 bar upstream) was found to already violate the domain restriction above and was not reused here.
 
+The end-to-end validation against experiment is in `validation/waxman_2013_results.md`: MAPE = 3.51% at pressure drops of 8–14 bar, and **no experimental validation outside that band**.
+
+### HEM with a two-phase inlet — `hem_mass_flow_two_phase_inlet()`
+
+When the feed line flashes, the fluid reaches the orifice with quality $x_{inlet} > 0$; the upstream enthalpy becomes $h_{up} = h_l(T_{tank}) + x_{inlet}\,h_{fg}(T_{tank})$ and HEM is applied from there. The Dyer blend is deliberately not used: its SPI branch encodes delayed nucleation in a *liquid*, which no longer applies once vapour is present, and its inlet state is undefined. *(Correction, audit: earlier text justified this by saying $\kappa \to \infty$ at $P_{up} \approx P_{sat}$, so that Dyer "collapses to SPI". That is wrong — $\kappa = 1$ at $P_{up} = P_{sat}$, and $\kappa$ only diverges as $P_{down} \to P_{sat}$.)*
+
+**Known limitation.** The switch from Dyer to this HEM model at the flashing threshold is discontinuous: HEM at $x_{inlet} \to 0$ gives roughly half the Dyer flow at the same conditions (≈200 vs ≈365 g/s in `examples/example_03_flashing.md`). The model is unit tested but has no experimental validation.
 
 ### HEM critical flow — `hem_critical_flow()`
 
-Available as a standalone function in `injector_two_phase.py`. Implements Waxman (2013) Eq.(5): scans $P_2$ from $P_{sat}(T_{upstream})$ downward and finds the maximum of the isenthalpic HEM mass-flow curve:
+Available as a standalone function. Implements Waxman (2013) Eq. (5): scans $P_2$ from $P_{sat}(T_{upstream})$ downward and finds the maximum of the isenthalpic HEM mass-flow curve:
 
 $$\dot{m}_{crit} = \max_{P_2 < P_{sat}} \left[ C_d A \sqrt{2\,\rho_{mix}(P_2)\,\Delta P} \right]$$
 
-This maximum is the physical choking limit — the two-phase speed-of-sound condition expressed through the isenthalpic path. At Waxman conditions ($T_1 = 280\,\text{K}$, $P_1 = 4.36\,\text{MPa}$): m_dot_crit = 41.1g/s at P2,crit = 30.4 bar.
+This maximum is the choking limit *of the equilibrium model*. At Waxman conditions ($T_1 = 280$ K, $P_1 = 4.36$ MPa): 41.05 g/s at $P_{2,crit}$ = 30.4 bar. The function is **not applied automatically** to Dyer because the Dyer non-equilibrium correction legitimately predicts above the HEM-only ceiling (confirmed by Waxman experimental data: 44–48 g/s vs. the HEM ceiling of 41.05 g/s).
 
-The function is **not applied automatically** in `dyer_mass_flow()` because the Dyer non-equilibrium correction legitimately predicts above the HEM-only ceiling (confirmed by Waxman experimental data: 44–48 g/s vs. HEM cap of 41.1 g/s).
-
-### Isentropic choking scan — `hem_critical_flow_isentropic()` (added September 2026, Priority 1)
+### Isentropic choking scan — `hem_critical_flow_isentropic()` (September 2026, Priority 1)
 
 `hem_critical_flow()` above uses the isenthalpic path ($h=$ const), which correctly describes the real thermodynamic *state* of the fluid at the orifice exit (an orifice is adiabatic, so the 1st law gives $h_{up}=h_{down}$ regardless of internal irreversibility), but is only an approximation to the true choking condition. Choking is set by the two-phase speed of sound, $c^2 = (\partial P/\partial\rho)_s$ — a derivative taken at constant **entropy**, because an acoustic disturbance is a small, fast, essentially reversible perturbation on top of the (possibly irreversible) mean flow.
 
-`hem_critical_flow_isentropic()` implements this more rigorous scan, mirroring `hem_critical_flow()` exactly except along $s=$const:
+`hem_critical_flow_isentropic()` implements this more rigorous scan, mirroring `hem_critical_flow()` exactly except along $s=$ const:
 
-$$x_{is}(P_2) = \frac{s_{up} - s_l(T_{sat}(P_2))}{s_v(T_{sat}(P_2)) - s_l(T_{sat}(P_2))}, \qquad \dot m_{crit,\,is} = \max_{P_2 < P_{sat}} \Big[C_d A \sqrt{2\,\rho_{HEM}(x_{is})\,(P_{up}-P_2)}\Big]$$
+$$x_{is}(P_2) = \frac{s_{up} - s_l\big(T_{sat}(P_2)\big)}{s_v\big(T_{sat}(P_2)\big) - s_l\big(T_{sat}(P_2)\big)}$$
 
-The two required entropy functions, `s_liquid_sat(T)` and `s_vapor_sat(T)`, were added to `n2o_properties.py`, interpolating $s_l$, $s_v$ from Table A.4 (NIST WebBook) — the same table already used for `cp_liquid_sat`/`mu_liquid_sat`, previously loaded but with no public accessor. `s_fg(T) = s_v(T) - s_l(T)` is the entropy-domain analogue of `h_fg(T)`.
+$$\dot m_{crit,\,is} = \max_{P_2 < P_{sat}} \Big[C_d A \sqrt{2\,\rho_{HEM}(x_{is})\,(P_{up}-P_2)}\Big]$$
 
-**Table A.4 range gap.** While implementing this, a pre-existing gap surfaced: Table A.4 only covers 182.33–307.33 K, narrower than the module's main correlation range (up to 309.52 K, the critical point). `cp_liquid_sat`/`mu_liquid_sat` were previously checked against the wider range, so a call between 307.33 K and 309.52 K would silently fall through to `_interp`'s generic "should be unreachable" `RuntimeError`. This is now an explicit, named range check (`T_MIN_A4`, `T_MAX_A4`, `_check_range_a4`), applied consistently to all four Table-A.4 functions plus the two new entropy functions. `hem_critical_flow_isentropic()` checks `T_upstream` against this range up front and raises a `ValueError` pointing to `hem_critical_flow()` (isenthalpic) as a fallback, and to Priority 4 (CoolProp/REFPROP) as the eventual fix.
-
-**Kept side by side, not replaced.** `hem_critical_flow()` (isenthalpic) is unchanged and remains the version cited in `validation/waxman_2013_results.md`. `hem_critical_flow_isentropic()` is additive, for direct comparison — the thermodynamically correct *equilibrium* ceiling, kept for reference even though (see Addendum below) neither equilibrium ceiling turned out to be the right bound for Dyer's non-equilibrium prediction.
+The entropy functions `s_liquid_sat(T)`, `s_vapor_sat(T)` and `s_fg(T) = s_v(T) - s_l(T)` interpolate Table A.4. Entropy data only reaches 307.33 K, so `hem_critical_flow_isentropic()` raises a `ValueError` immediately if `T_upstream` exceeds it, pointing to `hem_critical_flow()` as a fallback and to Priority 4 (CoolProp/REFPROP) as the eventual fix.
 
 **Validation.** At Waxman conditions ($T_1=280$ K, $P_1=4.36$ MPa, $D=1.5$ mm, $C_d=0.65$):
 
@@ -195,40 +210,36 @@ The two required entropy functions, `s_liquid_sat(T)` and `s_vapor_sat(T)`, were
 | Isenthalpic (`hem_critical_flow`) | 41.05 g/s | 30.37 bar | 0.0856 |
 | Isentropic (`hem_critical_flow_isentropic`) | 41.64 g/s | 29.65 bar | 0.0880 |
 
-+1.43% difference — both remain below the experimental Dyer-regime range (44.0–48.0 g/s), consistent with the existing interpretation that Dyer's non-equilibrium correction legitimately predicts above either HEM-only ceiling.
++1.43% difference — both remain below the experimental range (44.0–48.0 g/s), consistent with the interpretation that Dyer's non-equilibrium correction legitimately predicts above either HEM-only ceiling.
 
-**What remains** (see `future_work.md`, Priority 1): deciding how `hem_critical_flow_isentropic()` should be applied automatically as a cap inside `dyer_mass_flow()`, and re-confirming the Waxman MAPE afterwards.
+### Why the equilibrium ceiling is not a cap for Dyer
 
-### Addendum (September 2026) — the equilibrium HEM cap was retracted, then replaced with a validated non-equilibrium ceiling
+The original plan — applying an equilibrium HEM ceiling as an automatic `min(...)` cap on `dyer_mass_flow()` — was tested numerically and found to be **wrong**:
 
-The original plan — applying `hem_critical_flow_isentropic()` (or the isenthalpic version) as an automatic `min(...)` cap on `dyer_mass_flow()` — was tested numerically and found to be **wrong**:
+- All 4 already-validated Waxman operating points have `m_dot_Dyer` 1.03×–1.21× **above** the equilibrium ceiling (41.05 g/s), matching experiment within MAPE = 3.51%. Capping there would break this validated behaviour.
+- Capping only the HEM term before blending does not help either: `hem_mass_flow()` evaluated at the actual `P_downstream` already falls *below* the critical value once past the choke point (it follows the descending branch of the curve), so a `min()` cap there is a no-op exactly where it would be needed.
 
-- All 4 already-validated Waxman operating points have `m_dot_Dyer` 1.03×–1.21× **above** `hem_critical_flow()`'s ceiling (41.05 g/s), matching experiment (44.0–48.0 g/s) within the documented MAPE = 3.51%. This is correct, validated, non-equilibrium behaviour, not an artifact — capping at the equilibrium (HEM) ceiling would break it.
-- Capping only the HEM term before blending does not help either: `hem_mass_flow()` evaluated at the actual `P_downstream` already falls *below* the critical value once past the choke point (it follows the descending branch of the curve, not a physical plateau), so a `min()` cap there is a no-op exactly where it would be needed.
+The function `apply_choking_limit()` implementing that retracted plan is kept only for backward compatibility; it is marked deprecated, emits a `DeprecationWarning`, and nothing in the repository calls it.
 
-The equilibrium HEM ceiling is simply the wrong ceiling for a non-equilibrium (Dyer) prediction; the physically appropriate one is a genuine non-equilibrium critical-flow model.
+### Henry-Fauske non-equilibrium critical flow — `henry_fauske_critical_flow()` (September 2026)
 
-### Henry-Fauske non-equilibrium critical flow — `henry_fauske_critical_flow()` (added September 2026)
+**Source.** Henry, R.E. & Fauske, H.K. (1971), *"The Two-Phase Critical Flow of One-Component Mixtures in Nozzles, Orifices, and Short Tubes,"* ASME J. Heat Transfer, 93(2), 179-187. Equations transcribed from the simplified form in Simoneau, R.J., Henry, R.E., Hendricks, R.C. & Watterson, R. (1971), *"Two-Phase Critical Discharge of High Pressure Liquid Nitrogen,"* NASA TM X-67863, Eqs. (2)-(5) — supplied by the project author after web searches for the original paper's equations returned only image-embedded formulas (unusable without risking fabricated coefficients, against this project's "no magic numbers without a traceable source" convention).
 
-**Source.** Henry, R.E. & Fauske, H.K. (1971), *"The Two-Phase Critical Flow of One-Component Mixtures in Nozzles, Orifices, and Short Tubes,"* ASME J. Heat Transfer, 93(2), 179-187. Equations transcribed here from the simplified form presented in Simoneau, R.J., Henry, R.E., Hendricks, R.C. & Watterson, R. (1971), *"Two-Phase Critical Discharge of High Pressure Liquid Nitrogen,"* NASA TM X-67863, Eqs. (2)-(5) — supplied by the project author after initial web searches for the original 1971 ASME paper's equations returned only image-embedded formulas (unusable without risking fabricated coefficients, against this project's "no magic numbers without a traceable source" convention).
-
-**Theory.** For saturated/subcooled liquid at the nozzle inlet (P₀/P_c > 0.05, comfortably true here), five assumptions apply: negligible vapour before the throat (so the inlet-to-throat momentum balance is single-phase Bernoulli), incompressible liquid, equilibrium vapour formation *at* the throat, equal liquid/vapour velocity at the throat, and — the key non-equilibrium closure — a fractional mass-transfer rate:
+**Theory.** For saturated/subcooled liquid at the nozzle inlet ($P_0/P_c > 0.05$, comfortably true here), five assumptions apply: negligible vapour before the throat (so the inlet-to-throat momentum balance is single-phase Bernoulli), incompressible liquid, equilibrium vapour formation *at* the throat, equal liquid/vapour velocity at the throat, and — the key non-equilibrium closure — a fractional mass-transfer rate:
 
 $$\eta = \frac{P_t}{P_0} = 1 - \frac{v_{l0}\,G_c^2}{2P_0} \qquad \text{(momentum, Eq. 2)}$$
 
-$$N = \min\!\left(1,\ \frac{x_E}{0.14}\right) \qquad \text{(Henry 1970 fit to Starkman et al. steam-water data)}$$
+$$N = \min\left(1,\ \frac{x_E}{0.14}\right) \qquad \text{(Henry 1970 fit to Starkman et al. steam-water data)}$$
 
 $$G_c^2 = \left[\frac{N\,(v_{gE}-v_{l0})}{s_{gE}-s_{lE}}\,\frac{ds_{lE}}{dP}\right]^{-1} \qquad \text{(mass-transfer closure, Eq. 5)}$$
 
-where $x_E$ is the **equilibrium** quality at the throat — computed by the already-existing `vapor_quality_isentropic()`, reusing the same entropy machinery built for the (now-superseded) isentropic HEM scan. $ds_{lE}/dP$ comes from the chain rule $(ds_l/dT)/(dP_{sat}/dT)$, with $ds_l/dT$ from a small central finite difference on `s_liquid_sat(T)` (no closed-form derivative available, since $s_l$ comes from table interpolation) and $dP_{sat}/dT$ from the existing analytical `dP_sat_dT`. All volumes and entropies are converted to **specific** (per unit mass) quantities for Eq. 5's units to work out to a mass flux — $s_{liquid\_sat}$/s_vapor_sat are molar (kJ/(kmol·K)) and are divided by $M_{N_2O}$ ×1000 internally.
+where $x_E$ is the **equilibrium** quality at the throat — computed by the already-existing `vapor_quality_isentropic()`. $ds_{lE}/dP$ comes from the chain rule $(ds_l/dT)/(dP_{sat}/dT)$, with $ds_l/dT$ from a small central finite difference on `s_liquid_sat(T)` and $dP_{sat}/dT$ from the analytical `dP_sat_dT`. All volumes and entropies are converted to **specific** (per unit mass) quantities for Eq. 5's units to work out to a mass flux.
 
-**Solved by bisection, not fixed-point iteration.** Eqs. (2) and (5) are coupled ($G_c$ depends on properties at the unknown throat pressure $P_t$, which itself depends on $G_c$ via Eq. 2). A first, naive fixed-point implementation diverged: $G_c$ from Eq. 5 blows up as $P_t \to P_{sat}(T_0)$ from below (since $N\to0$ there), and the resulting momentum-implied $P_t$ from Eq. 2 goes deeply negative. Framing it instead as a residual $f(P_t) = P_{t,\text{momentum}}(G_c(P_t)) - P_t$ and bisecting is robust: the residual is strongly negative near $P_{sat}(T_0)$ and turns positive once $N$ has saturated at lower $P_t$, giving a reliable bracket.
+**Solved by bisection, not fixed-point iteration.** Eqs. (2) and (5) are coupled ($G_c$ depends on properties at the unknown throat pressure $P_t$, which itself depends on $G_c$ via Eq. 2). A first, naive fixed-point implementation diverged: $G_c$ from Eq. 5 blows up as $P_t \to P_{sat}(T_0)$ from below (since $N\to0$ there). Framing it as a residual $f(P_t) = P_{t,\text{momentum}}(G_c(P_t)) - P_t$ and bisecting is robust.
 
-**Validation.** At Waxman conditions (T=280 K, P=4.36 MPa, D=1.5 mm, C_d=0.65): $\dot m_{crit}$ = **50.67 g/s**, above `hem_critical_flow_isentropic()`'s equilibrium 41.64 g/s (correct direction), and above all 4 validated Dyer predictions (42.25–49.55 g/s) — so applying it does not perturb them. Re-running the full Waxman validation through the coupled solver confirms **MAPE = 3.51%, unchanged**, `choked = False` at all 4 points.
+**Validation.** At Waxman conditions: $\dot m_{crit}$ = **50.67 g/s**, above the equilibrium ceiling (41.64 g/s isentropic; correct direction), and above all 4 validated Dyer predictions (42.25–49.55 g/s). Re-running the full Waxman validation through the coupled solver confirms **MAPE = 3.51%, unchanged**, `choked = False` at all 4 points.
 
-**Important caveat — surfaced, not hidden.** At operating points further from the Waxman geometry (e.g. `examples/example_01_sizing.md`'s 20 °C, 58→22 bar, 6×1.5 mm), the ceiling *does* bind, roughly 13–17% below the uncapped Dyer blend — and there is currently no experimental data point in this project's validation set where the ceiling actually changes the answer. Rather than silently override `m_dot_Dyer` with a value that is theoretically sound but empirically unconfirmed in the regime where it matters, `dyer_mass_flow()` returns both `m_dot_Dyer` (always unchanged) and `m_dot_crit_HF` + a `choked` boolean, side by side. This was an explicit design decision (see `future_work.md`, Priority 1) after discovering the size of the effect on already-published example numbers.
-
-**What remains.** Wire the `choked`/`m_dot_crit_HF` fields into `app.py`'s result cards as a visible warning (not yet done).
+**Important caveat — surfaced, not hidden.** At operating points further from the Waxman geometry the ceiling *does* bind. In the worked examples it sits 17% below the Dyer prediction in Example 1 (315 vs 382 g/s) and 10% below the target in Example 2 (452 vs 500 g/s); the corrected design of Example 3 is also flagged. There is currently no experimental data point where the ceiling actually changes the answer. Rather than silently override `m_dot_Dyer` with a value that is theoretically sound but empirically unconfirmed in the regime where it matters, `dyer_mass_flow()` returns both `m_dot_Dyer` (always unchanged) and `m_dot_crit_HF` + a `choked` boolean, side by side (see `future_work.md`, Priority 1). The interface surfaces this as a warning.
 
 ### File location
 
@@ -241,11 +252,19 @@ where $x_E$ is the **equilibrium** quality at the throat — computed by the alr
 
 ### Purpose
 
-Chains `feed_line.py`, `injector_spi.py`, and `injector_two_phase.py` in the order the sizing problem requires (Section 3.5 synthesis): evaluate the feed line to get conditions at the injector inlet, then automatically decide via `spi_sufficient` whether SPI alone is valid there or whether Dyer must be used, without manual intervention. Introduces no new physics.
+Chains `feed_line.py`, `injector_spi.py`, and `injector_two_phase.py` in the order the sizing problem requires (Section 3.5 synthesis): evaluate the feed line to get conditions at the injector inlet, then automatically decide whether SPI, Dyer, or HEM with a two-phase inlet applies. The self-consistent operating point satisfies both
+
+$$P_{inlet}^{*} = P_{tank} - \Delta P_{line}(\dot m^{*}), \qquad \dot m^{*} = \dot m_{injector}(P_{inlet}^{*})$$
+
+and is found by damped fixed-point iteration ($\alpha = 0.5$, tolerance $10^{-4}$ on the relative change of $\dot m$). Non-convergence raises a `RuntimeError` with the iteration history rather than returning a wrong number. `m_dot_design` is only the initial guess.
+
+### `design_injector_area()` (audit, September 2026)
+
+The Design-mode logic — choose SPI or Dyer, and iterate the Dyer area to hit the target flow — was moved out of `app.py` into a pure function so it can be unit tested without Streamlit. If the flow stays single-phase through the orifice ($P_{chamber} \geq P_{sat}(T_{tank})$) it returns the SPI area with `regime = "SPI"`; otherwise it iterates the Dyer area (all flow models scale linearly with area, so it converges in one or two steps).
 
 ### Validation
 
-Reusing `feed_line.py`'s Case B geometry with a 55 bar tank: the feed line loses 2.63 bar (52.37 bar at the injector inlet, no flashing along the line), but `spi_sufficient` correctly returns `False` at the injector given the large pressure drop to the 20 bar chamber, and Dyer is selected automatically (124.8 g/s, vs. 175.6 g/s SPI would have predicted).
+Reusing `feed_line.py`'s Case B geometry with a 55 bar tank and $A = 3.79$ mm²: the feed line loses only 0.19 bar at the converged flow (54.81 bar at the injector inlet, no flashing), but `spi_sufficient` correctly returns `False` given the large pressure drop to the 20 bar chamber, and Dyer is selected automatically (131.2 g/s, vs. 182.1 g/s SPI would have predicted).
 
 ### File location
 
@@ -258,17 +277,23 @@ Reusing `feed_line.py`'s Case B geometry with a 55 bar tank: the feed line loses
 
 ### Purpose
 
-A Streamlit web app (`app.py`) wrapping `full_system.py`: editable tank, feed line (dynamic pipe/fitting segment list), and injector inputs, updating live as inputs change. Reports flashing/SPI-sufficiency status and the real mass flow, and renders two diagrams (`plotting.py`): pressure along the feed line against $P_{sat}(T_{tank})$, and a P-T diagram with the saturation curve and the tank/injector-inlet/chamber operating points.
+A Streamlit web app (`app.py`) wrapping `full_system.py`: editable tank, feed line (dynamic pipe/fitting segment list), and injector inputs, updating live as inputs change. Reports flashing/SPI-sufficiency status and the real mass flow, and renders interactive diagrams (`plotting.py`) and a one-page PDF (`export.py`).
 
 ### Implementation notes
 
 Segment state is kept in `st.session_state`, since Streamlit re-runs the whole script on every interaction; without it, the segment list would reset on every slider move. All UI inputs are in display-friendly units (bar, °C, mm, g/s) and converted to SI at the UI boundary before calling into `full_system.py`, which continues to operate in SI throughout, per the project's units convention.
 
-**Henry-Fauske choking diagnostic (added September 2026).** Both modes now surface a warning (amber badge + `st.warning`) whenever `dyer_mass_flow()`'s `choked` flag is `True` — the Dyer prediction exceeds the non-equilibrium choking ceiling (`m_dot_crit_HF`). Design mode's warning explicitly notes the condition is independent of orifice area (both the Dyer prediction and the ceiling scale linearly with area, so resizing the orifice cannot resolve it — see `injector_two_phase.dyer_mass_flow`'s docstring). `plot_model_comparison()` (Design mode) draws the ceiling as a reference line, coloured red when exceeded. The PDF export (`export.py`) includes the same ceiling value and a note when triggered. None of this changes any displayed mass-flow number — it is a warning layer only, per the design decision in `future_work.md`, Priority 1.
+**Flashing in the feed line.** In Sizing mode the result cards show the HEM two-phase-inlet estimate (labelled as such), and the diagnostics panel — suggestions to remove the flashing: raise the subcooling margin to at least 5 bar, shorten the line, enlarge the diameter, replace high-K fittings, pre-cool — is shown alongside, together with a naive-SPI reference value. In Design mode area sizing is not offered while the line flashes; the same panel is shown. (Before the audit, the Sizing-mode call to the panel was dead code and the panel's text claimed the injector models were not evaluated; `render_result_cards` no longer returns a flag.)
+
+**Henry-Fauske choking diagnostic.** Both modes surface a warning (amber badge + `st.warning`) whenever `dyer_mass_flow()`'s `choked` flag is `True`. Design mode's warning notes the condition is independent of orifice area (both scale linearly with area). `plot_model_comparison()` draws the ceiling as a reference line, red when exceeded, and the PDF export includes the ceiling value and a note when triggered. None of this changes any displayed mass-flow number.
+
+**Design mode, SPI-valid regime.** When the chamber pressure is at or above $P_{sat}(T_{tank})$ the result cards show "Recommended (SPI)" and an explanatory note; the model-comparison chart is replaced by the pressure-along-line chart, and the PDF omits the Dyer rows.
+
+**Grain sizing panel.** See Section 4.7.
 
 ### Running
 
-From the repository root: `streamlit run src/interface/app.py`. Requires `pip install streamlit matplotlib numpy`.
+From the repository root: `streamlit run src/interface/app.py`. Requires `pip install streamlit plotly matplotlib numpy reportlab`.
 
 ### File location
 
@@ -287,28 +312,36 @@ Implements Priority 3 of the roadmap: from the oxidiser mass flow already comput
 
 $$\dot m_{fuel} = \frac{\dot m_{ox}}{OF}, \qquad \dot r = a\,G_o^n, \qquad G_o = \frac{\dot m_{ox}}{A_{port}}$$
 
-Combining these for a single circular port of radius $r$ and length $L$ gives $\dot m_{fuel}(r) = K r^{1-2n}$ (see the theory doc for the full derivation of $K$), solved for $r_0$ by bisection — the same convention already used elsewhere in this project for transcendental relationships (`n2o_properties.T_sat`, `injector_two_phase.henry_fauske_critical_flow`).
+Combining these for a single circular port of radius $r$ and length $L$ gives $\dot m_{fuel}(r) = K r^{1-2n}$ (see the theory doc for $K$), solved for $r_0$ by a log-spaced scan (1 µm to 1 km) followed by bisection — the same convention already used elsewhere in this project for transcendental relationships.
 
-**Scope decisions, corrected relative to the original `future_work.md` sketch** (see that file, Priority 3, for the full reasoning):
-- $a$ and $n$ are **required inputs**, not fixed per-fuel defaults — researching citable values surfaced 2–3× scatter between independent studies of nominally the same fuel/oxidiser pair, meaning a shipped default would imply false precision.
+**Scope decisions, corrected relative to the original `future_work.md` sketch:**
+- $a$ and $n$ are **required inputs**, not fixed per-fuel defaults (2–3× scatter between independent studies).
 - Grain length $L$ is a **required input**, not derived from an unsourced L/D heuristic.
-- No specific-impulse output — requires a chemical equilibrium code (CEA/RPA) this project does not wrap.
-- Only circular ports (single- or multi-port) — non-circular shapes tracked separately as Priority 3b.
+- No specific-impulse output — requires a chemical equilibrium code (CEA/RPA).
+- Only circular ports (single- or multi-port) — non-circular shapes tracked as Priority 3b.
 
-`FUEL_PROPERTIES` provides density defaults (a genuine material property, safe to default) for four common fuels — paraffin wax, HTPB, ABS, PMMA — each cited in `references.md`, alongside a clearly non-authoritative $(a,n)$ reference range per fuel.
+`FUEL_PROPERTIES` provides density defaults for paraffin wax, HTPB, ABS and PMMA (each cited in `references.md`), alongside a non-authoritative $(a,n)$ reference range per fuel.
+
+### Protection against unit errors
+
+Two real test failures (a wrong-unit $a$ solving "successfully" to a port radius of several metres) led to two safeguards:
+
+- `a_from_reference_rate(r_dot_ref_mm_s, G_o_ref, n)` converts a regression-rate data point as read off a plot or table (mm/s at a stated $G_o$ in kg/(m²·s)) into the SI coefficient $a$. The interface asks for exactly these three numbers and never for $a$ itself.
+- `size_grain()` raises a `RuntimeError` when the solved initial radius lies outside `PLAUSIBLE_PORT_RADIUS_RANGE_M` = 5–300 mm, reporting the regression rate the given $(a,n)$ imply at the rejected radius. (`solve_initial_port_radius` keeps its very wide search range on purpose, so that it always finds a root when one exists.)
 
 ### A physical subtlety worth restating here
 
-For $n>0.5$, the sign of the exponent $1-2n$ in $\dot m_{fuel}(r) = Kr^{1-2n}$ flips negative: a **larger** target fuel flow requires a **smaller** port radius, the reverse of naive intuition, because $G_o \propto 1/r^2$ falls faster than the burning perimeter $\propto r$ grows. At $n=0.5$ exactly, fuel flow is independent of port radius entirely. Both directions are explicitly tested in `test_grain_sizing.py`, since this is easy to get backwards (an earlier draft of the tests did).
+For $n>0.5$, the sign of the exponent $1-2n$ flips negative: a **larger** target fuel flow requires a **smaller** port radius, the reverse of naive intuition, because $G_o \propto 1/r^2$ falls faster than the burning perimeter $\propto r$ grows. At $n=0.5$ exactly, fuel flow is independent of port radius entirely. Both directions are explicitly tested in `test_grain_sizing.py`.
 
 ### Validation
 
-36 tests in `test_grain_sizing.py`: hand-computed known values; closed-form-vs-bisection cross-check (agreement to <2×10⁻⁴% relative); both directions of the $n$ vs. 0.5 radius-flow relationship, verified numerically rather than assumed; the $n=0.5$ degenerate case, including its correctly-unreachable-target failure mode (`RuntimeError`, not a silently wrong answer); multi-port perimeter scaling ($\propto\sqrt N$ at fixed total area, checked directly via pure geometry, independent of $n$); and edge cases (non-positive inputs, targets outside the bisection search bracket).
+47 tests in `test_grain_sizing.py`: hand-computed known values; closed-form-vs-bisection cross-check (agreement to <2×10⁻⁴% relative); both directions of the $n$ vs. 0.5 radius-flow relationship, verified numerically; the $n=0.5$ degenerate case, including its correctly-unreachable-target failure mode; multi-port perimeter scaling ($\propto\sqrt N$ at fixed total area, checked directly via pure geometry); the plausibility guarantee (both bounds, and the diagnostic content of the message); `a_from_reference_rate` (known value, round trip, scaling, and an end-to-end realistic case); and edge cases. There is no experimental dataset for the grain sizing itself.
 
 ### Interface integration
 
-`app.py` gained a "Grain sizing" expander (Sizing and Design modes both feed the already-computed $\dot m_{ox}$ into it): OF ratio, fuel dropdown (density auto-filled, editable), **required** $a$ and $n$ number inputs with the literature reference range shown as help text, grain length, number of ports, optional burn duration. Displays $\dot m_{fuel}$, initial port radius and diameter, initial $G_o$ and $\dot r$, and — when burn duration is given — the conservative final-radius/fuel-consumed estimate with an explicit caption that it is a first-order approximation, not a transient simulation.
+`app.py` has a "Grain sizing" expander in both modes (fed with the already-computed $\dot m_{ox}$): O/F, fuel dropdown (density auto-filled, editable), the three-number regression-rate data point (with the literature reference range shown as orientation only), grain length, number of ports, optional burn duration. It displays $\dot m_{fuel}$, initial port radius, initial $G_o$ and $\dot r$, and — when a burn duration is given — the conservative final-radius / fuel-consumed estimate, captioned as a first-order approximation rather than a transient simulation.
 
 ### File location
 
 `src/model/grain_sizing.py`
+

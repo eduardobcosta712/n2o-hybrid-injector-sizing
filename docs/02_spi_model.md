@@ -8,13 +8,13 @@ By conservation of mass, in steady state, for a tube with no branches:
 
 $$\dot{m} = \rho \, A \, v = \text{constant along the tube}$$
 
-For a liquid (practically incompressible, ρ ≈ constant), a decrease in area A forces an increase in velocity v, to keep $\dot m$ constant.
+For a liquid (practically incompressible, $\rho \approx$ constant), a decrease in area $A$ forces an increase in velocity $v$, to keep $\dot m$ constant.
 
 From Bernoulli's equation, along a streamline, for frictionless flow with no external work, and neglecting elevation changes:
 
 $$P + \frac{1}{2}\rho v^2 \approx \text{constant}$$
 
-The sum of pressure energy and kinetic energy is what stays constant — not each term on its own. If v increases due to the restriction, the term ½ρv² increases, and P must necessarily drop for the sum to remain constant.
+The sum of pressure energy and kinetic energy is what stays constant — not each term on its own. If $v$ increases due to the restriction, the term $\frac{1}{2}\rho v^2$ increases, and $P$ must necessarily drop for the sum to remain constant.
 
 Physically: for the fluid to accelerate as it enters the narrower section, it needs a net force in that direction — provided by the pressure difference between upstream (higher) and inside/immediately downstream of the restriction (lower). Pressure energy converts into kinetic energy. It is at the point of minimum cross-section (the *vena contracta*, for an orifice) that velocity is maximum and pressure is minimum — and therefore the point where the subcooling margin ($\Delta T_{sub}$, Section 1.4) is smallest, and where the risk of crossing the saturation curve is greatest.
 
@@ -43,11 +43,11 @@ The real measured flow rate is consistently lower than this theoretical value, f
 1. The jet does not occupy the full geometric area of the orifice as it exits — it contracts (the *vena contracta* effect proper; the fluid doesn't perfectly follow the orifice edge).
 2. There is energy loss to friction/turbulence not captured by the ideal, frictionless Bernoulli equation.
 
-A **discharge coefficient**, $C_d$, is introduced (dimensionless, typically 0.6–0.9 for rocket injector orifices, depending on geometry — sharp edges: lower $C_d$; rounded orifices: $C_d$ closer to 1), determined empirically:
+A **discharge coefficient**, $C_d$, is introduced (dimensionless, typically 0.6–0.9 for rocket injector orifices, depending on geometry — sharp edges: lower $C_d$; rounded orifices: $C_d$ closer to 1), determined empirically. The result is the SPI (*Single Phase Incompressible*) equation:
 
-$$\boxed{\dot{m}_{SPI} = C_d \, A \sqrt{2 \rho \Delta P}}$$
+$$\dot{m}_{SPI} = C_d \, A \sqrt{2 \rho \Delta P}$$
 
-This is the SPI (*Single Phase Incompressible*) equation — the reference model used by most university teams for injector area sizing. Given a target mass flow (set by the design O/F, from the motor's thermochemical sizing) and a design $\Delta P$ (typically 15–20% of $P_c$, for combustion stability reasons, outside the scope of this document), the equation is inverted to obtain the required orifice area.
+This is the reference model used by most university teams for injector area sizing. Given a target mass flow (set by the design O/F, from the motor's thermochemical sizing) and a design $\Delta P$ (typically 15–20% of $P_c$, for combustion stability reasons, outside the scope of this document), the equation is inverted to obtain the required orifice area.
 
 ## 2.4 Implicit assumptions and where they fail
 

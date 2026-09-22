@@ -43,12 +43,10 @@ BACKWARD COMPATIBILITY:
 Units: SI throughout (Pa, K, kg/m^3, m^2, kg/s).
 """
 
-from n2o_properties import rho_liquid_sat, nu_vapor_sat, T_sat
+from n2o_properties import rho_liquid_sat, nu_vapor_sat, T_sat, M_N2O
 from feed_line import evaluate_feed_line
-from injector_spi import spi_mass_flow, spi_sufficient
+from injector_spi import spi_mass_flow, spi_sufficient, orifice_area_from_target_flow
 from injector_two_phase import dyer_mass_flow, hem_mass_flow_two_phase_inlet
-
-M_N2O = 44.013  # kg/kmol, molar mass of N2O
 
 
 # ---------------------------------------------------------------------------
@@ -85,9 +83,11 @@ def _evaluate_injector(Cd, A_injector, T_tank, P_injector_inlet,
     """
     if feed_line_result["flashing_detected"]:
         # Two-phase inlet: use HEM with isenthalpic x_inlet from feed line.
-        # Dyer is not applied here because P_upstream ~ P_sat implies
-        # kappa -> inf, which would collapse Dyer to SPI -- physically wrong
-        # for a two-phase inlet (see injector_two_phase.py docstring).
+        # Dyer is not applied: its SPI branch ("no time to nucleate") and
+        # its liquid-inlet state assume pure liquid at the orifice inlet,
+        # which no longer holds once vapour is present. Note the resulting
+        # discontinuity at the flashing threshold (see the docstring of
+        # injector_two_phase.hem_mass_flow_two_phase_inlet).
         x_inlet    = feed_line_result["x_inlet"]
         T_down     = T_sat(P_chamber)
         rho_l_down = rho_liquid_sat(T_down)
@@ -262,6 +262,70 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
     )
 
 
+def design_injector_area(m_dot_target, Cd, T_tank, P_injector_inlet, P_chamber,
+                          tol=1e-7, max_iter=40):
+    """
+    Design-mode sizing: total orifice area that delivers a target mass flow
+    at a KNOWN injector inlet pressure (no feed-line flashing).
+
+    Extracted from app.py in the September 2026 audit so that it can be
+    tested without Streamlit -- and to fix a Design-mode bug: the Dyer
+    iteration used to run unconditionally, but Dyer's kappa is undefined
+    when the flow stays single-phase through the orifice
+    (P_chamber >= P_sat(T_tank)); the app then failed with a bare
+    "math domain error". In that regime SPI is the correct model and the
+    recommended area IS the SPI area.
+
+    Parameters
+    ----------
+    m_dot_target : float
+        Target oxidiser mass flow, kg/s.
+    Cd : float
+        Discharge coefficient.
+    T_tank : float
+        Tank temperature, K.
+    P_injector_inlet : float
+        Pressure at the injector inlet, Pa (must be liquid: > P_sat(T_tank)).
+    P_chamber : float
+        Chamber pressure, Pa.
+    tol, max_iter : float, int
+        Convergence tolerance (relative, on the Dyer mass flow) and cap for
+        the area iteration. All flow models scale linearly with area, so it
+        converges in one or two steps.
+
+    Returns
+    -------
+    dict
+        "regime"        : "SPI" (single-phase throughout the orifice) or "Dyer"
+        "A_spi"         : SPI area for the target flow, m^2
+        "A_recommended" : area to manufacture, m^2 (== A_spi when regime is "SPI")
+        "dyer_result"   : dyer_mass_flow() result at A_recommended, or None
+                          when regime is "SPI"
+    """
+    rho_l_up = rho_liquid_sat(T_tank)
+    A_spi = orifice_area_from_target_flow(m_dot_target, Cd, rho_l_up,
+                                          P_injector_inlet - P_chamber)
+
+    if spi_sufficient(P_injector_inlet, T_tank, P_chamber):
+        return {"regime": "SPI", "A_spi": A_spi,
+                "A_recommended": A_spi, "dyer_result": None}
+
+    T_down = T_sat(P_chamber)
+    rho_l_down = rho_liquid_sat(T_down)
+    rho_v_down = M_N2O / nu_vapor_sat(T_down)
+
+    A_iter = A_spi
+    dr = None
+    for _ in range(max_iter):
+        dr = dyer_mass_flow(Cd, A_iter, T_tank, P_injector_inlet, P_chamber,
+                            rho_l_up, rho_l_down, rho_v_down)
+        if abs(dr["m_dot_Dyer"] - m_dot_target) / m_dot_target < tol:
+            break
+        A_iter *= m_dot_target / dr["m_dot_Dyer"]
+    return {"regime": "Dyer", "A_spi": A_spi,
+            "A_recommended": A_iter, "dyer_result": dr}
+
+
 if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # Validation: compare one-pass result vs. coupled solver result for a
@@ -287,16 +351,12 @@ if __name__ == "__main__":
     ]
 
     # One-pass result (old behaviour): use target m_dot to size the line
-    m_dot_target = 0.368   # kg/s -- the Dyer prediction from Example 1
-    from feed_line import evaluate_feed_line
-    from injector_spi import spi_mass_flow, spi_sufficient
-    from injector_two_phase import dyer_mass_flow
-    from n2o_properties import rho_liquid_sat, nu_vapor_sat, T_sat as T_sat_f
+    m_dot_target = 0.382   # kg/s -- the coupled-solver result of examples/example_01 (design guess)
 
     fl_onepass   = evaluate_feed_line(m_dot_target, T_tank, P_tank, segments)
     P_in_onepass = fl_onepass["P_final"]
     rho_l_up     = rho_liquid_sat(T_tank)
-    T_down       = T_sat_f(P_chamber)
+    T_down       = T_sat(P_chamber)
     rho_l_down   = rho_liquid_sat(T_down)
     rho_v_down   = M_N2O / nu_vapor_sat(T_down)
     ir_onepass   = dyer_mass_flow(Cd, A_injector, T_tank, P_in_onepass,

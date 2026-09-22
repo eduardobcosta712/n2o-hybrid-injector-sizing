@@ -1,9 +1,10 @@
 """
 injector_two_phase.py
 
-Two-phase injector models: HEM (Homogeneous Equilibrium Model) and Dyer
-(NHNE). See docs/03_two_phase_flow.md for the full theoretical derivation
-and physical motivation.
+Two-phase injector models: HEM (Homogeneous Equilibrium Model), Dyer
+(NHNE), and the equilibrium / non-equilibrium critical-flow (choking)
+diagnostics. See docs/03_two_phase_flow.md for the full theoretical
+derivation and physical motivation.
 
 HEM assumes the liquid-vapor mixture inside the orifice is in full
 thermodynamic equilibrium at every point, and treats it as a single
@@ -35,6 +36,18 @@ physical questions (see docs/future_work.md, Priority 1):
       path for locating the two-phase CHOKING condition, implemented in
       vapor_quality_isentropic and hem_critical_flow_isentropic.
 
+Choking diagnostics (three, deliberately kept side by side):
+
+    - hem_critical_flow()            equilibrium ceiling, isenthalpic path
+    - hem_critical_flow_isentropic() equilibrium ceiling, isentropic path
+    - henry_fauske_critical_flow()   NON-equilibrium ceiling (Henry &
+      Fauske 1971, via Simoneau et al. 1971) -- the physically appropriate
+      bound for a non-equilibrium (Dyer) prediction. dyer_mass_flow()
+      returns it side by side with m_dot_Dyer as a "choked" diagnostic,
+      never as an automatic cap. The two EQUILIBRIUM ceilings are NOT
+      valid caps for Dyer (Dyer legitimately exceeds them, and does so at
+      every validated Waxman point) -- see docs/future_work.md, Priority 1.
+
 hem_critical_flow() (isenthalpic) is kept unchanged and side-by-side with
 hem_critical_flow_isentropic(): it is already validated and cited in
 validation/waxman_2013_results.md, and remains useful as a direct
@@ -45,13 +58,13 @@ and the Dyer weighting parameter kappa, which are dimensionless.
 """
 
 import math
+import warnings
+
 from n2o_properties import (P_sat, T_sat, dP_sat_dT, h_liquid_sat, h_fg,
                              rho_liquid_sat, nu_vapor_sat,
                              s_liquid_sat, s_vapor_sat, s_fg,
-                             T_MIN, T_MIN_A4, T_MAX_A4)
+                             T_MIN, T_MAX, M_N2O)
 from injector_spi import spi_mass_flow
-
-M_N2O = 44.013  # kg/kmol, molar mass of N2O
 
 
 def vapor_quality_isenthalpic(h_upstream, T_downstream):
@@ -119,10 +132,8 @@ def vapor_quality_isentropic(s_upstream, T_downstream):
         mixture entropy -- see hem_critical_flow_isentropic below.
     T_downstream : float
         Saturation temperature corresponding to the downstream pressure
-        being scanned, T_sat(P_downstream), K. Must lie within Table
-        A.4's range (see n2o_properties.T_MIN_A4 / T_MAX_A4) -- narrower
-        than the enthalpy table's range, since entropy data comes from a
-        separate, shorter NIST table.
+        being scanned, T_sat(P_downstream), K. Must lie within the valid
+        range of the saturation properties (n2o_properties.T_MIN to T_MAX).
 
     Returns
     -------
@@ -130,7 +141,6 @@ def vapor_quality_isentropic(s_upstream, T_downstream):
         Vapor quality x (dimensionless), clamped to [0, 1] for the same
         reason as vapor_quality_isenthalpic.
     """
-    from n2o_properties import s_liquid_sat, s_fg
     x = (s_upstream - s_liquid_sat(T_downstream)) / s_fg(T_downstream)
     return max(0.0, min(1.0, x))
 
@@ -138,7 +148,7 @@ def vapor_quality_isentropic(s_upstream, T_downstream):
 def hem_mixture_density(x, rho_l, rho_v):
     """
     HEM mixture density, from the mass-weighted average of the two
-    phases' specific volumes (Section 4.1 of the theory docs):
+    phases' specific volumes (Section 3.4 of the theory docs):
 
         nu_mix = (1 - x) / rho_l + x / rho_v
         rho_HEM = 1 / nu_mix
@@ -247,14 +257,26 @@ def hem_mass_flow_two_phase_inlet(Cd, A, T_tank, x_inlet,
     Everything downstream of the inlet (x_exit, rho_HEM, m_dot_HEM) is
     computed identically to hem_mass_flow().
 
-    Note on the Dyer model in this regime: when x_inlet > 0 the fluid is
-    at saturation at the orifice inlet, so P_upstream ~ P_sat(T_tank) and
-    the Dyer kappa denominator (P_sat - P_downstream) -> 0, giving
-    kappa -> infinity and w_SPI -> 1 (Dyer collapses to SPI). That is
-    physically wrong: a saturated two-phase inlet means there is NO
-    non-equilibrium margin -- HEM is the appropriate model, not SPI.
-    This function therefore returns HEM only, and full_system.py uses it
-    directly without applying the Dyer blend.
+    Note on the Dyer model in this regime (rationale corrected in the
+    September 2026 audit). The Dyer/NHNE blend is derived for a LIQUID
+    orifice inlet: its SPI branch represents "no time to nucleate", with
+    single-phase liquid density. When the fluid arrives already partially
+    vaporised (x_inlet > 0), vapour/bubbles are present from the start, so
+    the delayed-nucleation picture that motivates the SPI branch no longer
+    applies, and the model has no defined inlet state (the implementation
+    requires P_upstream > P_sat, see dyer_non_equilibrium_parameter). HEM,
+    the equilibrium limit, is therefore used directly. (An earlier version
+    of this note claimed Dyer "collapses to SPI" because kappa -> infinity
+    at P_upstream ~ P_sat. That is wrong: kappa = sqrt((P_up - P_down) /
+    (P_sat - P_down)) equals 1 at P_up = P_sat and diverges only as
+    P_down -> P_sat.)
+
+    Known limitation: the switch from Dyer (liquid inlet) to this HEM
+    two-phase-inlet model at the flashing threshold is DISCONTINUOUS --
+    HEM at x_inlet -> 0 gives roughly half the Dyer flow at the same
+    conditions (about 200 g/s vs 365 g/s in examples/example_03). The
+    two-phase-inlet path is implemented and unit tested but has not been
+    validated against experimental data.
 
     Parameters
     ----------
@@ -313,8 +335,6 @@ def hem_mass_flow_two_phase_inlet(Cd, A, T_tank, x_inlet,
     }
 
 
-
-
 def hem_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
                        n_steps=200):
     """
@@ -323,8 +343,10 @@ def hem_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     Finds the choking limit by locating the maximum of the HEM mass-flow
     rate as a function of downstream pressure P2, scanning P2 from P_sat
     (onset of two-phase flow) down to a minimum pressure. The maximum is
-    the physical critical (choked) mass flow -- the ceiling that the
-    Bernoulli-based Dyer formula cannot exceed.
+    the physical critical (choked) mass flow of the EQUILIBRIUM model --
+    the ceiling that HEM itself cannot exceed. (It is NOT a valid cap for
+    the non-equilibrium Dyer prediction, which legitimately exceeds it --
+    see the module docstring.)
 
     Reference:
         Waxman (2013), Eq. (5):
@@ -375,12 +397,6 @@ def hem_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
         "x_crit"      : vapour quality at the critical condition
         "rho_crit"    : HEM mixture density at the critical condition, kg/m^3
     """
-    import math
-    from n2o_properties import (P_sat, T_sat as T_sat_f, rho_liquid_sat,
-                                 nu_vapor_sat, h_liquid_sat, h_fg)
-
-    M_N2O = 44.013
-
     # Upstream enthalpy (conserved along isenthalpic path)
     h_up = h_liquid_sat(T_upstream) + x_inlet * h_fg(T_upstream)
 
@@ -400,7 +416,7 @@ def hem_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     P2 = P_start
 
     while P2 >= P_min:
-        T2      = T_sat_f(P2)
+        T2      = T_sat(P2)
         rho_l2  = rho_liquid_sat(T2)
         rho_v2  = M_N2O / nu_vapor_sat(T2)
         hl2     = h_liquid_sat(T2)
@@ -458,17 +474,11 @@ def hem_critical_flow_isentropic(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     side-by-side, for direct comparison -- it is already validated and
     cited in validation/waxman_2013_results.md.
 
-    Domain restriction: entropy data (Table A.4, NIST WebBook) only
-    covers T in [n2o_properties.T_MIN_A4, n2o_properties.T_MAX_A4], i.e.
-    up to 307.33 K -- short of the 309.52 K critical point used
-    elsewhere in this project. Since the scan starts at T_sat(P_upstream)
-    ~= T_upstream and moves to lower T (lower P2), T_upstream itself is
-    the binding constraint: this function raises ValueError immediately
-    if T_upstream exceeds Table A.4's range, rather than let the scan
-    fail partway through with a less legible error. hem_critical_flow()
-    (isenthalpic) remains available as a fallback this close to the
-    critical point; CoolProp integration (Priority 4) would remove this
-    limitation entirely.
+    Domain: T_upstream must lie in the valid range of the saturation
+    properties [n2o_properties.T_MIN, T_MAX] (up to ~0.02 K below the
+    critical point). Before the CoolProp integration (September 2026) entropy
+    came from NIST Table A.4 and the scan was limited to T <= 307.33 K; that
+    restriction no longer exists.
 
     Parameters
     ----------
@@ -477,8 +487,8 @@ def hem_critical_flow_isentropic(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     A : float
         Total orifice area, m^2.
     T_upstream : float
-        Upstream temperature (= tank temperature), K. Must be
-        <= n2o_properties.T_MAX_A4 (307.33 K) -- see domain restriction.
+        Upstream temperature (= tank temperature), K. Must lie within
+        [n2o_properties.T_MIN, T_MAX].
     P_upstream : float
         Upstream pressure, Pa.
     x_inlet : float, optional
@@ -498,25 +508,12 @@ def hem_critical_flow_isentropic(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     Raises
     ------
     ValueError
-        If T_upstream is outside Table A.4's valid range.
+        If T_upstream is outside the valid range of the saturation properties.
     """
-    import math
-    from n2o_properties import (P_sat, T_sat as T_sat_f, rho_liquid_sat,
-                                 nu_vapor_sat, s_liquid_sat, s_vapor_sat,
-                                 s_fg, T_MIN_A4, T_MAX_A4)
-
-    M_N2O = 44.013
-
-    if not (T_MIN_A4 <= T_upstream <= T_MAX_A4):
+    if not (T_MIN <= T_upstream <= T_MAX):
         raise ValueError(
-            f"T_upstream = {T_upstream:.2f} K is outside Table A.4's valid "
-            f"range [{T_MIN_A4}, {T_MAX_A4}] K (NIST WebBook, Lemmon & Span "
-            "2006), the only source of entropy data in this project. The "
-            "isentropic choking scan cannot be evaluated this close to the "
-            "critical point with the current data. hem_critical_flow() "
-            "(isenthalpic) remains available as a fallback in this regime "
-            "-- see also docs/future_work.md, Priority 4 (CoolProp/REFPROP "
-            "integration), which would remove this limitation."
+            f"T_upstream = {T_upstream:.2f} K is outside the valid range "
+            f"[{T_MIN:.2f}, {T_MAX:.2f}] K of the saturation properties."
         )
 
     # Upstream entropy (conserved along isentropic path)
@@ -539,12 +536,12 @@ def hem_critical_flow_isentropic(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     P2 = P_start
 
     while P2 >= P_min:
-        T2 = T_sat_f(P2)
-        # T2 <= T_upstream <= T_MAX_A4 always holds since P2 <= P_start <
+        T2 = T_sat(P2)
+        # T2 <= T_upstream <= T_MAX always holds since P2 <= P_start <
         # P_sat(T_upstream), so this guard should never trigger -- kept
         # anyway per the project's "fail loudly, never silently" convention,
         # mirroring the hfg2 <= 0 guard in hem_critical_flow.
-        if T2 > T_MAX_A4:
+        if T2 > T_MAX:
             P2 -= dP_step; continue
 
         rho_l2 = rho_liquid_sat(T2)
@@ -668,9 +665,8 @@ def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     A : float
         Total orifice area, m^2.
     T_upstream : float
-        Stagnation (upstream/tank) temperature, K. Must lie within
-        Table A.4's range (n2o_properties.T_MIN_A4 to T_MAX_A4) --
-        entropy is required.
+        Stagnation (upstream/tank) temperature, K. Must lie within the valid
+        range of the saturation properties (n2o_properties.T_MIN to T_MAX).
     P_upstream : float
         Stagnation (upstream/tank) pressure, Pa. Must exceed
         P_sat(T_upstream) -- the model assumes liquid (saturated or
@@ -702,7 +698,7 @@ def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     Raises
     ------
     ValueError
-        If T_upstream is outside Table A.4's range, or P_upstream does
+        If T_upstream is outside the valid temperature range, or P_upstream does
         not exceed P_sat(T_upstream).
     RuntimeError
         If a valid bracket for the bisection cannot be found (should not
@@ -712,33 +708,35 @@ def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
 
     Validation
     -----------
-    At Waxman conditions (T=280 K, P=4.36 MPa, D=1.5 mm, Cd=0.65):
-    m_dot_crit = 50.67 g/s -- above hem_critical_flow_isentropic's
-    41.64 g/s (correct: non-equilibrium exceeds equilibrium), and above
-    all 4 validated Dyer predictions (42.25-49.55 g/s), so it does not
-    cut into any already-validated result. See
+    At Waxman conditions (T=280 K, P=4.36 MPa, D=1.5 mm, Cd=0.65) with the
+    previous (Perry/McGill + NIST table) property set: m_dot_crit = 50.67
+    g/s -- above hem_critical_flow_isentropic's 41.64 g/s (correct:
+    non-equilibrium exceeds equilibrium), and above all 4 Dyer predictions
+    of that comparison (42.25-49.55 g/s), so it did not cut into any
+    validated result. These absolute values change slightly with the
+    CoolProp property set; the relations (above the equilibrium ceiling,
+    above the Dyer predictions at the Waxman points) are tested live in
+    tests/test_injector_two_phase.py. See
     validation/waxman_2013_results.md for the full comparison.
 
     IMPORTANT CAVEAT (see docs/future_work.md, Priority 1). At OTHER
-    operating points further from the Waxman geometry -- e.g. the
-    conditions in examples/example_01_sizing.md (20 degC, 58->22 bar,
-    6x1.5mm holes) -- this ceiling DOES bind, sitting roughly 13-17%
-    below the uncapped Dyer blend. There is currently NO experimental
-    data point in this project's validation set where the Henry-Fauske
-    ceiling actually changes the answer (all 4 Waxman points sit below
-    it) -- so while the model is theoretically sound and correctly
-    implemented from a primary source, it is NOT empirically confirmed
-    in the regime where it matters. For this reason it is surfaced as a
-    side-by-side diagnostic value with a `choked` flag in
-    dyer_mass_flow(), NOT applied as an automatic override of
+    operating points further from the Waxman geometry the ceiling DOES
+    bind: for the conditions of examples/example_01_sizing.md (20 degC,
+    58->22 bar, 6x1.5mm holes) it sits ~14% below the uncapped Dyer
+    blend; see the two worked examples for the exact figures. There is
+    currently NO experimental data point in this project's validation set
+    where the Henry-Fauske ceiling actually changes the answer (all 4
+    Waxman points sit below it) -- so while the model is theoretically
+    sound and correctly implemented from a primary source, it is NOT
+    empirically confirmed in the regime where it matters. For this reason
+    it is surfaced as a side-by-side diagnostic value with a `choked`
+    flag in dyer_mass_flow(), NOT applied as an automatic override of
     `m_dot_Dyer` -- see that function's docstring.
     """
-    if not (T_MIN_A4 <= T_upstream <= T_MAX_A4):
+    if not (T_MIN <= T_upstream <= T_MAX):
         raise ValueError(
-            f"T_upstream = {T_upstream:.2f} K is outside Table A.4's valid "
-            f"range [{T_MIN_A4}, {T_MAX_A4}] K -- entropy data is required "
-            "for the Henry-Fauske non-equilibrium closure. See "
-            "docs/future_work.md, Priority 4 (CoolProp/REFPROP)."
+            f"T_upstream = {T_upstream:.2f} K is outside the valid range "
+            f"[{T_MIN:.2f}, {T_MAX:.2f}] K of the saturation properties."
         )
 
     P_sat_up = P_sat(T_upstream)
@@ -772,8 +770,8 @@ def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
         # bisection can still evaluate the residual there.
         N = min(1.0, x_E / 0.14) if x_E > 1e-9 else 1e-9
 
-        T_plus = min(T_t + h_T, T_MAX_A4)
-        T_minus = max(T_t - h_T, T_MIN_A4)
+        T_plus = min(T_t + h_T, T_MAX)
+        T_minus = max(T_t - h_T, T_MIN)
         s_l_plus = s_liquid_sat(T_plus) * 1000.0 / M_N2O
         s_l_minus = s_liquid_sat(T_minus) * 1000.0 / M_N2O
         ds_l_dT = (s_l_plus - s_l_minus) / (T_plus - T_minus)
@@ -842,19 +840,31 @@ def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
 def apply_choking_limit(m_dot_model, Cd, A, T_upstream, P_upstream,
                          x_inlet=0.0):
     """
-    Apply the HEM isenthalpic choking limit to a model-predicted mass flow.
+    DEPRECATED -- do not use to cap a Dyer prediction.
 
-    Returns the physically realizable mass flow:
+    Applies the EQUILIBRIUM (HEM, isenthalpic) choking limit to a
+    model-predicted mass flow:
         m_dot_real = min(m_dot_model, m_dot_crit)
 
-    The choking limit is computed by hem_critical_flow() -- the maximum
-    of the HEM isenthalpic mass flow curve (Waxman 2013, Eq. 5). This is
-    the physical upper bound set by the two-phase speed of sound.
+    This was the original (September 2026, early) plan for bounding the
+    Dyer model, and it was RETRACTED after numerical testing: the Dyer
+    model is a non-equilibrium prediction and legitimately exceeds the
+    equilibrium ceiling -- all 4 validated Waxman points sit 1.03x-1.21x
+    above it -- so capping there would destroy the validated MAPE of
+    3.51%. See docs/future_work.md, Priority 1, and README "Scope and
+    known limitations". The appropriate non-equilibrium diagnostic is
+    henry_fauske_critical_flow(), surfaced through dyer_mass_flow()'s
+    "choked" flag.
+
+    The function is kept only for backward compatibility (nothing in the
+    repository calls it) and emits a DeprecationWarning. It is safe to
+    apply to a genuinely EQUILIBRIUM (HEM) prediction, which is the only
+    case where the isenthalpic ceiling is the right bound.
 
     Parameters
     ----------
     m_dot_model : float
-        Mass flow predicted by Dyer or HEM, kg/s.
+        Mass flow predicted by an equilibrium (HEM) model, kg/s.
     Cd : float
         Discharge coefficient.
     A : float
@@ -869,12 +879,18 @@ def apply_choking_limit(m_dot_model, Cd, A, T_upstream, P_upstream,
     Returns
     -------
     dict
-        "m_dot_real"  : physically realizable mass flow, kg/s
-        "choked"      : True if choking limit was applied
+        "m_dot_real"  : min(m_dot_model, m_dot_crit), kg/s
+        "choked"      : True if the ceiling was applied
         "m_dot_model" : original model prediction, kg/s
         "m_dot_crit"  : HEM critical flow limit, kg/s
         "crit_result" : full hem_critical_flow() output
     """
+    warnings.warn(
+        "apply_choking_limit() applies the EQUILIBRIUM HEM ceiling, which is "
+        "not a valid cap for the non-equilibrium Dyer model (retracted, see "
+        "docs/future_work.md Priority 1). Use dyer_mass_flow()'s 'choked' "
+        "flag / henry_fauske_critical_flow() instead.",
+        DeprecationWarning, stacklevel=2)
     crit = hem_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet)
     m_crit    = crit["m_dot_crit"]
     choked    = m_dot_model > m_crit
@@ -887,6 +903,7 @@ def apply_choking_limit(m_dot_model, Cd, A, T_upstream, P_upstream,
         "crit_result": crit,
     }
 
+
 def dyer_non_equilibrium_parameter(P_upstream, T_upstream, P_downstream):
     """
     Dyer's non-equilibrium weighting parameter, kappa (Section 3.4):
@@ -894,20 +911,34 @@ def dyer_non_equilibrium_parameter(P_upstream, T_upstream, P_downstream):
         kappa = sqrt[(P_upstream - P_downstream) / (P_sat(T_upstream) - P_downstream)]
 
     The numerator is the total pressure drop across the orifice; the
-    denominator is how much subcooling margin (in pressure terms) the
-    fluid had at the orifice inlet before the flow even begins. A large
-    kappa means the inlet was already close to saturation (little margin
-    to lose), so the flow behaves closer to the full-equilibrium HEM
-    limit; a small kappa means the inlet was comfortably subcooled, so
-    the flow behaves closer to the "no time to vaporize" SPI limit.
+    denominator is how far BELOW saturation the downstream pressure lies
+    (the "depth" of the flash). kappa grows with the upstream subcooling
+    (the numerator grows while the denominator does not), and equals 1 for
+    a saturated-liquid inlet (P_upstream = P_sat). Large kappa means the
+    liquid must be strongly superheated before it can flash, i.e. bubbles
+    form slowly relative to the residence time -- less equilibrium, more
+    weight on SPI (Section 3.4); small kappa means near-equilibrium, more
+    weight on HEM. kappa diverges only as P_downstream -> P_sat (see
+    domain restriction 2).
 
-    This function requires P_upstream > P_sat(T_upstream) -- i.e. the
-    fluid must still be liquid (saturated or subcooled) AT the orifice
-    inlet, per Section 1.4. If P_upstream <= P_sat(T_upstream), the fluid
-    has already crossed the saturation curve before reaching the orifice
-    at all: this is a modeling error (the two-phase feed line problem,
-    not the two-phase orifice problem this module addresses), so it is
-    flagged loudly rather than producing a meaningless or infinite kappa.
+    Domain restrictions -- both enforced with an explicit ValueError:
+
+    1. P_upstream > P_sat(T_upstream): the fluid must still be liquid
+       (saturated or subcooled) AT the orifice inlet, per Section 1.4. If
+       P_upstream <= P_sat(T_upstream), the fluid has already crossed the
+       saturation curve before reaching the orifice at all: this is a
+       modeling error (the two-phase feed line problem, not the
+       two-phase orifice problem this module addresses).
+
+    2. P_downstream < P_sat(T_upstream): the pressure must actually drop
+       BELOW saturation somewhere in the orifice for two-phase flow to
+       occur. If P_downstream >= P_sat(T_upstream), the flow stays
+       single-phase through the orifice, the denominator is zero or
+       negative, and kappa is undefined -- SPI is the correct model there
+       (injector_spi.spi_sufficient() returns True). This second check
+       was added in the September 2026 audit: previously it surfaced as
+       a bare "math domain error" (or an uncaught ZeroDivisionError when
+       P_downstream == P_sat exactly) in Design mode.
 
     Parameters
     ----------
@@ -934,6 +965,14 @@ def dyer_non_equilibrium_parameter(P_upstream, T_upstream, P_downstream):
             "vaporization occurring inside the orifice (Section 3.1); a "
             "two-phase feed line is a separate problem (see feed_line.py's "
             "flashing_detected flag)."
+        )
+    if P_downstream >= P_sat_upstream:
+        raise ValueError(
+            f"P_downstream = {P_downstream/1e5:.2f} bar is at or above "
+            f"P_sat(T_upstream) = {P_sat_upstream/1e5:.2f} bar -- the flow "
+            "stays single-phase through the orifice, so the Dyer "
+            "non-equilibrium parameter kappa is undefined. Use the SPI "
+            "model here (injector_spi.spi_sufficient() is True)."
         )
     return math.sqrt((P_upstream - P_downstream) / (P_sat_upstream - P_downstream))
 
@@ -990,7 +1029,14 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
                   it, or if the ceiling could not be computed.
         "HF_unavailable_reason": None if "m_dot_crit_HF" was computed
                   successfully; otherwise a short string explaining why
-                  (e.g. T_upstream outside Table A.4's range).
+                  (e.g. T_upstream outside the valid temperature range).
+
+    Raises
+    ------
+    ValueError
+        If the inlet is not liquid (P_upstream <= P_sat) or the flow does
+        not cross saturation in the orifice (P_downstream >= P_sat) --
+        see dyer_non_equilibrium_parameter.
 
     Note on why "m_dot_Dyer" is NOT automatically capped at
     "m_dot_crit_HF" (decided September 2026, docs/future_work.md,
@@ -1000,16 +1046,16 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     equilibrium HEM ceiling; does not perturb any of the 4 validated
     Waxman operating points, since all 4 already sit below it). BUT at
     other operating points -- e.g. examples/example_01_sizing.md's
-    conditions -- it DOES bind, cutting the predicted flow by roughly
-    13-17%, and there is currently no experimental data point in this
-    project's validation set where the ceiling actually changes the
-    answer (all 4 Waxman points sit below it). Silently overriding
-    "m_dot_Dyer" with a value that is theoretically well-founded but
-    empirically unconfirmed in the regime where it matters would risk
-    quietly changing already-published results without evidence.
-    Instead, both values are returned, so calling code (full_system.py,
-    the Streamlit interface) can choose to display a warning when
-    "choked" is True, without silently changing the headline number.
+    conditions -- it DOES bind, and there is currently no experimental
+    data point in this project's validation set where the ceiling
+    actually changes the answer (all 4 Waxman points sit below it).
+    Silently overriding "m_dot_Dyer" with a value that is theoretically
+    well-founded but empirically unconfirmed in the regime where it
+    matters would risk quietly changing already-published results without
+    evidence. Instead, both values are returned, so calling code
+    (full_system.py, the Streamlit interface) can choose to display a
+    warning when "choked" is True, without silently changing the headline
+    number.
     """
     kappa = dyer_non_equilibrium_parameter(P_upstream, T_upstream, P_downstream)
 
@@ -1028,7 +1074,7 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     # Henry-Fauske non-equilibrium choking ceiling -- diagnostic only,
     # not applied automatically (see docstring above). Computed
     # best-effort: if it cannot be evaluated (e.g. T_upstream above
-    # Table A.4's 307.33 K limit), Dyer's own result is still returned
+    # the valid range of the saturation properties), Dyer's own result is still returned
     # unaffected, with the reason recorded rather than silently ignored.
     try:
         hf = henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream)
@@ -1054,10 +1100,6 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
 
 if __name__ == "__main__":
     # --- Validation case ---
-    from n2o_properties import rho_liquid_sat, nu_vapor_sat
-
-    M_N2O = 44.013  # kg/kmol
-
     T_upstream = 293.15   # K, 20 degC
     P_upstream = 55e5     # Pa, 55 bar (subcooled: P_sat(20 degC) ~= 51.4 bar)
     P_downstream = 20e5   # Pa, 20 bar chamber pressure
