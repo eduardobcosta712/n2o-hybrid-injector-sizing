@@ -13,7 +13,7 @@ A team designs a motor with N2O at **22 degC**, tank pressure **53.5 bar**, and 
 - 2500 mm of 8 mm ID tubing
 - Needle valve (fully open, K = 2.0)
 - 90 degree elbow (standard, K = 0.9)
-- Injector: 4 holes, 1.8 mm diameter (Cd = 0.65), total area 10.18 mm$^2$
+- Injector: 4 holes, 1.8 mm diameter (Cd = 0.65), total area 10.18 mm$`^2`$
 - Chamber pressure: 18 bar
 
 The SPI model was used for the initial design. A naive SPI calculation with the full tank-to-chamber drop, at the legacy-backend liquid density for 22 degC, gives roughly 489 g/s -- this figure moves slightly under CoolProp's slightly different liquid density, but not enough to change the conclusion below. On test, the motor produces less thrust than expected and combustion is unstable.
