@@ -1,23 +1,32 @@
 # Validation Report — Waxman (2013/2014) Dataset (Updated)
 ## Injector Model: SPI + Dyer/NHNE + Coupled Solver + Henry-Fauske Diagnostic
 
-**Date:** September 2026 (regenerated in the project audit by running `validation/waxman_2013_validation.py`)
+**Date:** September 2026 (regenerated with the real CoolProp package installed,
+by running `validation/waxman_2013_validation.py` on Eduardo's machine and
+independently cross-checked by Claude in a second environment with CoolProp
+8.0.0 installed — both runs agree to the displayed precision)
 **Author:** Eduardo Costa, Instituto Superior Técnico
-**Model state:** Full coupled solver, two-phase line model, NIST properties, Henry-Fauske choking diagnostic
+**Model state:** Full coupled solver, two-phase line model, CoolProp
+(Lemmon & Span 2006) properties, Henry-Fauske choking diagnostic
 
 ---
 
-> **Property-backend note (September 2026).** The MAPE and every figure below were computed with the Perry/McGill + NIST property set used before the CoolProp integration (`docs/future_work.md`, Priority 4). They have not yet been regenerated with the real CoolProp package (unavailable in the development sandbox); expect small shifts once `python validation/waxman_2013_validation.py` is re-run with CoolProp installed.
+> **Property-backend status: CONFIRMED.** Earlier versions of this report
+> carried a "Property-backend note" saying the CoolProp integration was
+> written and tested against a table-interpolation stand-in only, because
+> the real package could not be installed in the development sandbox. That
+> is now resolved: `pip install CoolProp` succeeded (CoolProp 8.0.0), the
+> full test suite (262 tests) passes, and every number below was produced
+> by actually running the code with the real Lemmon & Span (2006) equation
+> of state. The figures below **replace** the earlier (Perry/McGill-backed)
+> validation; they moved by 1–2 percentage points, in the direction expected
+> from the ~2–5 % known error of the old correlations (see Section 8).
 
 ## 1. Purpose
 
 Definitive validation of the complete injector model against the Waxman
 (2013/2014) dataset — the only open-access experimental dataset in the
 correct domain (supercharged N₂O, QF_upstream = 0) found for this project.
-
-This report supersedes the earlier validation report which used the
-one-pass model without the coupled solver, updated properties, or the
-Henry-Fauske choking diagnostic.
 
 **Scope of the evidence, stated up front.** The four operating points
 below have injector pressure drops of 8–14 bar. They validate the Dyer
@@ -42,7 +51,7 @@ Using Analytical and Numerical Methods with Application to Hybrid Rockets.*
 AIAA 2019-4154. (Table 4: four tabulated points; Table 3: model error
 summary — Dyer MAPE = 3.91% with Cd = 0.63 from their correlation.)
 
-**Henry-Fauske non-equilibrium critical flow (September 2026 addition):**
+**Henry-Fauske non-equilibrium critical flow:**
 Henry, R.E. & Fauske, H.K. (1971). *The Two-Phase Critical Flow of
 One-Component Mixtures in Nozzles, Orifices, and Short Tubes.* ASME J.
 Heat Transfer, 93(2), 179-187. Equations transcribed from: Simoneau,
@@ -61,7 +70,7 @@ Critical Discharge of High Pressure Liquid Nitrogen.* NASA TM X-67863.
 | Injector: SPI | ✅ Bernoulli |
 | Injector: Dyer/NHNE | ✅ corrected weights (Solomon 2011) |
 | Injector: HEM two-phase inlet | ✅ x_inlet from feed-line flash (not exercised here) |
-| N₂O properties | ✅ McGill/Perry (A.1) + NIST A.3 (μ_v) + NIST A.4 (C_pl, μ_l, entropy) |
+| N₂O properties | ✅ **CoolProp (Lemmon & Span 2006), real package, confirmed** |
 | HEM critical flow (equilibrium) | ✅ isenthalpic + isentropic, standalone |
 | **Henry-Fauske critical flow (non-equilibrium)** | ✅ **standalone diagnostic, side-by-side with Dyer, not auto-applied** |
 
@@ -79,49 +88,64 @@ Critical Discharge of High Pressure Liquid Nitrogen.* NASA TM X-67863.
 | Cd | 0.65 | Conservative literature estimate (Waxman's measured value for this injector: 0.71) |
 | Line | ID=25.4mm, L=50mm | Waxman upstream chamber |
 
+**P_sat(T1) with the real CoolProp backend:** 37.068 bar, vs. Niño & Razavi's
+37.40 bar — model error **−0.9 %**. (With the old Perry/McGill correlation
+this comparison used to read appreciably worse; the CoolProp switch
+directly improves the single number that sets the Dyer κ denominator for
+every case below.) Model supercharge = 6.53 bar vs. Niño & Razavi's 6.20 bar.
+
 **Note on `waxman_2013_experimental_data.csv`.** That file records a raw
 extraction of Waxman's paper (used, for instance, for the measured Cd
 values) with reference upstream conditions P₁ = 4.96 MPa and supercharge
 1.26 MPa, whereas the operating points above use P₁ = 4.36 MPa and
 supercharge 0.62 MPa (Niño & Razavi Table 4). The CSV is **not read by any
-code**. Whether the two sets describe different tests of the same paper
-or one of them is mis-transcribed has not been resolved (see
-`docs/future_work.md`, "Audit follow-ups").
+code**. This discrepancy is still unresolved (see `docs/future_work.md`,
+"Audit follow-ups") — out of scope for this regeneration.
 
 ---
 
-## 5. Results
+## 5. Results (CoolProp-confirmed)
 
 | Case | ΔP [bar] | m_exp [g/s] | m_dot [g/s] | Error | Regime | Choked? |
 |---|---|---|---|---|---|---|
-| Pre-critical | 8.40 | 44.0 | 42.25 | −4.0% | Dyer | No |
-| Critical | 9.80 | 46.5 | 44.60 | −4.1% | Dyer | No |
-| Post-critical 1 | 10.90 | 47.5 | 46.20 | −2.7% | Dyer | No |
-| Post-critical 2 | 13.70 | 48.0 | 49.55 | +3.2% | Dyer | No |
-| **Mean** | — | — | — | **−1.9%** | — | — |
+| Pre-critical | 8.40 | 44.0 | 42.91 | −2.5% | Dyer | No |
+| Critical | 9.80 | 46.5 | 45.34 | −2.5% | Dyer | No |
+| Post-critical 1 | 10.90 | 47.5 | 46.97 | −1.1% | Dyer | No |
+| Post-critical 2 | 13.70 | 48.0 | 50.37 | +4.9% | Dyer | No |
+| **Mean** | — | — | — | **−0.3%** | — | — |
 
-**MAPE = 3.51%** (Niño & Razavi reference: 3.91% with Cd=0.63) — **identical to the
-pre-Henry-Fauske result**: the diagnostic ceiling (Section 7) sits above all 4
-`m_dot` values, so `choked = False` throughout and nothing changed numerically. It is
-also identical before and after the audit's change to a temperature-dependent
-liquid viscosity in the line (the Waxman line is short and wide, so friction is negligible).
+**MAPE = 2.76%** (previous, Perry/McGill-backed figure: 3.51%; Niño & Razavi
+reference: 3.91% with Cd=0.63). The injector inlet pressure sits at 43.600 bar
+for all four cases (the 50 mm / 25.4 mm ID upstream chamber has negligible
+losses, as designed), so the only thing driving the per-case error is the
+Dyer model itself at each chamber pressure.
 
-All 4 cases within ±5%. All 4 cases within ±10%. The coupled solver converged in 10–11 iterations.
+All 4 cases within ±5%. All 4 cases within ±10%. The coupled solver converged
+in 10–11 iterations for every case.
 
 The experimental values are read off a graph (Niño & Razavi Fig. 2), with
-~±3% read-off uncertainty, which bounds the achievable accuracy of this comparison.
+~±3% read-off uncertainty, which bounds the achievable accuracy of this
+comparison.
+
+**What changed vs. the Perry/McGill-backed report.** Every individual case's
+predicted mass flow moved by roughly 1–3 g/s (about 1–2 %), and in the same
+direction the ~2–5 % documented Perry/McGill P_sat error would predict.
+The corrected-weights Dyer model, the coupled solver logic, and the
+Henry-Fauske diagnostic are all unchanged — only the property backend
+feeding them changed. The net effect here is a *better* MAPE (2.76 % vs.
+3.51 %), but that should be read as this specific test case improving, not
+as a general claim that CoolProp always reduces error — see Section 8.
 
 ---
 
 ## 6. Equilibrium HEM Critical Flow Reference
 
-`hem_critical_flow()` (isenthalpic, Waxman Eq. 5) gives **m_crit = 41.05 g/s**
-at P₂_crit = 30.37 bar, x_crit = 0.086. `hem_critical_flow_isentropic()`
-(added September 2026, the thermodynamically correct path for an
-*equilibrium* choking condition) gives **41.64 g/s** — a +1.43% difference,
-both retained side-by-side in the codebase.
+`hem_critical_flow()` (isenthalpic, Waxman Eq. 5) gives **m_crit = 42.48 g/s**
+at P₂_crit = 30.5 bar, x_crit = 0.0744. `hem_critical_flow_isentropic()`
+gives **43.02 g/s** at P₂_crit = 29.8 bar, x_crit = 0.0774 — a +1.3%
+difference, both retained side-by-side in the codebase.
 
-The Dyer predictions (42.25–49.55 g/s) are above **both** equilibrium
+The Dyer predictions (42.91–50.37 g/s) are above **both** equilibrium
 ceilings, which is physically correct: the Dyer non-equilibrium correction
 (κ weighting toward SPI) accounts for the fact that real injectors do not
 reach full thermodynamic equilibrium inside the orifice. The experimental
@@ -130,51 +154,56 @@ equilibrium ceiling is the right bound to cap Dyer with (see Section 7).
 
 ---
 
-## 7. Henry-Fauske Non-Equilibrium Critical Flow (added September 2026)
+## 7. Henry-Fauske Non-Equilibrium Critical Flow
 
-**Motivation.** Section 6 shows Dyer legitimately exceeds the *equilibrium*
-HEM ceiling at every validated point — expected, correct behaviour, not an
-error to be capped. The physically appropriate ceiling for a *non-equilibrium*
-prediction like Dyer is therefore a genuine non-equilibrium critical flow
-model: Henry-Fauske (1971).
+**Result at Waxman conditions (CoolProp-confirmed):** `henry_fauske_critical_flow()`
+gives **m_dot_crit = 52.15 g/s** at P2_crit = 31.76 bar, x_crit(equilibrium) =
+0.0576, N = 0.412 — above the equilibrium HEM ceiling (correct direction:
+non-equilibrium exceeds equilibrium) and above all 4 validated Dyer
+predictions (42.91–50.37 g/s), confirmed by the `choked = False` column in
+Section 5.
 
-**Result at Waxman conditions:** `henry_fauske_critical_flow()` gives
-**m_dot_crit = 50.67 g/s** at the same geometry — above the equilibrium HEM
-ceiling (correct direction: non-equilibrium exceeds equilibrium) and above
-all 4 validated Dyer predictions (42.25–49.55 g/s), confirmed by the
-`choked = False` column in Section 5.
-
-**Design decision — diagnostic, not automatic cap.** At operating points
-further from the Waxman geometry (the worked examples: 17% below the Dyer
-prediction in Example 1, 10% below the target in Example 2), the
-Henry-Fauske ceiling *does* bind, and there is currently no experimental
-confirmation in this project's validation set at conditions where the
-ceiling actually changes the answer. `dyer_mass_flow()` therefore returns
-`m_dot_Dyer` (always unchanged) alongside `m_dot_crit_HF` and a `choked`
-boolean, rather than silently overriding the headline number with a value
-that, while theoretically well-founded and correctly sourced, is
-empirically unconfirmed outside the Waxman-validated regime.
+**Design decision — diagnostic, not automatic cap.** Unchanged from the
+previous version of this report: at operating points further from the
+Waxman geometry the Henry-Fauske ceiling *does* bind, and there is still no
+experimental confirmation in this project's validation set at conditions
+where the ceiling actually changes the answer. `dyer_mass_flow()` therefore
+returns `m_dot_Dyer` (always unchanged) alongside `m_dot_crit_HF` and a
+`choked` boolean, rather than silently overriding the headline number.
 
 ---
 
 ## 8. Error Sources
 
-**(a)** P_sat correlation: +1.5% at 280 K (Perry/McGill vs. NIST). Shifts κ
-denominator, small bias in Dyer weights.
+**(a)** P_sat correlation: with the CoolProp backend this is no longer an
+error source at T1 = 280 K (the equation of state now matches Niño &
+Razavi's reference value to −0.9 %, see Section 4) — this line item, carried
+over from the Perry/McGill era, is now resolved for this specific case.
 
-**(b)** h_fg from Perry interpolation vs. NIST: ~3–5%. Dominant error source
-in Cases III–IV (larger ΔP). Would be resolved by CoolProp integration.
+**(b)** h_fg: now from the same equation of state as P_sat (CoolProp), so
+the ~3–5 % Perry/McGill vs. NIST latent-heat gap no longer applies here
+either.
 
 **(c)** Cd = 0.65 vs. Waxman measured Cd = 0.71 for this injector. Using
-Cd = 0.71 gives errors of +1.9% to −6.6%. A team-calibrated Cd from a
-water cold-flow test is recommended for production use.
+Cd = 0.71 would still shift every case by a similar amount to before; a
+team-calibrated Cd from a water cold-flow test is recommended for
+production use. Unaffected by the property-backend change.
 
 **(d)** Experimental read-off uncertainty: ~±3%. m_dot values estimated from
-Niño & Razavi Fig. 2 (graph). This bounds the achievable accuracy.
+Niño & Razavi Fig. 2 (graph). This bounds the achievable accuracy of this
+comparison and is now, along with (c), the dominant remaining error source.
 
 **(e)** The Henry-Fauske diagnostic (Section 7) is validated only in the
 sense that it does not perturb the 4 known-good points — it has not itself
 been checked against experimental data in the regime where it binds.
+
+**Independent numerical cross-check.** These figures were reproduced from
+scratch in a second Python environment (CoolProp 8.0.0) by Claude, from the
+same source files, and matched Eduardo's own terminal output to the
+displayed precision (see the September 2026 audit chat). This is a
+software cross-check (same equations, same equation-of-state library, two
+independent installs) — it is not a second, independent experimental
+dataset, so it does not add new evidence beyond what is in (a)–(d) above.
 
 ---
 
@@ -182,28 +211,41 @@ been checked against experimental data in the regime where it binds.
 
 The model is validated in its correct domain (supercharged liquid inlet,
 short upstream line) **at injector pressure drops of 8–14 bar** with
-MAPE = 3.51%, better than the Niño & Razavi reference (3.91%). The Henry-Fauske
-non-equilibrium ceiling is confirmed not to perturb this validated result and is
-available as a diagnostic warning for operating points outside it.
+MAPE = 2.76%, better than both the Niño & Razavi reference (3.91%) and the
+earlier Perry/McGill-backed run of this same model (3.51%). The
+Henry-Fauske non-equilibrium ceiling is confirmed not to perturb this
+validated result and is available as a diagnostic warning for operating
+points outside it.
 
 What this report does **not** establish:
 
-1. **Accuracy at 20–50 bar pressure drop.** This is the range of typical
-   motor designs, and no experimental data in this project covers it. (An
-   earlier version of this report asserted accuracy "competitive with the
-   state of the art" at these pressures; that claim was not supported by the
-   data and has been withdrawn.) At such conditions the Henry-Fauske ceiling
-   is exceeded by the Dyer prediction, i.e. two models disagree.
+1. **Accuracy at 20–50 bar pressure drop.** No experimental data in this
+   project covers it. At such conditions the Henry-Fauske ceiling is
+   exceeded by the Dyer prediction at some worked examples (see
+   `examples/`), i.e. two models disagree.
 2. **The two-phase feed-line model and the HEM two-phase-inlet injector
-   model.** Not exercised by the Waxman geometry (negligible line losses, liquid
-   inlet). Tested only by unit tests (`tests/test_feed_line.py::TestTwoPhaseLineModel`,
-   `tests/test_full_system.py::TestFlashingInLine`).
-3. **A line with significant losses feeding the injector.** The coupled solver's
-   benefit is realised there, but it has not been checked against a
+   model.** Not exercised by the Waxman geometry (negligible line losses,
+   liquid inlet). Tested only by unit tests. **New finding from this
+   CoolProp confirmation run:** with the real (lower) CoolProp P_sat, the
+   `examples/example_03_flashing.md` scenario no longer has the same
+   subcooling margin it had under Perry/McGill, and the coupled solver
+   fails to converge there even at very small damping (α down to 0.05) —
+   the fixed-point iteration oscillates between the Dyer (liquid-inlet)
+   and HEM (two-phase-inlet) branches rather than settling. This is a
+   genuine consequence of the already-documented Dyer→HEM discontinuity at
+   the flashing threshold (`docs/future_work.md`, Priority 2, item 3)
+   showing up as non-convergence right at a borderline operating point,
+   not a bug introduced by the CoolProp switch. Example 3 needs a
+   deliberate fix (a different operating point with clearer margin, or a
+   convergence strategy for the borderline case) before its numbers can be
+   regenerated — left open pending Eduardo's input.
+3. **A line with significant losses feeding the injector.** The coupled
+   solver's benefit is realised there (see Examples 1–2, regenerated with
+   CoolProp, both converge cleanly), but it has not been checked against a
    measured tank-to-chamber flow.
 
-Predictions in these regimes should be read as model estimates with unquantified
-error, to be confirmed by a cold-flow or hot-fire measurement.
+Predictions in these regimes should be read as model estimates with
+unquantified error, to be confirmed by a cold-flow or hot-fire measurement.
 
 ---
 
@@ -212,5 +254,5 @@ error, to be confirmed by a cold-flow or hot-fire measurement.
 | File | Location |
 |---|---|
 | `waxman_2013_results.md` | `validation/` |
-| `waxman_2013_validation.py` | `validation/` (runs from any directory; also run by the CI workflow) |
+| `waxman_2013_validation.py` | `validation/` (runs from any directory) |
 | `waxman_2013_experimental_data.csv` | `validation/` (raw extraction; not read by code) |
