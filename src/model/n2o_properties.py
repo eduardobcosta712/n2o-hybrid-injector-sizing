@@ -3,7 +3,7 @@ n2o_properties.py
 
 Saturated thermophysical properties of N2O as a function of temperature.
 
-DATA SOURCES (changed in September 2026, Priority 4 of the roadmap)
+DATA SOURCES (changed in September 2026, Priority 4 of future_work.md)
 -------------------------------------------------------------------
 1. THERMODYNAMIC PROPERTIES -- CoolProp (Bell et al., 2014), which
    implements the Lemmon & Span (2006) fundamental equation of state for

@@ -4,6 +4,8 @@ app.py — N2O Hybrid Rocket Injector Sizing Tool (Streamlit interface).
 Two modes:
   Sizing — known orifice area -> predicted real mass flow (SPI / Dyer / HEM two-phase inlet)
   Design — target mass flow   -> required orifice area (SPI + Dyer correction)
+
+Both modes have now a calculator for the fuel mass flow rate, regarding the a,n coefficients provided by the user.
 """
 
 import os, sys, math

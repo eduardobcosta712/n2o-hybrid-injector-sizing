@@ -193,7 +193,7 @@ Henry-Fauske non-equilibrium ceiling is confirmed not to perturb this
 validated result and is available as a diagnostic warning for operating
 points outside it.
 
-What this report does **not** establish:
+What this report does not establish:
 
 1. **Accuracy at 20–50 bar pressure drop.** No experimental data in this
    project covers it. At such conditions the Henry-Fauske ceiling is

@@ -8,7 +8,7 @@
 > 1 percentage point) are consistent with the ~2–5% error the old correlations
 > were known to carry.
 
-This example shows how to use **Sizing mode** to predict the real oxidiser mass flow delivered by an existing injector design, accounting for two-phase effects in the feed path.
+This example shows how to use **Sizing mode** to predict the real oxidiser mass flow delivered by an existing injector design, accounting for two-phase effects in the feed path in line.
 
 ---
 
