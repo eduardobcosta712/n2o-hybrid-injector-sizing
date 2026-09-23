@@ -1,4 +1,3 @@
-"""TEST COPY of the repository's test_injector_spi.py (comments trimmed; unchanged by the audit)."""
 import math
 import pytest
 from injector_spi import spi_mass_flow, orifice_area_from_target_flow, spi_sufficient

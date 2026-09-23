@@ -30,7 +30,7 @@ The SPI model was used for the initial design. A naive SPI calculation with the 
 
 With so little margin, even the first metre of tubing is enough to push the fluid below its saturation pressure.
 
-**Feed line trace (legacy-backend cross-check, illustrative of the mechanism -- not yet regenerated with CoolProp):**
+**Feed line trace:**
 
 | Segment | Type | P after (bar) | Vapour quality x at segment start |
 |---|---|---|---|

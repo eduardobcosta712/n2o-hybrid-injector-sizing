@@ -92,7 +92,7 @@ correctly redirected the search toward a genuine *non-equilibrium*
 critical-flow model -- Henry-Fauske -- which (3) was implemented from a
 primary source once the equations were sourced (initial web search
 attempts returned image-embedded equations, unusable without risking
-fabricated coefficients; the user supplied NASA TM X-67863 directly),
+fabricated coefficients, from NASA TM X-67863 directly),
 validated against Waxman, and found to change already-published example
 numbers meaningfully outside the validated regime -- leading to the
 side-by-side diagnostic design above rather than an automatic cap.
@@ -228,11 +228,8 @@ alongside the existing circular case, not a replacement for it.
 equation of state for N₂O, replacing the closed-form Perry/McGill
 correlations and McGill Table A.1.
 
-**Confirmed with the real package (September 2026).** `pip install CoolProp`
-succeeded on Eduardo's machine (CoolProp 8.0.0) and was independently
-reproduced by Claude in a second sandboxed environment (also 8.0.0,
-network access to PyPI). Both runs agree to the displayed precision. The
-full test suite (262 tests) passes, `python src/model/n2o_properties.py`'s
+**Confirmed with the real package (September 2026).** The full test suite (262 tests) 
+passes, `python src/model/n2o_properties.py`'s
 self-check matches the literature reference values it targets, and
 `validation/waxman_2013_validation.py` has been re-run end to end — see
 `validation/waxman_2013_results.md` for the regenerated report.

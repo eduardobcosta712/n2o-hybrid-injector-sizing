@@ -17,7 +17,7 @@
 #   - m_dot_crit: graph read-off uncertainty ~ +/-5%
 #   - Upstream conditions: time-averaged over test (P1, T1 drift slightly)
 #
-# DOMAIN OF VALIDITY for Eduardo's model:
+# DOMAIN OF VALIDITY for the model:
 #   - QF_upstream = 0 (supercharged) -> liquid at injector inlet ✓
 #   - P_downstream < P_sat(T1) -> two-phase flashing inside orifice ✓
 #   - This is the correct domain for validating the Dyer model as implemented

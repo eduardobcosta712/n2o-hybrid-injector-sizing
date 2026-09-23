@@ -2,7 +2,7 @@
 
 Sources used in the theoretical foundation and computational implementation of this project.
 
-Bibliographic entries were re-checked in the September 2026 audit. Entries the audit **could verify** against an independent source are marked ✔; entries it **could not** verify are collected in "Open bibliographic points" at the end and must not be cited elsewhere without checking.
+Bibliographic entries were re-checked in the September 2026 audit. Entries the audit **could verify** against an independent source are marked ; entries it **could not** verify are collected in "Open bibliographic points" at the end and must not be cited elsewhere without checking.
 
 ---
 
@@ -100,22 +100,22 @@ The range Cd = 0.61–0.82 cited in the tool (sharp-edged to well-rounded orific
 
 ## N₂O critical point and equation of state
 
-T_crit = 36.4 °C (309.52 K), P_crit = 72.45 bar. ✔ (consistent with the NIST WebBook and the CoolProp fluid page for nitrous oxide.)
+T_crit = 36.4 °C (309.52 K), P_crit = 72.45 bar.  (consistent with the NIST WebBook and the CoolProp fluid page for nitrous oxide.)
 
 **NIST WebBook, National Institute of Standards and Technology.** Nitrous oxide (N₂O) thermophysical properties. https://webbook.nist.gov/cgi/cbook.cgi?ID=10024-97-2&Type=SatT&Offset=0
 *(Source of the numerical data in Tables A.3 and A.4 of `n2o_saturation_table.csv`.)*
 
-**Lemmon, E. W., and Span, R. (2006).** Short fundamental equations of state for 20 industrial fluids. *Journal of Chemical and Engineering Data*, 51(3), 785–850. DOI: 10.1021/je050186n. ✔
+**Lemmon, E. W., and Span, R. (2006).** Short fundamental equations of state for 20 industrial fluids. *Journal of Chemical and Engineering Data*, 51(3), 785–850. DOI: 10.1021/je050186n. 
 *(N₂O equation of state used by NIST WebBook and CoolProp. Source of the thermodynamic properties — including entropy — in Table A.4.)*
 
 ---
 
 ## CoolProp and alternatives (added September 2026, Priority 4)
 
-**Bell, I.H., Wronski, J., Quoilin, S., & Lemort, V. (2014).** Pure and pseudo-pure fluid thermophysical property evaluation and the open-source thermophysical property library CoolProp. *Industrial & Engineering Chemistry Research*, 53(6), 2498-2508. DOI: 10.1021/ie4033999. ✔
-*(The open-source library `n2o_properties.py` now uses for all saturation thermodynamics -- P_sat, T_sat, densities, enthalpy, entropy, cp_l -- via its `PropsSI` interface. CoolProp's own N₂O fluid page (coolprop.org/fluid_properties/fluids/NitrousOxide.html) lists only the equation of state (Lemmon & Span 2006, above) and a surface-tension correlation as references -- confirmed by web search -- so CoolProp does NOT supply an N₂O viscosity model; this project's own NIST-table-based `mu_liquid_sat`/`mu_vapor_sat` remain the viscosity source.)*
+**Bell, I.H., Wronski, J., Quoilin, S., & Lemort, V. (2014).** Pure and pseudo-pure fluid thermophysical property evaluation and the open-source thermophysical property library CoolProp. *Industrial & Engineering Chemistry Research*, 53(6), 2498-2508. DOI: 10.1021/ie4033999. 
+*(The open-source library `n2o_properties.py` now uses for all saturation thermodynamics -- P_sat, T_sat, densities, enthalpy, entropy, cp_l -- via its `PropsSI` interface. CoolProp's own N₂O fluid page (coolprop.org/fluid_properties/fluids/NitrousOxide.html) lists only the equation of state (Lemmon & Span 2006, above) and a surface-tension correlation as references so CoolProp does not supply an N₂O viscosity model; this project's own NIST-table-based `mu_liquid_sat`/`mu_vapor_sat` remain the viscosity source.)*
 
-**Possible lead for the unverified NIST viscosity attribution below.** Huber, M.L. (2018). *Models for Viscosity, Thermal Conductivity, and Surface Tension of Selected Pure Fluids as Implemented in REFPROP v10.0.* NIST Interagency/Internal Report NISTIR 8209. DOI: 10.6028/NIST.IR.8209. This report describes *interim* transport-property models NIST built specifically for fluids -- like N₂O -- that lack a published reference-quality viscosity/thermal-conductivity model, which matches the situation this project is trying to source. Not yet confirmed to actually cover N₂O, or to be the correlation behind the WebBook's saturated-viscosity table used in Tables A.3/A.4 of `n2o_saturation_table.csv` -- open the report and the WebBook page together and check before citing it as the source.
+**Possible lead for the unverified NIST viscosity attribution below.** Huber, M.L. (2018). *Models for Viscosity, Thermal Conductivity, and Surface Tension of Selected Pure Fluids as Implemented in REFPROP v10.0.* NIST Interagency/Internal Report NISTIR 8209. DOI: 10.6028/NIST.IR.8209. This report describes *interim* transport-property models NIST built specifically for fluids -- like N₂O -- that lack a published reference-quality viscosity/thermal-conductivity model, which matches the situation this project is trying to source. Not yet confirmed to actually cover N₂O, or to be the correlation behind the WebBook's saturated-viscosity table used in Tables A.3/A.4 of `n2o_saturation_table.csv`.
 
 **If CoolProp cannot be installed** (e.g. a fully offline machine -- `pip install CoolProp` needs network access; it is not otherwise unusual or paid, standard wheels exist for Windows/Linux/macOS and Python 3.8-3.13):
 1. **REFPROP** (NIST) — the reference implementation CoolProp itself is validated against, and CoolProp can be configured to call it directly (`AbstractState("REFPROP", "NitrousOxide")`) if a REFPROP licence and installation are available (a Técnico institutional licence, if one exists, would qualify). Likely the single best option if accessible, but it is commercial software requiring a separate purchase/install, not just a `pip install`.
@@ -136,7 +136,7 @@ These items were flagged, not resolved, by the September 2026 audit. Each needs 
 
 ## Notes
 
-All numerical coefficients in `n2o_properties.py` and `injector_two_phase.py` are sourced from the references above and are documented with their source in the module docstrings. No coefficients were derived independently or taken from unverified sources, consistent with the project's policy of not using "magic numbers" without a traceable origin. The Henry-Fauske non-equilibrium factor N = x_E/0.14 was specifically deferred until a primary/near-primary source with legible equations (not image-embedded) could be obtained, rather than being implemented from partial or half-remembered recollection.
+All numerical coefficients in `n2o_properties.py` and `injector_two_phase.py` are sourced from the references above and are documented with their source in the module docstrings. No coefficients were derived independently or taken from unverified sources, consistent with the project's policy of not using "magic numbers" without a traceable origin. The Henry-Fauske non-equilibrium factor N = x_E/0.14 was specifically deferred until a primary/near-primary source with legible equations could be obtained.
 
 ---
 

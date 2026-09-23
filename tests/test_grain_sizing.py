@@ -150,8 +150,7 @@ class TestSolveInitialPortRadius:
         # class's n=0.6), the exponent (1-2n) is NEGATIVE, so fuel flow
         # DECREASES as radius increases -- meaning a LARGER target flow
         # needs a SMALLER radius, the opposite of naive intuition.
-        # Verified numerically before writing this test (an earlier,
-        # wrong version of this test assumed the n<0.5 direction).
+  
         r1 = solve_initial_port_radius(0.05, self.a, self.n, self.rho,
                                        self.L, self.m_ox_pp)
         r2 = solve_initial_port_radius(0.15, self.a, self.n, self.rho,

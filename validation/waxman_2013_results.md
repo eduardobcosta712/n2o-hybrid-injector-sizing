@@ -211,9 +211,7 @@ What this report does **not** establish:
    genuine consequence of the already-documented Dyer→HEM discontinuity at
    the flashing threshold (`docs/future_work.md`, Priority 2, item 3)
    showing up as non-convergence right at a borderline operating point,
-   not a bug introduced by the CoolProp switch. Example 3 needs a
-   deliberate fix (a different operating point with clearer margin, or a
-   convergence strategy for the borderline case).
+   not a bug introduced by the CoolProp switch.
 3. **A line with significant losses feeding the injector.** The coupled
    solver's benefit is realised there (see Examples 1–2, regenerated with
    CoolProp, both converge cleanly), but it has not been checked against a
