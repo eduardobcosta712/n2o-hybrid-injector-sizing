@@ -39,12 +39,13 @@ jobs:
 
       # Diagnostic step: makes environment differences vs. the local PC
       # visible in the log (Python, CoolProp, numpy versions).
-      - name: Show environment
-        run: |
-          python --version
-          pip list | grep -i -E "coolprop|numpy|pytest|plotly|streamlit|reportlab|matplotlib"
-          python -c "from CoolProp.CoolProp import PropsSI; print('CoolProp OK, Tcrit =', PropsSI('Tcrit','NitrousOxide'))"
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-      - name: Run tests
+      - name: Install dependencies
         run: |
-          pytest tests/ -v --tb=long -ra
+          python -m pip install --upgrade pip
+          pip install CoolProp numpy pytest
+          python -c "import CoolProp; print('CoolProp', CoolProp.__version__)"
