@@ -2,25 +2,9 @@
 ## Injector Model: SPI + Dyer/NHNE + Coupled Solver + Henry-Fauske Diagnostic
 
 **Date:** September 2026 (regenerated with the real CoolProp package installed,
-by running `validation/waxman_2013_validation.py` on Eduardo's machine and
-independently cross-checked by Claude in a second environment with CoolProp
-8.0.0 installed — both runs agree to the displayed precision)
-**Author:** Eduardo Costa, Instituto Superior Técnico
-**Model state:** Full coupled solver, two-phase line model, CoolProp
-(Lemmon & Span 2006) properties, Henry-Fauske choking diagnostic
+by running `validation/waxman_2013_validation.py`)
 
 ---
-
-> **Property-backend status: CONFIRMED.** Earlier versions of this report
-> carried a "Property-backend note" saying the CoolProp integration was
-> written and tested against a table-interpolation stand-in only, because
-> the real package could not be installed in the development sandbox. That
-> is now resolved: `pip install CoolProp` succeeded (CoolProp 8.0.0), the
-> full test suite (262 tests) passes, and every number below was produced
-> by actually running the code with the real Lemmon & Span (2006) equation
-> of state. The figures below **replace** the earlier (Perry/McGill-backed)
-> validation; they moved by 1–2 percentage points, in the direction expected
-> from the ~2–5 % known error of the old correlations (see Section 8).
 
 ## 1. Purpose
 
@@ -197,14 +181,6 @@ comparison and is now, along with (c), the dominant remaining error source.
 sense that it does not perturb the 4 known-good points — it has not itself
 been checked against experimental data in the regime where it binds.
 
-**Independent numerical cross-check.** These figures were reproduced from
-scratch in a second Python environment (CoolProp 8.0.0) by Claude, from the
-same source files, and matched Eduardo's own terminal output to the
-displayed precision (see the September 2026 audit chat). This is a
-software cross-check (same equations, same equation-of-state library, two
-independent installs) — it is not a second, independent experimental
-dataset, so it does not add new evidence beyond what is in (a)–(d) above.
-
 ---
 
 ## 9. Conclusions and Limits of the Evidence
@@ -237,8 +213,7 @@ What this report does **not** establish:
    showing up as non-convergence right at a borderline operating point,
    not a bug introduced by the CoolProp switch. Example 3 needs a
    deliberate fix (a different operating point with clearer margin, or a
-   convergence strategy for the borderline case) before its numbers can be
-   regenerated — left open pending Eduardo's input.
+   convergence strategy for the borderline case).
 3. **A line with significant losses feeding the injector.** The coupled
    solver's benefit is realised there (see Examples 1–2, regenerated with
    CoolProp, both converge cleanly), but it has not been checked against a

@@ -101,7 +101,7 @@ The `henry_fauske_critical_flow()` function provides the physically appropriate 
 
 ---
 
-> **262 automated tests** on Python 3.14 via `pytest tests/ -v` (6 test modules): `test_n2o_properties` 70, `test_feed_line` 32, `test_injector_spi` 13, `test_injector_two_phase` 55, `test_full_system` 45, `test_grain_sizing` 47. Confirmed passing with the real CoolProp package installed (September 2026). Earlier versions of this README referenced a 7th module, `test_audit_regressions.py` (15 tests, 257 total); that file is not present in the current repository — see `docs/future_work.md`, "Audit follow-ups", for this discrepancy, which needs Eduardo to confirm (renamed/merged, or lost in a past commit).
+> **262 automated tests** on Python 3.14 via `pytest tests/ -v` (6 test modules): `test_n2o_properties` 70, `test_feed_line` 32, `test_injector_spi` 13, `test_injector_two_phase` 55, `test_full_system` 45, `test_grain_sizing` 47. Confirmed passing with the real CoolProp package installed (September 2026).
 
 ## Scope and known limitations
 

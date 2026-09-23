@@ -1,7 +1,7 @@
 # Example 1 — Sizing Mode: Predict Mass Flow for a Known Injector Geometry
 
 > **Property-backend status: CONFIRMED (September 2026).** All figures below
-> were regenerated after installing the real CoolProp package (8.0.0) and
+> were regenerated after installing the real CoolProp package and
 > confirming the full test suite (262 tests) and `validation/waxman_2013_validation.py`
 > against it. They replace the earlier, Perry/McGill-backed figures (381.8 g/s,
 > 25.9% over-prediction), which are now superseded — the differences (about

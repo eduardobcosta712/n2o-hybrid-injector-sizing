@@ -1,7 +1,7 @@
 # Example 2 — Design Mode: Find Orifice Area for a Target Mass Flow
 
 > **Property-backend status: CONFIRMED (September 2026).** All figures below
-> were regenerated after installing the real CoolProp package (8.0.0) and
+> were regenerated after installing the real CoolProp package and
 > confirming the full test suite (262 tests) against it. They replace the
 > earlier, Perry/McGill-backed figures (32.7% area increase, 13.638 mm²),
 > which are now superseded.
