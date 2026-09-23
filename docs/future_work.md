@@ -20,14 +20,14 @@ technical importance per the project roadmap document.
   added to n2o_properties.py (September 2026)  
 - Henry-Fauske (1971) non-equilibrium critical flow ceiling (henry_fauske_critical_flow) --
   surfaced as a diagnostic (m_dot_crit_HF, choked flag) alongside dyer_mass_flow(), not applied
-  as an automatic cap; validated against Waxman (does not perturb MAPE = 3.51%) (September 2026);
+  as an automatic cap; validated against Waxman (does not perturb MAPE = 2.76%) (September 2026);
   wired into the interface (warning badge in both modes, comparison-chart line, PDF note)  
 - Fuel grain sizing via the Marxman regression rate correlation (grain_sizing.py) -- initial port
   radius, fuel mass flow, multi-port geometry, first-order conservative burnback estimate; a and n
   are required user inputs, entered as a regression-rate data point converted by
   a_from_reference_rate(); results outside a plausible port-radius range are refused; density
   defaults for paraffin/HTPB/ABS/PMMA (September 2026); integrated in the interface 
-- Definitive validation against Waxman (2013/2014): MAPE = 3.51%, all 4 cases within +/-5%  
+- Definitive validation against Waxman (2013/2014): MAPE = 2.76%, all 4 cases within +/-5%  
 - Sensitivity tornado plot  
 - Dyer formula weight correction (Solomon 2011)  
 - Design-mode sizing logic extracted into a tested function (full_system.design_injector_area),
@@ -54,7 +54,7 @@ isentropic, correct direction: non-equilibrium exceeds equilibrium),
 and above all 4 already-validated Dyer predictions (42.25-49.55 g/s),
 so it does not cut into any validated result. Re-running the full
 Waxman validation through the coupled solver (`evaluate_full_system`)
-confirms **MAPE = 3.51%, unchanged**, with `choked = False` at all 4
+confirms **MAPE = 2.67%, unchanged**, with `choked = False` at all 4
 points -- see `validation/waxman_2013_results.md`.
 
 **Design decision: diagnostic, not automatic override.** At operating

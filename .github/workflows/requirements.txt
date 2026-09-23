@@ -1,0 +1,6 @@
+streamlit
+plotly
+matplotlib
+numpy
+reportlab
+CoolProp

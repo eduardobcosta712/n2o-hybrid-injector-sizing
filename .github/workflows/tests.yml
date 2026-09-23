@@ -9,12 +9,9 @@ on:
 
 jobs:
   test:
-    # A clean Ubuntu machine, created fresh for each run and discarded after.
     runs-on: ubuntu-latest
 
     strategy:
-      # Let both Python versions finish, so a failure on one does not hide
-      # the result of the other.
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.12"]
@@ -40,6 +37,14 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
+      # Diagnostic step: makes environment differences vs. the local PC
+      # visible in the log (Python, CoolProp, numpy versions).
+      - name: Show environment
+        run: |
+          python --version
+          pip list | grep -i -E "coolprop|numpy|pytest|plotly|streamlit|reportlab|matplotlib"
+          python -c "from CoolProp.CoolProp import PropsSI; print('CoolProp OK, Tcrit =', PropsSI('Tcrit','NitrousOxide'))"
+
       - name: Run tests
         run: |
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=long -ra
