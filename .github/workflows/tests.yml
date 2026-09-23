@@ -9,9 +9,12 @@ on:
 
 jobs:
   test:
+    # A clean Ubuntu machine, created fresh for each run and discarded after.
     runs-on: ubuntu-latest
 
     strategy:
+      # Let both Python versions finish, so a failure on one does not hide
+      # the result of the other.
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.12"]
@@ -24,28 +27,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements.txt
 
       # The model needs CoolProp: n2o_properties.py imports it at module
       # level (N2O equation of state, Lemmon & Span 2006), so without it
       # every test module except test_grain_sizing.py fails at import time.
-      # All dependencies live in requirements.txt (single source of truth).
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-
-      # Diagnostic step: makes environment differences vs. the local PC
-      # visible in the log (Python, CoolProp, numpy versions).
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
+      # Only what the tests import is installed here (the Streamlit
+      # interface dependencies are not needed by any test).
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install CoolProp numpy pytest
           python -c "import CoolProp; print('CoolProp', CoolProp.__version__)"
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short
