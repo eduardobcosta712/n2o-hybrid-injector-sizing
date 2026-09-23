@@ -1,8 +1,6 @@
 name: Tests
 
 # When to run: on every push to any branch, and on every pull request.
-# This means every time you push new code to GitHub, the tests run
-# automatically and the badge updates.
 on:
   push:
     branches: ["**"]
@@ -11,39 +9,37 @@ on:
 
 jobs:
   test:
-    # The server OS: Ubuntu latest (a clean Linux machine, spun up fresh
-    # for each run and discarded afterwards).
+    # A clean Ubuntu machine, created fresh for each run and discarded after.
     runs-on: ubuntu-latest
 
-    # Test against two Python versions to catch any version-specific issues.
     strategy:
+      # Let both Python versions finish, so a failure on one does not hide
+      # the result of the other.
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.12"]
 
     steps:
-      # Step 1: Check out the repository onto the server.
-      # Without this, the server has no code to work with.
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up Python at the version specified in the matrix.
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
 
-      # Step 3: Install dependencies.
-      # The model modules (n2o_properties, feed_line, etc.) only use the
-      # Python standard library -- no external packages needed for the tests
-      # themselves. pytest is the only install required.
+      # The model needs CoolProp: n2o_properties.py imports it at module
+      # level (N2O equation of state, Lemmon & Span 2006), so without it
+      # every test module except test_grain_sizing.py fails at import time.
+      # All dependencies live in requirements.txt (single source of truth).
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -r requirements.txt
           pip install pytest
 
-      # Step 4: Run the full test suite.
-      # -v: verbose output (shows each test name).
-      # --tb=short: on failure, show a short traceback (not the full one).
       - name: Run tests
         run: |
           pytest tests/ -v --tb=short
