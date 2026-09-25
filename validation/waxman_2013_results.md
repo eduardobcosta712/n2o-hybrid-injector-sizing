@@ -15,7 +15,7 @@ dataset. This report now uses **two** independent slices of the same paper:
 - **Part A** — the original four Niño & Razavi (2019) tabulated points
   (injector 2 geometry, dP = 8–14 bar). Kept exactly as before.
 - **Part B/C/D** — a much larger dataset digitised directly from the
-  AIAA 2013-3636 PDF by Eduardo: the full injector-3 mass-flow map
+  AIAA 2013-3636 PDF, using WebPlotDigitizer: the full injector-3 mass-flow map
   (Fig. 13, nine supercharge levels, dP up to ~46 bar), the matching
   effective-Cd curves (Fig. 14), the critical-flow-vs-supercharge curve
   (Fig. 16), and the SPI Cd of injectors 1/2/5 (Fig. 15). Digitised CSVs
@@ -194,7 +194,7 @@ critical point, in opposite directions, exactly as the theory in
    would do even better) — but the negative result recorded before
    ("no data point where it binds") is now out of date and should be
    corrected in `docs/future_work.md`, Priority 1 and 2.
-4. **Practical implication for Eduardo's own designs:** trust Dyer most
+4. **Practical implication for own designs:** trust Dyer most
    when the tank has a solid subcooling margin (≥ 10–14 bar) even at
    large ΔP; be more cautious the closer the tank sits to saturation,
    *regardless* of how large the pressure drop across the injector is.
