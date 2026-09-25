@@ -34,96 +34,130 @@ technical importance per the project roadmap document.
   fixing a crash when the flow is single-phase through the orifice   
 - Explicit range errors for Table A.3 (mu_vapor_sat) and for T_sat(P) outside the correlation  
 - CoolProp implementation and validation, confirming, at least for the waxman results, a more accurate result
+- Extended experimental validation against digitised Waxman (2013) Figs. 11-16 (injector 3, nine
+  supercharge levels, dP up to 46 bar) -- see Priority 1 and Priority 2 below for what this changed
 
 ---
 
-## Priority 1 — Non-equilibrium critical flow ceiling for Dyer - RESOLVED (September 2026)
+## Priority 1 — Non-equilibrium critical flow ceiling for Dyer - PARTIALLY RE-OPENED (September 2026)
 
-**Final state.** `henry_fauske_critical_flow()` was added to
-`injector_two_phase.py`, implementing the simplified Henry-Fauske
-(1971) non-equilibrium critical mass flux model for saturated/subcooled
-liquid discharging through a converging nozzle, transcribed from
-Simoneau, Henry, Hendricks & Watterson (1971), NASA TM X-67863, Eqs.
-(2)-(5) -- see `references.md`. It reuses the isentropic quality
-machinery already built for the (now superseded, but retained)
-`hem_critical_flow_isentropic()`.
+**Original resolution (kept for context).** `henry_fauske_critical_flow()` was
+added to `injector_two_phase.py`, implementing the simplified Henry-Fauske
+(1971) non-equilibrium critical mass flux model (Simoneau et al. 1971, Eqs.
+2-5). At the four originally-validated Waxman points it sits above every
+Dyer prediction (`choked = False` in all four cases), so it was surfaced as
+a side-by-side diagnostic (`m_dot_crit_HF`, `choked` flag) rather than an
+automatic cap -- see the original reasoning below, which still explains
+*why* an automatic cap is risky in general.
 
-**Validation.** At Waxman conditions: `m_dot_crit` = **50.67 g/s** --
-above the equilibrium HEM ceiling (41.05/41.64 g/s isenthalpic/
-isentropic, correct direction: non-equilibrium exceeds equilibrium),
-and above all 4 already-validated Dyer predictions (42.25-49.55 g/s),
-so it does not cut into any validated result. Re-running the full
-Waxman validation through the coupled solver (`evaluate_full_system`)
-confirms **MAPE = 2.67%, unchanged**, with `choked = False` at all 4
-points -- see `validation/waxman_2013_results.md`.
+**New finding (September 2026, extended validation).** Eduardo digitised
+Waxman (2013) Figs. 11-16 directly from the source PDF -- the full
+injector-3 mass-flow map across nine supercharge levels, dP up to 46 bar
+(104 usable points, `validation/digitized/`, see
+`validation/waxman_2013_results.md` Part B). Against this much larger
+dataset:
 
-**Design decision: diagnostic, not automatic override.** At operating
-points further from the Waxman geometry the Henry-Fauske ceiling *does*
-bind: 17% below the Dyer prediction in `examples/example_01_sizing.md`
-(315 vs 382 g/s), 10% below the target in `example_02_design.md`
-(452 vs 500 g/s), and it is also exceeded by the corrected design of
-`example_03_flashing.md`. There is no experimental data point in this
-project's validation set where the ceiling actually changes the answer,
-so applying it as a silent `min(m_dot_Dyer, m_dot_crit_HF)` override
-would risk quietly changing published results with no empirical
-confirmation in the regime where it matters. Instead, `dyer_mass_flow()`
-returns **both** values side by side -- `m_dot_Dyer` (unchanged) and
-`m_dot_crit_HF` plus a `choked` boolean flag -- and the interface shows
-a warning when `choked = True`.
+- The Henry-Fauske ceiling is exceeded (`choked = True`) at **31 of 64**
+  two-phase points -- previously it had *never* bound at any validated
+  point, which is what motivated keeping it diagnostic-only.
+- At **30 of those 31** points, capping the Dyer prediction at the ceiling
+  (`min(m_dot_Dyer, m_dot_crit_HF)`) moves the prediction *closer* to the
+  experimental value, not farther.
+- At 28 of the 31, the true experimental value sits *below* the ceiling
+  too, meaning even a tighter non-equilibrium correction than
+  Henry-Fauske would help further.
+- The pattern that controls where this matters is **tank supercharge
+  (subcooling margin)**, not injector pressure drop: MAPE is ~2% for
+  Dyer alone when supercharge >= 200 psi (~1.38 MPa, ~14 bar), but climbs
+  to ~12% (worst single point: 33%) below that, and this is exactly the
+  regime where the ceiling starts to bind.
 
-**What is genuinely still open.**
-1. If/when experimental data becomes available at conditions where the
-   ceiling binds (roughly 20-50 bar pressure drop), validate it there
-   and reconsider whether to promote it to an automatic cap.
-2. `hem_critical_flow_isentropic()` and the entropy functions
-   (`s_liquid_sat`, `s_vapor_sat`, `s_fg`) remain in the codebase as a
-   correct, useful standalone diagnostic (the equilibrium ceiling), even
-   though they turned out not to be the fix for Dyer's extreme-ΔP
-   behaviour -- Henry-Fauske was.
-3. `apply_choking_limit()` (the retracted equilibrium-cap plan) is
-   deprecated and unused; delete it once no external script depends on it.
+**Why this is not yet promoted to an automatic cap.** The cap does not
+close the whole gap (MAPE with capping is 4.9% vs 6.9% uncapped, still
+worse than the high-supercharge regime's own 2%), and at low supercharge
+even the capped prediction still overshoots most points. This looks like
+a genuine partial correction, not the fix. The four originally-validated
+points (Part A) are all comfortably at high supercharge and still show
+`choked = False`, so nothing published earlier is disturbed by this
+finding.
 
-**History (kept for context).** This priority went through three
-framings before landing here: (1) originally scoped as "build the
-isentropic HEM scan and cap Dyer with it" -- built, but (2) shown
-numerically to be wrong (would break the validated MAPE, since Dyer
-legitimately exceeds the *equilibrium* ceiling by design), which
-correctly redirected the search toward a genuine *non-equilibrium*
-critical-flow model -- Henry-Fauske -- which (3) was implemented from a
-primary source once the equations were sourced (initial web search
-attempts returned image-embedded equations, unusable without risking
-fabricated coefficients, from NASA TM X-67863 directly),
-validated against Waxman, and found to change already-published example
-numbers meaningfully outside the validated regime -- leading to the
-side-by-side diagnostic design above rather than an automatic cap.
+**What is now genuinely still open (revised).**
+1. Investigate a supercharge-dependent (rather than binary choked/not)
+   correction -- the data suggests the *size* of the needed correction
+   scales with how close the tank sits to saturation, not just whether
+   the ceiling is crossed.
+2. Re-run this same digitisation exercise for injector geometries other
+   than injector 3 (only a 4-point check exists for injector 2, the
+   square-edge geometry actually used in Part A) before generalising.
+3. If/when a supercharge-aware correction is validated, reconsider
+   promoting it from diagnostic to (still supercharge-gated, not
+   unconditional) automatic cap.
+4. `apply_choking_limit()` (the retracted equilibrium-cap plan, distinct
+   from Henry-Fauske) remains deprecated and unused; delete it once no
+   external script depends on it.
 
-## Priority 2 — Full-system experimental validation
+**Original design rationale (kept for context -- still valid in general,
+even though the "never binds" premise it was partly based on is now
+outdated).** At operating points further from the Waxman geometry the
+Henry-Fauske ceiling *does* bind: 17% below the Dyer prediction in
+`examples/example_01_sizing.md`, 10% below the target in
+`example_02_design.md`. Silently overriding `m_dot_Dyer` with a value
+whose net effect on accuracy was, until now, never checked against data
+would have been the wrong precedent regardless of how the individual
+numbers happened to compare -- the extended validation above is the
+"if/when experimental data becomes available" moment this section
+originally deferred to, and it says "helps, but not enough to fully
+trust yet", not "don't bother".
 
-**Current state.** The Dyer injector model is validated against Waxman
-(2013/2014) with mean error −0.3% at pressure drops of 8-14 bar, using
-a line with negligible losses. Three parts of the model have **no
-experimental validation at all**:
+**History.** This priority went through three framings before the
+September 2026 update: (1) originally scoped as "build the isentropic HEM
+scan and cap Dyer with it" -- shown numerically to be wrong (Dyer
+legitimately exceeds the *equilibrium* ceiling by design); (2) redirected
+to the genuine *non-equilibrium* Henry-Fauske model, implemented from a
+primary source and validated as a diagnostic against the 4-point Waxman
+set (`choked = False` everywhere, so harmless but also untested where it
+would matter); (3) the extended digitised dataset above is the first time
+the ceiling has actually been checked against data at conditions where it
+fires, and shows real (if partial) predictive value.
 
-1. **Pressure drops of 20-50 bar** (the range of typical motor designs).
-   Every worked example lies here, and the Henry-Fauske diagnostic
-   flags all of them.
-2. **The coupled feed-line / injector solver** with a line that matters
-   (the Waxman line is short and wide).
-3. **The two-phase inlet path** (flashing in the line): the two-phase
+## Priority 2 — Full-system experimental validation - PARTIALLY RESOLVED (September 2026)
+
+**What changed.** The main gap this priority flagged -- "pressure drops of
+20-50 bar are outside the validated band" -- is now partially closed.
+The digitised Waxman Fig. 13 dataset (Priority 1, above) covers injector-3
+pressure drops from well below 1 bar up to 46 bar, at nine supercharge
+levels. Counter-intuitively, the **largest** pressure drops (30-46 bar,
+the range every worked example in `examples/` actually uses) give the
+**best** Dyer agreement (MAPE 2.5%) once the tank has a reasonable
+supercharge -- the 14-30 bar band at low supercharge is where the model
+struggles most (see `validation/waxman_2013_results.md`, Part B3/B4). The
+controlling variable is tank subcooling margin, not pressure drop, which
+was not previously known.
+
+**What is still genuinely unvalidated (unchanged from before).**
+1. **The coupled feed-line / injector solver** with a line that matters
+   (both the original and the new Waxman data use a short, wide upstream
+   line with negligible losses -- the coupling itself is still untested
+   against a measured tank-to-chamber flow with real line losses).
+2. **The two-phase inlet path** (flashing in the line): the two-phase
    line model and the HEM two-phase-inlet injector model are implemented
-   and unit tested only. In addition, the switch from Dyer to HEM at the
-   flashing threshold is discontinuous (HEM at x_inlet -> 0 gives roughly
+   and unit tested only. The switch from Dyer to HEM at the flashing
+   threshold remains discontinuous (HEM at x_inlet -> 0 gives roughly
    half of the Dyer flow at the same conditions -- see
    `examples/example_03_flashing.md`); a smooth transition, or at least
    a quantified uncertainty band around the threshold, is worth
-   designing once data exist.
+   designing once data exist. The digitised Waxman data does not cover
+   this regime (all points there are liquid at the injector inlet).
+3. **Geometries other than injector 3.** The extended dataset used only
+   the rounded-inlet 1.5 mm injector (Waxman's "injector 3"); the
+   square-edge injector 2 used in Part A (the original 4-point
+   validation) still has only those 4 points at one supercharge level.
 
-**What is needed.** Experimental data covering the full path
-(tank → line → injector) with known geometry, discharge coefficient,
-and measured mass flow, ideally including runs at 20-50 bar drop and
-runs with and without flashing in the line. A team's own cold-flow
-(water or N₂O) data would already help calibrate Cd and check the
-line-loss model.
+**What is needed next.** A team's own cold-flow (water or N2O) data,
+specifically spanning a range of tank supercharge at a fixed, large
+pressure drop, would directly test the Priority 1 finding above (that
+supercharge, not dP, controls Dyer's error) on a different injector and
+rig than Waxman's.
 
 ---
 
@@ -309,4 +343,3 @@ predict how mass flow, tank pressure, and temperature evolve over the burn.
 
 **Why deferred.** Requires a reliable steady-state coupled solver (now
 implemented) as the inner loop, plus a tank thermodynamic model (Priority 7).
-

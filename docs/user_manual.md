@@ -26,7 +26,9 @@ The tool opens automatically in your browser at `http://localhost:8501`. It runs
 
 ## A note on the N₂O properties (CoolProp)
 
-As of September 2026 the tool's saturation properties (pressure, densities, enthalpy, entropy) come from **CoolProp**, an accurate, open-source equation-of-state library, replacing an earlier set of approximate correlations. `pip install CoolProp` should work on a normal machine with internet access (pre-built wheels exist for Windows, macOS and Linux). If it fails on your machine, see `docs/references.md`, "CoolProp and alternatives", for what to try instead. Every number quoted elsewhere in this manual, in `validation/`, and in `examples/` predates this change and has not yet been re-confirmed with CoolProp installed — treat them as provisional (see `docs/future_work.md`, Priority 4).
+As of September 2026 the tool's saturation properties (pressure, densities, enthalpy, entropy) come from **CoolProp**, an accurate, open-source equation-of-state library (Lemmon & Span 2006), replacing an earlier set of approximate correlations. `pip install CoolProp` should work on a normal machine with internet access (pre-built wheels exist for Windows, macOS and Linux). If it fails on your machine, see `docs/references.md`, "CoolProp and alternatives", for what to try instead.
+
+The change has been confirmed with the real package installed: the validation report and Examples 1 and 2 were regenerated with it. Example 3's two headline figures are also CoolProp results, but its supporting detail (segment trace, kappa, exit quality, choking ceiling) is still a legacy-backend cross-check and is marked as such in that file (see `docs/future_work.md`, "Audit follow-ups").
 
 ---
 
@@ -68,13 +70,13 @@ The **Load preset configuration** dropdown provides four generic starting-point 
 | High-pressure research motor | Larger motors, P_chamber ≈ 30 bar |
 | Near-critical conditions (risk case) | Demonstrates the sensitivity of N₂O near its critical point |
 
-Loading a preset fills all sidebar fields and the feed line segment list automatically. Some presets deliberately start with a tank at or below saturation (for example the compact lab motor: 45 bar at 15 °C, where P_sat = 45.9 bar) to show the flashing behaviour.
+Loading a preset fills all sidebar fields and the feed line segment list automatically. Some presets deliberately start with a tank at or below saturation (for example the compact lab motor: 45 bar at 15 °C, where P_sat ≈ 45.0 bar) to show the flashing behaviour.
 
 ### Tank conditions
 
 **Tank temperature (deg C)** — N₂O temperature at the tank outlet (−10 to 35 °C). The tool displays a live badge showing the current subcooling margin (P_tank − P_sat(T_tank)). A green badge means the fluid is safely subcooled; a red badge means the tank is already at or below saturation, and flashing will occur regardless of feed line geometry.
 
-> Practical note: N₂O's saturation pressure at 20 °C is approximately 51.4 bar (correlation used by the tool). A tank at 60 bar and 20 °C has about 8.6 bar of subcooling margin. Between 20 °C and 35 °C the saturation pressure rises to about 70 bar, so keeping a positive margin at warm temperatures requires a supercharged tank.
+> Practical note: N₂O's saturation pressure at 20 °C is approximately 50.5 bar (CoolProp). A tank at 60 bar and 20 °C has about 9.5 bar of subcooling margin. Between 20 °C and 35 °C the saturation pressure rises steeply (to roughly 70 bar near the top of that range; the tool shows the exact value in its subcooling badge), so keeping a positive margin at warm temperatures requires a supercharged tank.
 
 **Tank pressure (bar)** — 5 to 71 bar; must exceed P_sat(T_tank) for the fluid to remain liquid at the outlet.
 
@@ -175,7 +177,7 @@ When Dyer is used, a caption shows kappa (non-equilibrium parameter), exit vapou
 
 Directly beneath that caption, an amber **"Non-equilibrium choking ceiling exceeded"** badge and warning box appear whenever the Dyer prediction exceeds the Henry-Fauske (1971) non-equilibrium choking ceiling for the current tank/chamber conditions. This is a **diagnostic warning only** — it does not change the displayed "Real mass flow" figure. The ceiling is theoretically sound (a primary-source non-equilibrium critical-flow model) but has only been confirmed not to interfere with the tool's validated reference case (Waxman 2013/2014, 8–14 bar pressure drop); outside that band it is an unconfirmed, conservative alternative estimate, not a certainty. If you see this warning, treat it as a prompt to think carefully about the operating point (and, ideally, to seek experimental confirmation) rather than as a correction to apply by hand. See `docs/future_work.md`, Priority 1, for the full reasoning.
 
-If the ceiling could not be computed at all (tank temperature above ≈307 K, near the critical point, where the required entropy data is unavailable), a grey caption states this instead of the warning.
+If the ceiling could not be computed at all, a grey caption states the reason instead of the warning. (With the CoolProp backend this no longer happens for tank temperatures up to the critical point; the former ≈307 K limit came from the older entropy tables.)
 
 ### Diagrams
 
@@ -268,6 +270,8 @@ What else happens depends on the mode:
 
 - **Sizing mode** — the injector is evaluated with the **HEM two-phase-inlet** model, and the result cards show the inlet and exit vapour quality and the resulting mass flow (labelled "HEM two-phase inlet"). This estimate is not validated against experimental data, and the model switches abruptly between Dyer (no flashing) and HEM (flashing), so the size of the drop at the flashing threshold is uncertain. A naive SPI reference value is shown for comparison.
 - **Design mode** — area sizing is **not** offered; fix the line first.
+
+**Operating points right at the flashing threshold.** Because of that abrupt switch, an operating point whose line losses put it almost exactly at saturation can make the coupled solver alternate between the two models instead of settling. The tool then reports a "Model error: Coupled solver did not converge" message rather than a number. This is a limitation of the model, not of your inputs: change the tank pressure or the line slightly (a fraction of a bar is usually enough) to move away from the threshold, and treat any result close to it as uncertain. See `docs/future_work.md`, Priority 2.
 
 The most common fix is to increase tank pressure so that P_tank − P_sat(T_tank) > 5 bar before line losses, providing a safety margin. See `examples/example_03_flashing.md`.
 

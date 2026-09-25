@@ -138,9 +138,10 @@ def plot_PT_diagram(T_tank, P_tank, P_injector_inlet, P_chamber):
 
     fig = go.Figure()
 
-    # Liquid region fill
+    # Liquid region fill: a constant line at the top of the plot (80 bar),
+    # so that the next trace fills the band between it and the saturation curve.
     fig.add_trace(go.Scatter(
-        x=T_curve_C, y=[p + (80 - p) for p in P_curve_bar],
+        x=T_curve_C, y=[80] * len(T_curve_C),
         fill=None, line=dict(color="rgba(0,0,0,0)"),
         showlegend=False, hoverinfo="skip"
     ))
@@ -505,7 +506,7 @@ def plot_sensitivity(T_tank, P_tank, P_chamber, model_segments, Cd, A_injector,
     m_vals, valid, flash_temps = [], [], []
 
     for T in T_range:
-        if T < 182.33 + 273.15 - 273.15 or T > 309.52:
+        if T < T_MIN or T > T_MAX:
             continue
         try:
             r = evaluate_full_system(0.3, T, P_tank, model_segments,
@@ -518,9 +519,6 @@ def plot_sensitivity(T_tank, P_tank, P_chamber, model_segments, Cd, A_injector,
             valid.append(T - 273.15)
         except Exception:
             pass
-
-    T_vals_C = [T - 273.15 for T in T_range
-                if 182.33 <= T <= 309.52]
 
     fig = go.Figure()
 
@@ -656,7 +654,7 @@ def plot_tornado(T_tank, P_tank, P_chamber, model_segments, Cd, A_injector,
         return [{**s, 'L': s['L'] * f} if s.get('type') == 'pipe' else dict(s)
                 for s in segs]
 
-    # (label, m_low, m_high) — note: temp bug fix: use +/-5 K not +/-5%
+    # (label, m_low, m_high)
     candidates = [
         ("Tank temperature (±5 K)",
          run(T_tank - 5.0, P_tank, Cd, A_injector, model_segments),

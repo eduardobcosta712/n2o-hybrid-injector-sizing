@@ -18,21 +18,21 @@ $$P_{sat} = f(T) \quad \text{only}$$
 
 Raising the container's temperature increases the thermal energy of the liquid's molecules, makes evaporation easier, and shifts the new equilibrium to a higher pressure. There is thus a unique curve $P_{sat}(T)$ for each substance — the **saturation curve**, or **liquid-vapor coexistence curve**. For N₂O, as an order-of-magnitude reference:
 
-| Temperature | $P_{sat}$ (literature) | $P_{sat}$ (correlation used in this project) |
+| Temperature | $P_{sat}$ used by this project (CoolProp) | Independent reference |
 |---|---|---|
-| 0 °C | ≈ 31.3 bar | 32.1 bar (+2.6 %) |
-| 20 °C | ≈ 50.9 bar | 51.4 bar (+0.9 %) |
-| 36.4 °C (critical point) | ≈ 72.45 bar | 72.7 bar (+0.4 %) |
+| 15 °C | 45.04 bar | — |
+| 20 °C | 50.53 bar | ≈ 50.9 bar (literature value quoted) |
+| 36.4 °C (critical point) | 72.45 bar | 72.45 bar (Lemmon & Span 2006) |
+
+The project's saturation properties come from the Lemmon & Span (2006) equation of state, evaluated by the CoolProp library (see `04_implementation.md`, Section 4.1); the values above are those the tool and the worked examples use. The module's self-check (`python src/model/n2o_properties.py`) also compares the model with the literature value at 0 °C (≈ 31.3 bar) and at 20 °C. Before September 2026 the project used closed-form correlations that differed from this equation of state by up to about 4.8 % in $P_{sat}$ (largest at low temperature); numbers quoted from that period, such as 51.4 bar at 20 °C, are obsolete.
 
 Note that N₂O's saturation pressure is high even at room temperature — this is why N₂O is *self-pressurizing* in rocket tanks: no external pressurant gas is needed, because N₂O itself generates enough pressure as long as it coexists in liquid and vapor phase inside the tank.
-
-The project's own numbers (examples, tool output) use the correlation column, which is why they quote $P_{sat}(20\,^\circ\text{C}) = 51.4$ bar rather than 50.9 bar.
 
 ## 1.3 The central practical consequence
 
 > **If the temperature of a liquid in equilibrium with its vapor is known, its pressure is automatically determined. The two quantities cannot be chosen independently under these conditions.**
 
-This has a direct implication for a rocket feed system: if the liquid N₂O in the tank is at, say, 20 °C, the tank pressure **must** be ≈51 bar (assuming liquid-vapor coexistence, the normal case for a self-pressurized tank). It is not a possible equilibrium state to have liquid N₂O at 20 °C with the tank at 30 bar. (A tank can be held *above* $P_{sat}$ by adding a non-condensable pressurant such as helium — a "supercharge" — which is exactly what creates a subcooling margin, Section 1.4.)
+This has a direct implication for a rocket feed system: if the liquid N₂O in the tank is at, say, 20 °C, the tank pressure **must** be ≈50 bar (assuming liquid-vapor coexistence, the normal case for a self-pressurized tank). It is not a possible equilibrium state to have liquid N₂O at 20 °C with the tank at 30 bar. (A tank can be held *above* $P_{sat}$ by adding a non-condensable pressurant such as helium — a "supercharge" — which is exactly what creates a subcooling margin, Section 1.4.)
 
 ## 1.4 Subcooled liquid vs. saturated liquid
 

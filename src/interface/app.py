@@ -199,7 +199,7 @@ def render_sidebar():
                                  value=float(P_default), step=0.5)
         st.markdown('<div class="param-help">Must exceed P_sat(T_tank) for '
                     'liquid at the outlet. '
-                    'P_sat(20 deg C) = 51.4 bar.</div>', unsafe_allow_html=True)
+                    'P_sat(20 deg C) = 50.5 bar.</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-label">Injector</div>',
                     unsafe_allow_html=True)

@@ -4,7 +4,7 @@
 
 A physics-based tool and technical reference for predicting premature vaporisation (*flashing*) of N₂O in the feed systems of paraffin/N₂O hybrid rocket motors, and for sizing injector orifices that account for two-phase flow effects.
 
-> **Disclaimer:** This tool is provided for predictive and educational purposes only. It is an academic project under active development. Its injector model has been validated against experiment only for injector pressure drops of 8–14 bar (see "Validation" below); results at other conditions are unvalidated model estimates. Results must not be used as the sole basis for engineering decisions or hardware fabrication. The author accepts no responsibility for any damages arising from the use of this tool.
+> **Disclaimer:** This tool is provided for predictive and educational purposes only. It is an academic project under active development. Its injector model has been validated against experiment for injector pressure drops of 8–46 bar (see "Validation" below, updated September 2026); results outside that band, and results in the low-subcooling-margin regime identified below, are less reliable. Results must not be used as the sole basis for engineering decisions or hardware fabrication. The author accepts no responsibility for any damages arising from the use of this tool.
 
 ---
 
@@ -78,7 +78,7 @@ Three injector regimes are handled automatically:
 
 The Dyer model is a weighted combination of the SPI limit ("no time to vaporise") and the HEM limit ("full thermodynamic equilibrium"), with the weight determined by the non-equilibrium parameter κ = √[(P_up − P_down)/(P_sat − P_down)]. The formula uses the corrected weight convention of Solomon (2011) and Waxman (2013, Eq. 9) — large κ weights toward SPI (less equilibrium), small κ toward HEM.
 
-**Non-equilibrium choking diagnostic.** Every Dyer evaluation is also checked against a Henry-Fauske (1971) non-equilibrium critical-flow ceiling — the physically correct bound for a non-equilibrium prediction, as opposed to the *equilibrium* HEM ceiling (which Dyer legitimately and correctly exceeds by design). This ceiling is surfaced as a warning (`choked` flag, both in the interface and the PDF export) when exceeded, rather than silently applied to the reported mass flow — see "Validation" and "Scope and known limitations" below for why.
+**Non-equilibrium choking diagnostic.** Every Dyer evaluation is also checked against a Henry-Fauske (1971) non-equilibrium critical-flow ceiling — the physically correct bound for a non-equilibrium prediction, as opposed to the *equilibrium* HEM ceiling (which Dyer legitimately and correctly exceeds by design). This ceiling is surfaced as a warning (`choked` flag, both in the interface and the PDF export) when exceeded, rather than silently applied to the reported mass flow. As of the September 2026 extended validation (see "Validation" below), this ceiling now demonstrably improves the prediction at low tank-subcooling operating points when applied as a cap — it is still not automatically applied, but this is no longer a purely theoretical diagnostic; see `docs/future_work.md`, Priority 1.
 
 ---
 
@@ -88,16 +88,27 @@ Saturation thermodynamics (P_sat, T_sat, densities, enthalpy, entropy) are compu
 
 ## Validation
 
-The full coupled model has been validated against experimental data from Waxman (2013/2014) for supercharged N₂O injectors — the domain for which the Dyer model is intended (subcooled liquid at the injector inlet, QF_upstream = 0). Four operating points at pressure drops of **8–14 bar** give a **MAPE of 2.76%** (mean error −0.3%), with all points within ±5%. This compares favourably with the Niño & Razavi (2019) reference result of 3.91% for the same dataset. The experimental values are read off a graph (±3% read-off uncertainty). Full report in [`validation/waxman_2013_results.md`](validation/waxman_2013_results.md); the script `validation/waxman_2013_validation.py` reproduces it.
+**Updated September 2026.** In addition to the original four Niño & Razavi (2019) operating points, the model has now been validated against a much larger dataset digitised directly from the source paper (Waxman et al., 2013, AIAA 2013-3636, Figs. 11–16): the full injector-3 mass-flow map across nine supercharge levels, at injector pressure drops from below 1 bar up to **46 bar**. Full detail, tables and a comparison figure in [`validation/waxman_2013_results.md`](validation/waxman_2013_results.md); the digitised data lives in `validation/digitized/` and the script `validation/waxman_2013_validation.py` reproduces every number.
+
+**Original four points (unchanged):** pressure drops of 8–14 bar give a MAPE of 2.76% (mean error −0.3%), with all points within ±5%.
+
+**Extended dataset (new):** 104 usable digitised points across dP = 0.3–46 bar. The single-phase (SPI) branch reproduces the calibration data essentially exactly (MAPE 1.25%, used only to fit one pooled discharge coefficient). The two-phase (Dyer) branch, evaluated at 64 points that did **not** enter the calibration, gives an overall MAPE of 6.85% — but this average hides a clear pattern: **the controlling variable is the tank's subcooling margin (supercharge above P_sat), not the injector pressure drop itself.**
+
+| Tank supercharge | Dyer MAPE |
+|---|---|
+| ≥ 200 psi (≥ 1.38 MPa, ≈14 bar) | **1.96%** |
+| < 200 psi | **11.74%** (up to 33% at the single worst point) |
+
+Counter-intuitively, the **largest** pressure drops tested (30–46 bar, the range every worked example in `examples/` uses) give the **best** agreement (MAPE 2.5%) once the tank has a reasonable subcooling margin; the 14–30 bar band with low supercharge is where Dyer over-predicts most. Dyer's error in this regime is one-directional (always over-predicts, never under). The model's own critical-flow criterion (Waxman's 5%-deviation definition) reproduces the independently-measured critical mass flow curve (Fig. 16) to within 2.6% MAPE.
+
+**Henry-Fauske ceiling — no longer purely theoretical.** In the extended dataset the ceiling is exceeded (`choked = True`) at 31 of the 64 two-phase points (previously it had never bound at any validated point); applying it as a cap improves the prediction at 30 of those 31. This is genuine new evidence, though not yet strong enough to make the cap automatic — see `docs/future_work.md`, Priority 1, for the reasoning.
 
 The `hem_critical_flow()` and `hem_critical_flow_isentropic()` functions provide the *equilibrium* two-phase choking ceiling as standalone diagnostics (Waxman 2013 Eq. 5, isenthalpic and isentropic paths respectively — they agree to within 1.3%). At Waxman conditions they give ≈42–43 g/s; the Dyer predictions (43–50 g/s) sit above this, consistent with the non-equilibrium correction accounting for partial vaporisation inside the orifice.
 
-The `henry_fauske_critical_flow()` function provides the physically appropriate **non-equilibrium** choking ceiling (Henry & Fauske, 1971). At Waxman conditions it gives 52.15 g/s — above all 4 validated Dyer predictions, so applying it as a diagnostic does not change the validated MAPE = 2.76% result. At other operating points further from the Waxman geometry this ceiling *does* bind (17% below the Dyer prediction in Example 1, see `examples/`); there is currently no experimental confirmation in this project's validation set at conditions where it actually changes the answer, which is why it is surfaced as a warning rather than applied automatically. See `docs/future_work.md`, Priority 1, for the full reasoning.
-
-**What is *not* validated.** The Waxman dataset is the only open-access experimental dataset found in the correct domain. Consequently:
-- **Pressure drops of 20–50 bar**, typical of motor designs and used in every worked example, are **outside the validated band**; there the model gives estimates with unquantified error (and the Henry-Fauske diagnostic flags them).
-- The **two-phase feed-line model** and the **HEM two-phase-inlet injector path** (flashing in the line) are implemented and unit tested but have not been validated against any published data. Moreover, the switch from Dyer to HEM at the flashing threshold is discontinuous (HEM at vanishing vapour quality predicts roughly half the Dyer flow) — and, confirmed during the September 2026 CoolProp validation run, this discontinuity can also make the coupled fixed-point solver fail to converge for operating points that sit close enough to the flashing threshold, oscillating between the two branches instead of settling (see `docs/future_work.md`, Priority 2 and the "Audit follow-ups" section).
+**What is *not* validated.**
+- The **two-phase feed-line model** and the **HEM two-phase-inlet injector path** (flashing in the line) are implemented and unit tested but have not been validated against any published data. The switch from Dyer to HEM at the flashing threshold is discontinuous (HEM at vanishing vapour quality predicts roughly half the Dyer flow), and this discontinuity can also make the coupled fixed-point solver fail to converge for operating points that sit close enough to the flashing threshold.
 - The **coupled solver** has not been checked against a measured tank-to-chamber flow with a significant line.
+- The extended dataset (Part B/C/D) covers only injector 3 (1.5 mm, rounded inlet) at more than one supercharge; the square-edge injector-2 geometry of Part A still has only 4 points.
 
 ---
 
@@ -109,7 +120,7 @@ The `henry_fauske_critical_flow()` function provides the physically appropriate 
 - Feed line assumed **adiabatic** and **steady-state** — no transient start-up effects.
 - When flashing is detected in the feed line, the model estimates the vapour quality at the injector inlet via isenthalpic flash and applies HEM with a two-phase inlet enthalpy. The Dyer blend is not used in this regime: its SPI branch represents delayed nucleation in a *liquid*, and its inlet state is undefined once vapour is present (κ itself is not the problem — it equals 1 at a saturated inlet). The switch is discontinuous and the path is unvalidated (see above) — and, as of the September 2026 CoolProp confirmation, can cause the coupled solver to fail to converge right at the threshold.
 - Discharge coefficients use **literature reference values**, not team-calibrated data.
-- The Dyer model is validated for pressure drops of 8–14 bar only (Waxman). A **non-equilibrium choking ceiling** (Henry-Fauske, 1971) is checked automatically and surfaced as a warning (not an automatic cap) when the Dyer prediction exceeds it — see "Validation" above.
+- The Dyer model is now validated for pressure drops of 8–46 bar, but its accuracy depends strongly on the tank's subcooling margin (supercharge): reliable (MAPE ≈2%) above roughly 14 bar of supercharge, degrading to MAPE up to ≈18% below that, regardless of the injector pressure drop itself — see "Validation" above. A **non-equilibrium choking ceiling** (Henry-Fauske, 1971) is checked automatically and surfaced as a warning (not an automatic cap) when the Dyer prediction exceeds it; the extended dataset shows this cap improves the prediction in most cases where it fires, but not all, so it remains a diagnostic.
 - N₂O thermophysical properties: saturation thermodynamics from CoolProp (Lemmon & Span 2006 equation of state, confirmed installed and passing); viscosity (μ_v, μ_l) and the legacy Perry/McGill Table A.1 (kept only as test cross-checks) still come from `n2o_saturation_table.csv`. The literature attribution of the NIST *viscosity* correlations is unverified (see `docs/references.md`, "Open bibliographic points").
 - Fuel grain sizing sizes the **initial** ($t=0$) circular-port geometry only; the regression-rate data point is a required user input (see `docs/03b_grain_sizing.md`).
 
@@ -145,7 +156,15 @@ n2o-hybrid-injector-sizing/
 ├── validation/
 │   ├── waxman_2013_results.md
 │   ├── waxman_2013_validation.py
-│   └── waxman_2013_experimental_data.csv
+│   ├── waxman_2013_fig13_comparison.png
+│   ├── waxman_2013_experimental_data.csv
+│   └── digitized/
+│       ├── waxman_fig11_mdot_vs_dP_single_test.csv
+│       ├── waxman_fig12_cd_vs_dP_single_test.csv
+│       ├── waxman_fig13_mdot_vs_dP_by_supercharge.csv
+│       ├── waxman_fig14_cd_vs_dP_by_supercharge.csv
+│       ├── waxman_fig15_cd_vs_supercharge_injectors_1_2_5.csv
+│       └── waxman_fig16_critical_mdot_vs_supercharge.csv
 ├── tests/
 │   ├── conftest.py
 │   ├── test_n2o_properties.py
