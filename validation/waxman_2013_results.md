@@ -83,6 +83,10 @@ digitised Fig. 15 mean for injector **2**, the actual geometry of these
 points, vs the 0.65 assumed by the original report) gives MAPE = 4.41 %
 — the Cd choice matters more than anything else at this scale.
 
+*(This 4.41 % figure is revisited in Section 10 below, alongside the
+gated κ correction — the two effects interact, and neither is fully
+separable from the other on this 4-point subset.)*
+
 ---
 
 ## 5. Results — Part B: full injector-3 map (Fig. 13), dP up to 46 bar
@@ -137,6 +141,10 @@ Aggregated: **supercharge ≥ 200 psi (≥1.38 MPa) → MAPE 1.96 %**;
 **supercharge < 200 psi → MAPE 11.74 %**. The controlling variable is not
 the pressure drop itself but how subcooled the tank is: Dyer degrades
 sharply at low supercharge, regardless of dP.
+
+*(Section 10 below investigates a direct correction targeting exactly
+this trend — a gated correction to κ itself, rather than only a
+post-hoc ceiling.)*
 
 **B5 — sensitivity check on the two-phase result:**
 
@@ -198,6 +206,13 @@ critical point, in opposite directions, exactly as the theory in
    when the tank has a solid subcooling margin (≥ 10–14 bar) even at
    large ΔP; be more cautious the closer the tank sits to saturation,
    *regardless* of how large the pressure drop across the injector is.
+5. **A second, more targeted correction candidate now exists** (Section
+   10): rather than only capping Dyer's output at a diagnostic ceiling,
+   the non-equilibrium parameter κ itself can be corrected directly in
+   the low-supercharge regime, motivated by a limitation of κ already
+   documented in the model's own source literature (Niño & Razavi,
+   2019). This is exploratory, not yet part of the tool's production
+   path — see Section 10 for the full account and its own limitations.
 
 ## 8. What this does **not** establish
 
@@ -210,6 +225,9 @@ critical point, in opposite directions, exactly as the theory in
   entirely unvalidated (unchanged from before).
 - The digitisation itself carries plot-reading uncertainty (see Part E
   consistency checks, all within ~2 %, which bounds this).
+- The gated κ correction of Section 10 is fitted to a single injector
+  geometry (injector 3) and checked against only 4 points of a second
+  geometry (injector 2, Part A) — not independently validated.
 
 ---
 
@@ -221,9 +239,149 @@ critical point, in opposite directions, exactly as the theory in
 | `waxman_2013_validation.py` | `validation/` — Parts A–E, `--no-plot` to skip the figure |
 | `waxman_2013_fig13_comparison.png` | `validation/` — 9-panel model-vs-experiment figure |
 | `waxman_2013_experimental_data.csv` | `validation/` (unchanged; still not read by code) |
+| `explore_supercharge_correction.py` | `validation/` — Section 10 exploration script |
 | `digitized/waxman_fig11_mdot_vs_dP_single_test.csv` | `validation/digitized/` |
 | `digitized/waxman_fig12_cd_vs_dP_single_test.csv` | `validation/digitized/` |
 | `digitized/waxman_fig13_mdot_vs_dP_by_supercharge.csv` | `validation/digitized/` |
 | `digitized/waxman_fig14_cd_vs_dP_by_supercharge.csv` | `validation/digitized/` |
 | `digitized/waxman_fig15_cd_vs_supercharge_injectors_1_2_5.csv` | `validation/digitized/` |
 | `digitized/waxman_fig16_critical_mdot_vs_supercharge.csv` | `validation/digitized/` |
+
+---
+
+## 10. Exploratory finding (September 2026) — a gated correction to κ, motivated by the model's own source literature
+
+*Added after the Part B/C/D validation above, as a direct follow-up to the
+low-supercharge over-prediction identified in Part B4. Exploratory status
+throughout this section — not part of the tool's production path (see
+`docs/future_work.md`, Priority 1, for the tracked status).*
+
+### 10.1 Motivation
+
+Section 7, point 2 already flags that Dyer's error is controlled by tank
+supercharge, not injector pressure drop. Section 3.4 of `docs/03_two_phase_flow.md`
+describes κ as a ratio of characteristic time scales
+(τ_bubble/τ_residence), computed from `P_upstream`, `P_downstream`, and
+`T_upstream` alone. This carries no explicit dependence on how close the
+tank itself already sits to saturation — a natural place to suspect a
+missing physical ingredient.
+
+### 10.2 Support in the primary literature
+
+**Niño, E. V., and Razavi, M. R. (2019)**, *Design of Two-Phase Injectors
+Using Analytical and Numerical Methods with Application to Hybrid
+Rockets*, AIAA 2019-4154 — already cited in `references.md` as the
+source of Part A's four validation points — state explicitly (Section
+IV.C, discussing Eq. (4), which is identical to this project's
+`dyer_non_equilibrium_parameter()`):
+
+> "At saturated conditions the NHNE model loses its physical
+> interpretation as the value of κ is unity and the resulting mass flux
+> given by Eq. (3) is simply an equal averaging of the SPI and HEM
+> models."
+
+The same paper implements a structurally analogous fix for a *different*
+two-phase model (their "Omega model", Section IV.F–IV.G): a supercharge
+threshold (their η_st parameter, Eq. 10) classifies each operating point
+as "high" or "low" supercharged, and the low-supercharge branch (their
+"modified Omega model", Eq. 13) blends
+
+$$G = \left(\frac{P_{sat}}{P_i}\right) G_{sat} + \left(1-\frac{P_{sat}}{P_i}\right) G_{low}$$
+
+explicitly to compensate for "the sharp edge effect increasing the
+tendency for cavitation, which is more prevalent in the predictions of
+the saturated mass flux equation" (their words). This is direct
+precedent, from the source literature this project already cites, for a
+supercharge-gated correction — applied here to Dyer's κ rather than to
+the Omega EoS, which would be a substantially larger re-implementation.
+
+### 10.3 Proposed correction
+
+A gated modification of κ:
+
+$$\kappa' = \begin{cases}
+\kappa & \text{if supercharge} \ge \text{supercharge}_{ref} \\
+\kappa \cdot \left(\dfrac{\text{supercharge}}{\text{supercharge}_{ref}}\right)^{\beta} & \text{if supercharge} < \text{supercharge}_{ref}
+\end{cases}$$
+
+where supercharge $= P_{upstream} - P_{sat}(T_{upstream})$ (the tank's own
+subcooling margin, not the injector pressure drop). Implemented as
+`dyer_mass_flow_corrected()`, a new, additional function alongside the
+existing `dyer_mass_flow()` (not a replacement — see the module docstring). β = 0 recovers the original Dyer prediction
+exactly, everywhere; above the threshold, the correction is forced to
+exactly 1.0 by construction, not merely close to it.
+
+### 10.4 Results against the Part B dataset (64 two-phase points, injector 3)
+
+Grid search over β ∈ [0, 3.0] and supercharge_ref ∈ [50, 300] psi, Cd
+pooled = 0.781 (unchanged from Section 3):
+
+| supercharge_ref | β | Global MAPE | Part A MAPE |
+|---|---|---|---|
+| 0 (baseline, no correction) | — | 6.86% | 2.75% |
+| 80 psi (protects Part A by construction*) | 2.5 | 4.63% | 2.75% |
+| 300 psi (unrestricted) | 1.0 | **1.86%** | 4.77% |
+
+\* Part A's own four points have a supercharge of ~95 psi — i.e. they sit
+*inside* the low-supercharge regime this correction targets, not safely
+above it. Only `supercharge_ref` values below Part A's own supercharge
+(≤ ~95 psi) protect it by mathematical construction; any larger threshold
+necessarily perturbs Part A too, since Part A itself qualifies as
+"low supercharge" by this same criterion.
+
+### 10.5 Interaction with the discharge coefficient
+
+Section 4 already notes that Part A's assumed Cd = 0.65 is a generic
+value, while Cd = 0.681 (Waxman's own Fig. 15, digitised, for this exact
+injector-2 geometry) is measured. Repeating the comparison above with the
+measured Cd instead of the generic one:
+
+| | Part A MAPE |
+|---|---|
+| Cd = 0.65 (generic), no κ correction | 2.75% |
+| Cd = 0.65 (generic), with κ correction (β=1.0, ref=300 psi) | 4.77% |
+| Cd = 0.681 (measured, Fig. 15), no κ correction | 4.47% |
+| **Cd = 0.681 (measured, Fig. 15), with κ correction** | **1.14%** |
+
+With the measured Cd, the κ correction does not degrade Part A — it
+improves it substantially, below even the original published baseline.
+This interaction is itself supported by the same source: Niño & Razavi,
+Section IV.I ("Discussion of Discharge Coefficients"), report that the
+appropriate Cd differs by supercharge regime (≈0.73 for high supercharge,
+based on a cavitation-number correlation; ≈0.85 suggested for low
+supercharge), and note that their own regime-corrected Omega model
+already absorbs part of this effect, making a third, dedicated Cd
+unnecessary. This is independent, primary-source support for treating Cd
+and the supercharge regime as non-separable — consistent with what was
+found here empirically.
+
+### 10.6 Honest limitations
+
+- Both β and supercharge_ref are fitted to this project's own digitised
+  dataset (`validation/digitized/`), not derived from a primary source —
+  unlike κ itself or the Henry-Fauske ceiling. If promoted beyond
+  exploratory status, this must remain explicit.
+- The favourable Cd-corrected result (MAPE 1.14%) rests on only 4 points
+  (Part A) — insufficient to claim general validity. A genuine robustness
+  check would require applying the same β and supercharge_ref (fitted on
+  injector 3) to a larger, independent set of injector-2 (or other
+  geometry) points at low supercharge, which does not currently exist in
+  this project's digitised data.
+- The mechanism proposed by Niño & Razavi (sharp-edge geometry increasing
+  cavitation tendency) is geometry-specific; whether it transfers
+  cleanly to κ (a different model) rather than only to their Omega
+  formulation has not been checked against CFD or first-principles
+  reasoning here — only against the aggregate mass-flow data.
+
+### 10.7 Status and next step
+
+Exploratory. Not called by `full_system.py`. Tracked in
+`docs/future_work.md`, Priority 1, alongside the Henry-Fauske ceiling —
+both are diagnostic-only corrections at this stage, pending either more
+data (other geometries, more low-supercharge points) or a first-principles
+derivation analogous to Henry-Fauske's.
+
+See `validation/explore_supercharge_correction.py` for the full grid
+search and reproducibility, and the accompanying report
+(`docs/reports/dyer_supercharge_correction.pdf`) for the complete
+derivation and discussion.

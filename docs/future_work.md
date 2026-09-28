@@ -50,8 +50,8 @@ a side-by-side diagnostic (`m_dot_crit_HF`, `choked` flag) rather than an
 automatic cap -- see the original reasoning below, which still explains
 *why* an automatic cap is risky in general.
 
-**New finding (September 2026, extended validation).** Eduardo digitised
-Waxman (2013) Figs. 11-16 directly from the source PDF -- the full
+**New finding (September 2026, extended validation).** Waxman (2013) Figs. 11-16
+were digitised directly from the source PDF -- the full
 injector-3 mass-flow map across nine supercharge levels, dP up to 46 bar
 (104 usable points, `validation/digitized/`, see
 `validation/waxman_2013_results.md` Part B). Against this much larger
@@ -120,6 +120,60 @@ would matter); (3) the extended digitised dataset above is the first time
 the ceiling has actually been checked against data at conditions where it
 fires, and shows real (if partial) predictive value.
 
+### Priority 1, item 1 — RESULT (September 2026): a gated kappa correction, exploratory
+
+Point 1 above ("investigate a supercharge-dependent correction") has now
+been explored directly, as an alternative/complementary approach to the
+Henry-Fauske ceiling: rather than capping Dyer's *output*, the
+non-equilibrium parameter kappa itself is corrected below a supercharge
+threshold, motivated by a limitation of kappa already documented in the
+model's own source literature (Vargas Nino & Razavi, 2019: kappa "loses
+its physical interpretation" at saturation; the same authors already
+apply a structurally analogous supercharge-gated correction to a
+different model, their "Omega" formulation).
+
+**Summary of the finding** (full derivation, primary-source support, and
+limitations in `docs/reports/dyer_supercharge_correction.pdf`):
+
+- A gated correction, kappa'' = kappa for supercharge >= S_ref, and
+  kappa'' = kappa*(supercharge/S_ref)^beta below it, reduces the global
+  MAPE on the 64 digitised two-phase points from 6.86% (baseline) to as
+  low as 1.86% (unrestricted grid-search optimum), at the cost of
+  perturbing the original 4-point Part A validation subset (MAPE 2.75%
+  -> 4.77%) -- because Part A's own supercharge (~95 psi) sits *inside*
+  the low-supercharge regime this correction targets, not safely above
+  it. No choice of S_ref corrects the 100-200 psi band without touching
+  Part A; this is a structural property of the dataset, not a tuning
+  failure.
+- A previously undocumented interaction was found with discharge-coefficient
+  calibration: Part A's assumed C_d = 0.65 is generic; with Waxman's own
+  measured C_d = 0.681 for this injector-2 geometry (Fig. 15, already
+  digitised in this project), the same kappa correction does *not*
+  degrade Part A -- it improves it, to MAPE 1.14%. Neither the corrected
+  C_d alone nor the kappa correction alone (each with the other input
+  left as-is) improves Part A; only the combination does. This interaction
+  has independent primary-source support (Vargas Nino & Razavi report
+  that the appropriate C_d itself differs by supercharge regime).
+- Implemented as `dyer_mass_flow_corrected()`, an ADDITIONAL function in
+  `injector_two_phase.py`, alongside (not replacing) `dyer_mass_flow()`.
+  `full_system.py` is unchanged and continues to call the original,
+  uncorrected function.
+
+**Status: exploratory, not production.** Both free parameters (beta,
+S_ref) are fitted to this project's own digitised dataset, not derived
+from a primary source the way kappa itself or the Henry-Fauske ceiling
+are. The favourable C_d-corrected result rests on only 4 points (Part A)
+-- insufficient to claim general validity. See the report PDF, Section 7
+("What This Work Does Not Establish") for the complete, explicit list of
+limitations, and Section 8 for the proposed next steps (independent
+geometry data, a first-principles derivation of S_ref, decoupled C_d
+calibration per geometry, and an explicit promotion criterion before this
+could become part of the production path).
+
+Reproducibility: `validation/explore_supercharge_correction.py` (reuses
+the existing data-loading and C_d-calibration functions of
+`validation/waxman_2013_validation.py`, no duplicated logic).
+
 ## Priority 2 — Full-system experimental validation - PARTIALLY RESOLVED (September 2026)
 
 **What changed.** The main gap this priority flagged -- "pressure drops of
@@ -167,7 +221,7 @@ rig than Waxman's.
 
 **Scope deliberately corrected relative to the original plan below** (kept for context; do not re-read it as the current spec):
 
-1. **$a$ and $n$ are required user inputs, not fixed per-fuel defaults.** Researching citable coefficients surfaced genuine, large scatter between independent studies of nominally the same fuel/oxidiser pair (paraffin/N₂O regression rates of ≈2, ≈3.5, and 4–5 mm/s each separately reported at comparable oxidiser mass flux — see `references.md`). Unlike density, $a$ and $n$ are test-article-specific empirical fits (injector design, motor scale, chamber pressure range all matter), not universal material constants. Shipping a literature pair as a default would imply false precision. `FUEL_PROPERTIES` in `grain_sizing.py` provides **density only** as a safe default (paraffin, HTPB, ABS, PMMA — all properly sourced, see `references.md`), plus a labelled, non-authoritative reference range for $a, n$ per fuel.
+1. **$a$ and $n$ are required user inputs, not fixed per-fuel defaults.** Researching citable coefficients surfaced genuine, large scatter between independent studies of nominally the same fuel/oxidiser pair (paraffin/N₂O regression rates of ≈2 mm/s, ≈3.5 mm/s, and 4–5 mm/s each separately reported at comparable oxidiser mass flux — see `references.md`). Unlike density, $a$ and $n$ are test-article-specific empirical fits (injector design, motor scale, chamber pressure range all matter), not universal material constants. Shipping a literature pair as a default would imply false precision. `FUEL_PROPERTIES` in `grain_sizing.py` provides **density only** as a safe default (paraffin, HTPB, ABS, PMMA — all properly sourced, see `references.md`), plus a labelled, non-authoritative reference range for $a, n$ per fuel.
 2. **Grain length $L$ is a required input, not a derived output.** The original plan implied deriving $L$ from an L/D heuristic; rather than use an unsourced ratio, $L$ is left as a direct input — most teams already know their available case length as a hard constraint.
 3. **No estimated $I_{sp}$ output.** That requires a chemical equilibrium code (CEA/RPA) this project does not implement or wrap. Get $I_{sp}$ at the design O/F from CEA/RPA directly.
 4. **Only circular ports (single- or multi-port) are supported.** Non-circular shapes (star, wagon-wheel) are tracked separately below, not delivered here.

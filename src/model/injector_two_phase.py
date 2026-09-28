@@ -1114,6 +1114,159 @@ if __name__ == "__main__":
     result = dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
                              rho_l_upstream, rho_l_downstream, rho_v_downstream)
 
+
+def dyer_mass_flow_corrected(Cd, A, T_upstream, P_upstream, P_downstream,
+                              rho_l_upstream, rho_l_downstream, rho_v_downstream,
+                              beta, supercharge_ref_Pa):
+    """
+    Supercharge-gated correction to the Dyer/NHNE non-equilibrium parameter
+    kappa (docs/future_work.md, Priority 1, item 1: "Investigate a
+    supercharge-dependent... correction").
+
+    MOTIVATION AND PRIMARY-SOURCE SUPPORT
+
+    Dyer's kappa is computed from P_upstream, P_downstream, and
+    T_upstream alone; it carries no explicit dependence on how close the
+    tank itself sits to saturation (supercharge = P_upstream - P_sat
+    (T_upstream)). Nino & Razavi (2019), AIAA 2019-4154 -- Eq. (4) of
+    that paper is exactly dyer_non_equilibrium_parameter() below -- state
+    explicitly:
+
+        "At saturated conditions the NHNE model loses its physical
+        interpretation as the value of kappa is unity and the resulting
+        mass flux... is simply an equal averaging of the SPI and HEM
+        models."
+
+    i.e. kappa is known, from the model's own originating literature, to
+    degenerate exactly in the low-supercharge regime where this
+    project's extended Waxman validation (validation/waxman_2013_results.md,
+    Part B4) shows Dyer's MAPE climbing from ~2% (supercharge >= 200 psi)
+    to >15% (supercharge < 100 psi), always over-predicting.
+
+    The same paper's own "modified Omega model" (their Eq. 13) already
+    applies a directly analogous idea to a *different* two-phase model:
+    a supercharge-dependent classification (their eta_st threshold, Eq.
+    10) splits "low" and "high" supercharge regimes, blending
+
+        G = (P_sat/P_i) * G_sat + (1 - P_sat/P_i) * G_low
+
+    in the low-supercharge branch, explicitly to account for "the sharp
+    edge effect increasing the tendency for cavitation, which is more
+    prevalent in the predictions of the saturated mass flux equation."
+    This function applies the same regime-split principle to Dyer's own
+    kappa instead of re-deriving the Omega model, which is a much larger
+    undertaking out of scope here.
+
+    FORM OF THE CORRECTION (GATED, not continuous over the whole domain)
+
+        kappa' = kappa                                    if supercharge >= supercharge_ref
+        kappa' = kappa * (supercharge/supercharge_ref)**beta   if supercharge < supercharge_ref
+
+    beta = 0 recovers the original Dyer prediction EXACTLY everywhere.
+    Below supercharge_ref, kappa' < kappa -> more weight on HEM -> lower
+    predicted flow -> corrects the systematic over-prediction seen in
+    that regime. Critically, ABOVE supercharge_ref the factor is forced
+    to exactly 1.0 (not merely close to it): operating points with
+    supercharge >= supercharge_ref are mathematically identical to the
+    uncorrected Dyer model, by construction, regardless of beta.
+
+    KNOWN LIMITATION (relevant to any use of this function): the four already-published Part A points
+    (Nino & Razavi 2019 table, dP = 8-14 bar, MAPE = 3.51% as reported
+    in validation/waxman_2013_results.md and README.md) have a
+    supercharge of only ~95 psi -- i.e. they sit INSIDE the low-
+    supercharge regime this correction targets, not safely above it.
+    Any supercharge_ref >= 95 psi therefore also perturbs Part A; only
+    supercharge_ref values below Part A's own supercharge protect it by
+    construction. See validation/explore_supercharge_correction.py for
+    the full grid-search trade-off between the two.
+
+    A second, related finding from the same exploration: at least part
+    of the apparent degradation of Part A under an "aggressive" (higher
+    supercharge_ref) correction is attributable to Part A's own assumed
+    Cd = 0.65 -- a generic value -- rather than the Fig. 15-measured Cd
+    = 0.681 for this specific injector-2 geometry. With the measured Cd,
+    the corrected model does not degrade Part A -- it improves it. This
+    interaction between Cd calibration and the kappa correction is
+    itself worth stating explicitly in any write-up of this function:
+    the correction and the Cd choice are not fully separable effects on
+    this small (n=4) validation subset.
+
+    BOTH beta AND supercharge_ref ARE EMPIRICAL PARAMETERS FITTED TO
+    THIS PROJECT'S OWN DIGITISED WAXMAN DATASET (validation/digitized/),
+    not derived from a primary source the way kappa itself, or the
+    Henry-Fauske ceiling, are. If/when this function is promoted beyond
+    exploratory status, this must remain explicit in the docstring and
+    in any report referencing it -- consistent with this project's
+    "no magic numbers without a traceable source" convention.
+
+    Parameters
+    ----------
+    Cd, A, T_upstream, P_upstream, P_downstream, rho_l_upstream,
+    rho_l_downstream, rho_v_downstream : see dyer_mass_flow() -- identical
+        roles.
+    beta : float
+        Correction exponent inside the gated (low-supercharge) region,
+        dimensionless. 0 disables the correction everywhere (identical
+        to dyer_mass_flow()).
+    supercharge_ref_Pa : float
+        Supercharge (Pa) BELOW which the correction is active. At or
+        above it, kappa' = kappa exactly.
+
+    Returns
+    -------
+    dict
+        "m_dot_Dyer_corrected" : corrected mass flow prediction, kg/s
+        "kappa"                : original (uncorrected) Dyer kappa
+        "kappa_corrected"      : kappa' actually used
+        "factor"               : (supercharge/supercharge_ref)**beta,
+                                  or exactly 1.0 outside the gated region
+        "m_dot_SPI", "m_dot_HEM", "x_exit" : as in dyer_mass_flow()
+
+    Raises
+    ------
+    ValueError
+        Same conditions as dyer_non_equilibrium_parameter() (liquid
+        inlet required, downstream pressure must cross saturation
+        inside the orifice), plus: if supercharge
+        (P_upstream - P_sat(T_upstream)) is not positive -- already
+        implied by the kappa domain check, but verified explicitly here
+        since the correction uses it as the base of a power.
+    """
+    kappa = dyer_non_equilibrium_parameter(P_upstream, T_upstream, P_downstream)
+    supercharge = P_upstream - P_sat(T_upstream)
+    if supercharge <= 0:
+        raise ValueError(
+            f"supercharge = P_upstream - P_sat(T_upstream) = "
+            f"{supercharge/1e5:.3f} bar must be positive (liquid inlet)."
+        )
+
+    if beta <= 0 or supercharge >= supercharge_ref_Pa:
+        factor = 1.0
+    else:
+        factor = (supercharge / supercharge_ref_Pa) ** beta
+    kappa_corr = kappa * factor
+
+    delta_P = P_upstream - P_downstream
+    m_dot_SPI = spi_mass_flow(Cd, A, rho_l_upstream, delta_P)
+
+    hem_result = hem_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
+                                rho_l_upstream, rho_l_downstream,
+                                rho_v_downstream)
+    m_dot_HEM = hem_result["m_dot_HEM"]
+
+    m_dot_Dyer_corr = ((kappa_corr / (1.0 + kappa_corr)) * m_dot_SPI
+                        + (1.0 / (1.0 + kappa_corr)) * m_dot_HEM)
+
+    return {
+        "m_dot_Dyer_corrected": m_dot_Dyer_corr,
+        "kappa":                kappa,
+        "kappa_corrected":      kappa_corr,
+        "factor":               factor,
+        "m_dot_SPI":            m_dot_SPI,
+        "m_dot_HEM":            m_dot_HEM,
+        "x_exit":               hem_result["x_exit"],
+    }
+
     print("Two-phase injector model (HEM + Dyer) -- example evaluation")
     print("-" * 60)
     print(f"Dyer-predicted mass flow: {result['m_dot_Dyer']*1000:.1f} g/s")
