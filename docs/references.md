@@ -2,7 +2,7 @@
 
 Sources used in the theoretical foundation and computational implementation of this project.
 
-Bibliographic entries were re-checked in the September 2026 audit. Entries the audit **could verify** against an independent source are marked ; entries it **could not** verify are collected in "Open bibliographic points" at the end and must not be cited elsewhere without checking.
+Bibliographic entries were re-checked in the September 2026 audit. Entries the audit **could verify** against an independent source are marked ✔; entries it **could not** verify are collected in "Open bibliographic points" at the end and must not be cited elsewhere without checking.
 
 ---
 
@@ -11,9 +11,9 @@ Bibliographic entries were re-checked in the September 2026 audit. Entries the a
 **Jean-Philyppe, J. (2023).** *A computational model for the design of a nitrous oxide-paraffin wax hybrid rocket engine.* McGill Rocket Team technical report. arXiv:2302.06725.
 
 Used for:
-- Saturation pressure correlation P_sat(T) — Appendix A.1 (coefficients originally from Perry's Chemical Engineers' Handbook, re-transcribed here)
-- Saturated liquid molar volume correlation ν_l(T) — Appendix A.1
-- Saturated vapour and liquid enthalpies h_v(T), h_l(T), and molar volume ν_v(T) — Table A.1, transcribed manually for use as a look-up table in `n2o_saturation_table.csv`
+- Saturation pressure correlation P_sat(T) — Appendix A.1 (coefficients originally from Perry's Chemical Engineers' Handbook, re-transcribed here); kept only as a test cross-check since the CoolProp integration (September 2026), not used by the model itself
+- Saturated liquid molar volume correlation ν_l(T) — Appendix A.1; same cross-check-only status
+- Saturated vapour and liquid enthalpies h_v(T), h_l(T), and molar volume ν_v(T) — Table A.1, transcribed manually for use as a look-up table in `n2o_saturation_table.csv`; still used as an independent cross-check (agrees with CoolProp to ~1e-4 relative, since it comes from the same equation of state)
 - Dyer (NHNE) injector model formulation and κ parameter — Section 3
 - General methodology for the tank → feed line → injector sizing problem
 
@@ -23,32 +23,32 @@ Used for:
 
 **Green, D.W. & Perry, R.H. (Eds.) (2008).** *Perry's Chemical Engineers' Handbook*, 8th edition. McGraw-Hill.
 
-The saturation property correlations used in `n2o_properties.py` originate from Perry's Handbook and were re-transcribed via the McGill source above. Perry's is the primary experimental data source underlying the correlations.
+The closed-form P_sat and ρ_l correlations kept in `tests/test_n2o_properties.py` as cross-checks originate from Perry's Handbook and were re-transcribed via the McGill source above. Since the CoolProp integration (September 2026) these correlations are no longer used by `n2o_properties.py`; the confirmed discrepancy between them and the equation of state used by CoolProp is documented in `docs/04_implementation.md`, Section 4.1, and `docs/future_work.md`, Priority 4.
 
 ---
 
 ## Two-phase flow models
 
 **Dyer, J., Doran, E., Dunn, Z., Lohner, K., et al. (2007).** *Modeling Feed System Flow Physics for Self-Pressurizing Propellants.* AIAA 2007-5702. ✔
-*(Original formulation of the non-homogeneous non-equilibrium (NHNE) two-phase injector model used in this project. Its weighting formula contained a swap of the two weights, corrected by Solomon (2011).)*
+*(Original formulation of the non-homogeneous non-equilibrium (NHNE) two-phase injector model used in this project. Its weighting formula contained a swap of the two weights, corrected by Solomon (2011). The full author list should be copied from the paper itself — see "Open bibliographic points".)*
 
 **Solomon, B. J. (2011).** *Engineering Model to Calculate Mass Flow Rate of a Two-Phase Saturated Fluid through an Injector Orifice.* M.Sc. thesis, Utah State University. ✔
 *(Identifies and corrects the weight-swap error in the original Dyer et al. (2007) two-phase injector formula. The corrected NHNE weighting convention — large κ → more weight on SPI — is adopted in this project.)*
 
 **Waxman, B.S., Zimmerman, J.E., Cantwell, B., & Zilliac, G. (2013).** *Mass Flow Rate and Isolation Characteristics of Injectors for Use with Self-Pressurizing Oxidizers in Hybrid Rockets.* AIAA 2013-3636. ✔
-*(Source of the equations cited in the code as "Waxman (2013) Eq. (5)" — the HEM critical flow — and "Eq. (9)" — the corrected Dyer weighting — and of the discharge-coefficient measurements; documents the SPI over-prediction effect and the Dyer correction.)*
+*(Source of the equations cited in the code as "Waxman (2013) Eq. (5)" — the HEM critical flow — and "Eq. (9)" — the corrected Dyer weighting — and of the discharge-coefficient measurements; documents the SPI over-prediction effect and the Dyer correction. Also the source, via direct digitisation of Figs. 11-16 in September 2026, of the extended validation dataset in `validation/digitized/` and `validation/waxman_2013_results.md`, Parts B-E.)*
 
 **Waxman, B.S. (2014).** *An Investigation of Injectors for Use with High Vapour Pressure Propellants with Applications to Hybrid Rockets.* PhD thesis, Stanford University.
 *(Original experimental dataset behind the Niño & Razavi operating points used for validation.)*
 
 **Henry, R.E. & Fauske, H.K. (1971).** *The Two-Phase Critical Flow of One-Component Mixtures in Nozzles, Orifices, and Short Tubes.* ASME Journal of Heat Transfer, 93(2), 179-187.
-*(Original non-equilibrium critical flow model. Used in `henry_fauske_critical_flow()` as the physically correct ceiling for the Dyer prediction — the equilibrium HEM ceiling was shown to be the wrong bound, since real non-equilibrium two-phase flow chokes at a higher mass flux than full equilibrium allows.)*
+*(Original non-equilibrium critical flow model. Used in `henry_fauske_critical_flow()` as the physically appropriate ceiling for the Dyer prediction — the equilibrium HEM ceiling was shown to be the wrong bound for that purpose, since real non-equilibrium two-phase flow chokes at a higher mass flux than full equilibrium allows. The extended September 2026 validation against digitised Waxman data gives the first genuine, if partial, evidence that this ceiling improves the Dyer prediction at low tank supercharge — see `docs/future_work.md`, Priority 1.)*
 
 **Simoneau, R.J., Henry, R.E., Hendricks, R.C. & Watterson, R. (1971).** *Two-Phase Critical Discharge of High Pressure Liquid Nitrogen.* NASA Technical Memorandum TM X-67863.
 *(Presents the simplified Henry-Fauske equations (Eqs. 2-5) actually transcribed into `henry_fauske_critical_flow()`, including the empirical non-equilibrium factor N = min(1, x_E/0.14) from Henry (1970), fit to steam-water data of Starkman et al. (1964).)*
 
 **Niño, E. V., and Razavi, M. R. (2019).** *Design of two-phase injectors using analytical and numerical methods with application to hybrid rockets.* AIAA 2019-4154.
-*(Tabulated Waxman operating points used for model validation; Table 4 and Fig. 2. Not independently re-checked in the audit — see "Open bibliographic points".)*
+*(Tabulated Waxman operating points used for the original 4-point (Part A) model validation; Table 4 and Fig. 2. Also the source, independently of that, for the observation that Dyer's κ "loses its physical interpretation" at saturation and for a structurally analogous supercharge-gated correction applied to a different two-phase model (their "Omega" formulation) — the basis of the exploratory `dyer_mass_flow_corrected()`, see `docs/future_work.md`, Priority 1, item 1. Title and content taken from the project's own notes; not independently re-checked against the published paper — see "Open bibliographic points".)*
 
 ---
 
@@ -118,25 +118,26 @@ T_crit = 36.4 °C (309.52 K), P_crit = 72.45 bar.  (consistent with the NIST Web
 **Possible lead for the unverified NIST viscosity attribution below.** Huber, M.L. (2018). *Models for Viscosity, Thermal Conductivity, and Surface Tension of Selected Pure Fluids as Implemented in REFPROP v10.0.* NIST Interagency/Internal Report NISTIR 8209. DOI: 10.6028/NIST.IR.8209. This report describes *interim* transport-property models NIST built specifically for fluids -- like N₂O -- that lack a published reference-quality viscosity/thermal-conductivity model, which matches the situation this project is trying to source. Not yet confirmed to actually cover N₂O, or to be the correlation behind the WebBook's saturated-viscosity table used in Tables A.3/A.4 of `n2o_saturation_table.csv`.
 
 **If CoolProp cannot be installed** (e.g. a fully offline machine -- `pip install CoolProp` needs network access; it is not otherwise unusual or paid, standard wheels exist for Windows/Linux/macOS and Python 3.8-3.13):
-1. **REFPROP** (NIST) — the reference implementation CoolProp itself is validated against, and CoolProp can be configured to call it directly (`AbstractState("REFPROP", "NitrousOxide")`) if a REFPROP licence and installation are available (a Técnico institutional licence, if one exists, would qualify). Likely the single best option if accessible, but it is commercial software requiring a separate purchase/install, not just a `pip install`.
-2. **Revert to the closed-form Perry/McGill correlations** this project used before September 2026 (kept in `tests/test_n2o_properties.py` as `_perry_P_sat`/`_perry_rho_l`, and in `n2o_saturation_table.csv` Table A.1) — no dependency, but reintroduces the ~2-3 % P_sat error and 3-5 % h_fg error this integration was meant to remove (see docs/04_implementation.md, "Error sources"), and loses the extended (up to the critical point) entropy range needed by the isentropic and Henry-Fauske choking models.
+1. **REFPROP** (NIST) — the reference implementation CoolProp itself is validated against, and CoolProp can be configured to call it directly (`AbstractState("REFPROP", "NitrousOxide")`) if a REFPROP licence and installation are available (an institutional licence, if one exists, would qualify). Likely the single best option if accessible, but it is commercial software requiring a separate purchase/install, not just a `pip install`.
+2. **Revert to the closed-form Perry correlations** this project used before September 2026 (kept in `tests/test_n2o_properties.py` as `_perry_P_sat`/`_perry_rho_l`, and in `n2o_saturation_table.csv` Table A.1) — no dependency, but reintroduces the confirmed ~2-5 % P_sat error described in `docs/04_implementation.md`, "CoolProp integration", and loses the extended (up to the critical point) entropy range needed by the isentropic and Henry-Fauske choking models.
 3. **Implement the Lemmon & Span (2006) Helmholtz-energy equation of state by hand** — the correct long-term fix if neither of the above is acceptable, but a substantial undertaking (the EOS has dozens of fitted terms and needs a numerical solver for phase-equilibrium conditions) that duplicates what CoolProp already provides for free; not recommended unless CoolProp becomes genuinely and permanently unavailable.
 
 ## Open bibliographic points
 
 These items were flagged, not resolved, by the September 2026 audit. Each needs a manual check against the original source or the NIST WebBook page before being relied on.
 
-1. **Origin of the NIST viscosity correlations (Tables A.3 and A.4).** Earlier versions of this file, of `n2o_properties.py` and of the CSV header attributed the saturated-vapour viscosity to *Millat, Vesovic & Wakeham (1991), Int. J. Thermophys. 12, 265* ("viscosity of nitrous oxide and tetrafluoromethane in the limit of zero density") and the saturated-liquid viscosity to *Laesecke & Hafer (1998), J. Chem. Eng. Data 43(1), 84* ("Viscosity of fluorinated propane isomers"). The audit could not confirm either attribution, and the second is almost certainly wrong: by its title it concerns fluorinated propanes, not N₂O. The CoolProp documentation for nitrous oxide lists only an equation of state and a surface-tension correlation as references, i.e. it carries no N₂O viscosity model to cross-check against. **Action:** open the WebBook saturation table for N₂O (link above) and note the viscosity reference it lists; until then treat the viscosity numbers as "NIST WebBook data, correlation reference unverified". The numerical data themselves are unaffected.
-2. **Niño & Razavi (2019), AIAA 2019-4154** — title and content taken from the project's earlier notes; not re-checked.
+1. **Origin of the NIST viscosity correlations (Tables A.3 and A.4).** Earlier versions of this file, of `n2o_properties.py` and of the CSV header attributed the saturated-vapour viscosity to *Millat, Vesovic & Wakeham (1991), Int. J. Thermophys. 12, 265* ("viscosity of nitrous oxide and tetrafluoromethane in the limit of zero density") and the saturated-liquid viscosity to *Laesecke & Hafer (1998), J. Chem. Eng. Data 43(1), 84* ("Viscosity of fluorinated propane isomers"). The audit could not confirm either attribution, and the second is almost certainly wrong: by its title it concerns fluorinated propanes, not N₂O. The CoolProp documentation for nitrous oxide lists only an equation of state and a surface-tension correlation as references, i.e. it carries no N₂O viscosity model to cross-check against. **Action:** open the WebBook saturation table for N₂O (link above) and note the viscosity reference it lists; until then treat the viscosity numbers as "NIST WebBook data, correlation reference unverified". The numerical data themselves are unaffected. `n2o_saturation_table.csv`'s own header carries the same unverified-attribution note as this entry.
+2. **Niño & Razavi (2019), AIAA 2019-4154** — title and content taken from the project's earlier notes; not re-checked. This includes their κ-degeneracy observation and Omega-model correction cited under "Two-phase flow models" and used as the basis for `dyer_mass_flow_corrected()` — the physical argument is worth checking directly against the paper before it is relied on beyond the exploratory status already given it in `docs/future_work.md`.
 3. **Waxman et al. (2014).** Earlier versions listed *"Mass flow rate and isolation pressure measurements in nitrous oxide with the Dyer injector model", AIAA 2014-3834*. The audit could not find such a paper and has removed the entry; the verified Waxman references are the 2013 AIAA paper and the 2014 PhD thesis above.
 4. **Author list of Dyer et al. (2007).** The paper's identity (AIAA 2007-5702, title above) was verified; the full author list should be copied from the paper itself.
-5. **`waxman_2013_experimental_data.csv`** records upstream conditions P1 = 4.96 MPa, supercharge 1.26 MPa, while the validation uses P1 = 4.36 MPa, supercharge 0.62 MPa (Niño & Razavi Table 4). Both may be correct (different tests in the same paper), but the CSV is not read by any code; see `validation/waxman_2013_results.md`.
+5. **`waxman_2013_experimental_data.csv`** records upstream conditions P1 = 4.96 MPa, supercharge 1.26 MPa, while the validation uses P1 = 4.36 MPa, supercharge 0.62 MPa (Niño & Razavi Table 4). The file's own `m_dot_crit_exp` column is also inconsistent with the digitised Fig. 16 by roughly a factor of 4 for the 1.50 mm injectors — see the warning now in that CSV's own header. The CSV is not read by any code; see `validation/waxman_2013_results.md`.
+6. **Whitmore, S.A. et al., "Analytical and Experimental Comparisons of HTPB and ABS as Hybrid Rocket Fuels"**, cited below under "Fuel grain sizing" for the ABS-vs-HTPB regression-rate comparison — full citation details (AIAA paper number, year, venue) still need to be added before this entry is complete.
 
 ---
 
 ## Notes
 
-All numerical coefficients in `n2o_properties.py` and `injector_two_phase.py` are sourced from the references above and are documented with their source in the module docstrings. No coefficients were derived independently or taken from unverified sources, consistent with the project's policy of not using "magic numbers" without a traceable origin. The Henry-Fauske non-equilibrium factor N = x_E/0.14 was specifically deferred until a primary/near-primary source with legible equations could be obtained.
+All numerical coefficients in `n2o_properties.py` and `injector_two_phase.py` are sourced from the references above and are documented with their source in the module docstrings. No coefficients were derived independently or taken from unverified sources, consistent with this project's policy of not using "magic numbers" without a traceable origin. The Henry-Fauske non-equilibrium factor N = min(1, x_E/0.14) was specifically deferred until a primary/near-primary source with legible equations could be obtained.
 
 ---
 
@@ -161,5 +162,5 @@ All numerical coefficients in `n2o_properties.py` and `injector_two_phase.py` ar
 
 **ABS as a hybrid fuel (comparison to HTPB):**
 
-**Whitmore, S.A. et al.** Analytical and Experimental Comparisons of HTPB and ABS as Hybrid Rocket Fuels. AIAA paper.
-*(ABS/N₂O regression rate and combustion performance reported comparable to, slightly below, HTPB/N₂O in direct side-by-side testing at equal grain geometry — cited in `grain_sizing.py`'s FUEL_PROPERTIES reference notes for ABS. Full citation details, e.g. AIAA paper number, still to be added.)*
+**Whitmore, S.A. et al.** Analytical and Experimental Comparisons of HTPB and ABS as Hybrid Rocket Fuels. AIAA paper (full citation not yet confirmed — see "Open bibliographic points", item 6).
+*(ABS/N₂O regression rate and combustion performance reported comparable to, slightly below, HTPB/N₂O in direct side-by-side testing at equal grain geometry — cited in `grain_sizing.py`'s FUEL_PROPERTIES reference notes for ABS.)*

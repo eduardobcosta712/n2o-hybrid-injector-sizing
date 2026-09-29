@@ -564,9 +564,10 @@ def render_result_cards(result):
         # Henry-Fauske non-equilibrium choking diagnostic (docs/future_work.md
         # Priority 1). Surfaced as a warning, NOT applied to m_dot itself --
         # see injector_two_phase.dyer_mass_flow docstring for why: the ceiling
-        # is theoretically sound (Henry & Fauske 1971) but only confirmed not
-        # to perturb the 4 validated Waxman points; at other conditions it may
-        # be the more conservative, if unconfirmed, estimate.
+        # is theoretically sound (Henry & Fauske 1971) and the extended
+        # September 2026 validation gives real (if partial) evidence it helps
+        # at low tank supercharge; at other conditions it may be the more
+        # conservative, if not yet fully confirmed, estimate.
         if ir.get("choked"):
             st.markdown(
                 '<div class="badge-choke">&#9888; Non-equilibrium choking ceiling '
@@ -576,10 +577,10 @@ def render_result_cards(result):
                 f"choking ceiling (Henry-Fauske, 1971) at these tank/chamber "
                 f"conditions is only {ir['m_dot_crit_HF']*1000:.1f} g/s — "
                 f"independent of orifice area. This ceiling is theoretically "
-                f"sound but not experimentally confirmed outside the Waxman "
-                f"reference conditions (where it does not bind); treat it as "
-                f"a conservative alternative estimate, not a certainty. "
-                f"See docs/future_work.md, Priority 1.")
+                f"sound and, per the September 2026 extended validation, "
+                f"tends to improve the prediction at low tank supercharge; "
+                f"treat it as a conservative alternative estimate, not a "
+                f"certainty. See docs/future_work.md, Priority 1.")
         elif ir.get("HF_unavailable_reason"):
             st.caption(f"Non-equilibrium ceiling check unavailable: "
                        f"{ir['HF_unavailable_reason']}")
@@ -764,7 +765,7 @@ def render_grain_sizing(m_dot_ox, mode_key):
 if st.session_state.page == "landing":
     st.markdown('<div class="hero-title">N2O Hybrid Rocket Injector Sizing</div>',
                 unsafe_allow_html=True)
-    st.markdown('<div class="hero-byline">Eduardo Costa &nbsp;·&nbsp; '
+    st.markdown('<div class="hero-byline">Personal project &nbsp;·&nbsp; '
                 'Instituto Superior Tecnico &nbsp;·&nbsp; '
                 'Hybrid Rocket Propulsion</div>', unsafe_allow_html=True)
     st.markdown("""<div class="hero-desc">
@@ -811,10 +812,13 @@ if st.session_state.page == "landing":
                 balance with the environment not modelled.</li>
             <li>Dyer model uses <strong>literature reference values</strong> for
                 Cd and weighting, not team-calibrated data.</li>
-            <li>The Dyer injector model is validated against experiment only for
-                pressure drops of <strong>8-14 bar</strong> (Waxman); typical motor
-                designs use larger drops, where the result is an unvalidated
-                model estimate.</li>
+            <li>The Dyer injector model has been validated against experiment
+                (Waxman 2013/2014) for pressure drops of <strong>8-46 bar</strong>;
+                accuracy depends strongly on the tank's <strong>subcooling
+                margin (supercharge)</strong> rather than on the pressure drop
+                itself — MAPE around 2% above roughly 14 bar of supercharge,
+                degrading to up to ~18% below that, regardless of dP. See
+                README.md, "Validation", for the full breakdown.</li>
             <li>When flashing is detected in the feed line, the injector is
                 evaluated with a <strong>HEM two-phase-inlet</strong> model
                 (Sizing mode); this path is implemented and unit tested but
@@ -822,9 +826,10 @@ if st.session_state.page == "landing":
                 mode does not size an area while the line flashes.</li>
             <li>A <strong>non-equilibrium choking ceiling</strong> (Henry-Fauske,
                 1971) is shown as a diagnostic warning when the Dyer prediction
-                exceeds it — theoretically sound, but only confirmed not to
-                perturb results in the Waxman-validated regime; not applied
-                automatically outside it.</li>
+                exceeds it. In the extended validation this ceiling improves
+                the prediction at low tank supercharge in most (not all) of
+                the cases where it fires; it is still not applied
+                automatically.</li>
         </ul>
     </div>""", unsafe_allow_html=True)
 
@@ -834,7 +839,7 @@ if st.session_state.page == "landing":
         only</strong>. It is an academic project under active development and has
         not been independently validated against a comprehensive experimental
         dataset. Results should not be used as the sole basis for engineering
-        decisions or hardware fabrication. The author accepts no responsibility
+        decisions or hardware fabrication. I accept no responsibility
         for any damages, losses, or injuries arising from the use of this tool.
         Always verify critical design parameters with qualified engineers and
         appropriate experimental testing.</p>
@@ -1117,10 +1122,11 @@ elif st.session_state.page == "design":
                         f"area. The target of {m_dot_target_gs:.0f} g/s may not be "
                         f"achievable at this ΔP regardless of how the orifice is "
                         f"sized; consider raising tank pressure or lowering chamber "
-                        f"pressure instead. This ceiling is theoretically sound but "
-                        f"not experimentally confirmed outside the Waxman reference "
-                        f"conditions (where it does not bind). See "
-                        f"docs/future_work.md, Priority 1.")
+                        f"pressure instead. This ceiling is theoretically sound, and "
+                        f"the September 2026 extended validation shows it tends to "
+                        f"improve the prediction at low tank supercharge; treat it as "
+                        f"a conservative, though not yet fully confirmed, estimate. "
+                        f"See docs/future_work.md, Priority 1.")
                 elif dr is not None and dr.get("HF_unavailable_reason"):
                     st.caption(f"Non-equilibrium ceiling check unavailable: "
                                f"{dr['HF_unavailable_reason']}")

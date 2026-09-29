@@ -10,8 +10,22 @@ DATA SOURCES (changed in September 2026, Priority 4 of future_work.md)
    nitrous oxide (fluid "NitrousOxide"). Used for: saturation pressure
    and its inverse, saturated liquid/vapour density, enthalpy, entropy,
    and saturated-liquid heat capacity. These replace the previous Perry /
-   McGill correlations and tables (Table A.1), which carried ~2-3 % error
-   near the critical point and a 3-5 % error in the latent heat.
+   McGill closed-form P_sat and rho_l correlations. The legacy McGill
+   Table A.1 (nu_v, h_l, h_v) is, separately, ALSO consistent with
+   CoolProp to within ~1e-4 relative (it comes from the same underlying
+   equation of state) -- it is kept only as an independent test
+   cross-check, not because it was inaccurate.
+
+   Where the two backends genuinely disagree is P_sat itself: the closed-
+   form Perry correlation differs from CoolProp by up to ~5 % at 230 K,
+   falling to well under 1 % near the critical point -- see
+   tests/test_n2o_properties.py::TestPsat::test_agrees_with_perry_correlation
+   and docs/future_work.md, Priority 4, for the measured numbers. (An
+   earlier version of this note additionally claimed a 3-5 % error in the
+   latent heat h_fg; that claim did not hold up once checked against
+   CoolProp -- h_fg from the legacy Table A.1 agrees with CoolProp to
+   ~0.01 %, since both come from the same equation of state. The real,
+   confirmed error was in P_sat only.)
 
 2. VISCOSITY -- NIST WebBook tables (Tables A.3 and A.4 of
    n2o_saturation_table.csv), linearly interpolated. CoolProp does NOT
@@ -24,11 +38,12 @@ DATA SOURCES (changed in September 2026, Priority 4 of future_work.md)
    bibliographic points"); the numerical values are taken directly from
    the WebBook tables.
 
-The older Perry/McGill data (closed-form P_sat and rho_l correlations,
-Table A.1 enthalpies and vapour volumes) and the NIST cp/entropy columns
+The older Perry P_sat/rho_l correlations and the NIST cp/entropy columns
 of Table A.4 are no longer used by the model. They stay in the CSV, and
 the test suite (tests/test_n2o_properties.py) uses them as INDEPENDENT
-cross-checks of the CoolProp values.
+cross-checks of the CoolProp values (tight tolerances where the source is
+the same equation of state -- Table A.1, Table A.4's cp/entropy columns;
+wider tolerances only for the genuinely independent Perry correlations).
 
 Requirement: `pip install CoolProp`. Importing this module without CoolProp
 raises an ImportError with that instruction.
@@ -507,7 +522,10 @@ def mu_vapor_sat(T):
     Dynamic viscosity of saturated N2O vapour at temperature T, Pa.s,
     interpolated linearly from Table A.3 (NIST WebBook data). NIST
     uncertainty: ~2 % at T > 150 K; higher near the critical point
-    (T > 295 K).
+    (T > 295 K). Linear interpolation at 5 K spacing tracks the table
+    closely (mu_v(T) is close to, though not perfectly, linear over this
+    range: interpolation error stays under ~1 % except in the last
+    interval near the critical point, where it grows faster).
 
     Range: 182.33 K to 307.33 K, enforced by _check_range_a3.
 

@@ -12,6 +12,13 @@ from n2o_properties import (
     _load_saturation_table, _interp,
 )
 
+# Tolerance policy (September 2026 audit): the legacy McGill Table A.1 and the
+# NIST Table A.4 come from the SAME equation of state as CoolProp, so at the
+# table nodes they agree to ~1e-4 or better (checked with CoolProp 8.0.0).
+# Those cross-checks therefore use tight tolerances; a wide tolerance would
+# hide a wrong reference. Only the Perry correlations (an independent,
+# approximate source) keep a wide tolerance.
+
 
 def _perry_P_sat(T):
     c1, c2, c3, c4, c5 = 96.512, -4045.0, -12.277, 2.886e-5, 2.0
@@ -46,7 +53,8 @@ class TestPsat:
         assert math.isclose(P_CRIT, 7.245e6, rel_tol=1e-3)
 
     def test_near_critical_point_reproduces_p_crit(self):
-        assert math.isclose(P_sat(T_MAX), P_CRIT, rel_tol=0.005)
+        # CoolProp: P_sat(T_MAX) is 0.04 % below P_crit.
+        assert math.isclose(P_sat(T_MAX), P_CRIT, rel_tol=1e-3)
 
     def test_below_critical_pressure_just_under_critical_temperature(self):
         P = P_sat(307.0)
@@ -54,6 +62,9 @@ class TestPsat:
         assert P > 0.90 * P_CRIT
 
     def test_agrees_with_perry_correlation(self):
+        # Perry differs from the equation of state by up to ~5.1 % (relative
+        # to CoolProp; 4.8 % relative to Perry, which is what isclose uses)
+        # at 230 K, falling to <1 % near 305 K.
         for T in range(230, 306, 5):
             assert math.isclose(P_sat(float(T)), _perry_P_sat(float(T)), rel_tol=0.06), T
 
@@ -83,10 +94,13 @@ class TestdPsatdT:
             assert dP_sat_dT(T) > 0
 
     def test_consistent_with_finite_difference(self):
+        # dP_sat_dT is an exact thermodynamic identity (Clausius-Clapeyron
+        # with EOS quantities); a central difference of P_sat must match it
+        # to ~1e-7 at these points. Tight tolerance on purpose.
         for T in (250.0, 293.15, 305.0):
             h = 0.05
             fd = (P_sat(T + h) - P_sat(T - h)) / (2 * h)
-            assert math.isclose(dP_sat_dT(T), fd, rel_tol=0.05), T
+            assert math.isclose(dP_sat_dT(T), fd, rel_tol=1e-4), T
 
     def test_out_of_range(self):
         with pytest.raises(ValueError):
@@ -130,8 +144,9 @@ class TestRhoLiquidSat:
         assert math.isclose(rho_liquid_sat(293.15), 786.0, rel_tol=0.005)
 
     def test_agrees_with_perry_correlation(self):
+        # Perry rho_l is within 0.35 % of the equation of state (230-300 K).
         for T in range(230, 301, 10):
-            assert math.isclose(rho_liquid_sat(float(T)), _perry_rho_l(float(T)), rel_tol=0.01), T
+            assert math.isclose(rho_liquid_sat(float(T)), _perry_rho_l(float(T)), rel_tol=0.005), T
 
     def test_decreases_with_temperature(self):
         T_vals = [220.0, 250.0, 270.0, 290.0, 305.0]
@@ -160,12 +175,18 @@ class TestRhoLiquidSat:
 class TestNuVaporSat:
 
     def test_agrees_with_mcgill_table(self):
+        # Table A.1 nu_v is from the same EOS: agreement ~5e-5 at the nodes.
         for T in (230.0, 250.0, 270.0, 290.0, 300.0):
-            assert math.isclose(nu_vapor_sat(T), _mcgill(T, "nu_v"), rel_tol=0.05), T
+            assert math.isclose(nu_vapor_sat(T), _mcgill(T, "nu_v"), rel_tol=1e-3), T
 
-    def test_consistent_with_vapour_density(self):
-        T = 285.0
-        assert math.isclose(nu_vapor_sat(T) * (M_N2O / nu_vapor_sat(T)), M_N2O, rel_tol=1e-12)
+    def test_consistent_with_coolprop_vapour_density(self):
+        # (The earlier version multiplied nu by its own inverse -- always
+        # true, tested nothing.) Independent check against a direct CoolProp
+        # call: rho_v = M / nu_v.
+        from CoolProp.CoolProp import PropsSI
+        for T in (250.0, 285.0, 300.0):
+            rho_v_direct = PropsSI("D", "T", T, "Q", 1, "NitrousOxide")
+            assert math.isclose(M_N2O / nu_vapor_sat(T), rho_v_direct, rel_tol=1e-9), T
 
     def test_decreases_toward_critical_point(self):
         T_vals = [220.0, 250.0, 270.0, 290.0, 305.0]
@@ -191,21 +212,28 @@ class TestHfg:
             assert hfg_vals[i] > hfg_vals[i + 1]
 
     def test_nearly_vanishes_at_critical_point(self):
+        # h_fg(T_MAX) is ~6 % of h_fg(290 K).
         assert h_fg(T_MAX) < 0.25 * h_fg(290.0)
 
     def test_consistent_with_clausius_clapeyron(self):
+        # Exact thermodynamic identity; agreement is ~1e-7 (finite-difference
+        # limited). Tight tolerance on purpose.
         for T in (250.0, 270.0, 290.0):
             nu_v = nu_vapor_sat(T)
             nu_l = M_N2O / rho_liquid_sat(T)
             h = 0.05
             dPdT = (P_sat(T + h) - P_sat(T - h)) / (2 * h)
             h_fg_cc = T * (nu_v - nu_l) * dPdT / 1e3
-            assert math.isclose(h_fg_cc, h_fg(T), rel_tol=0.05), T
+            assert math.isclose(h_fg_cc, h_fg(T), rel_tol=1e-4), T
 
-    def test_agrees_with_mcgill_table_within_known_error(self):
+    def test_agrees_with_legacy_mcgill_table(self):
+        # The legacy Table A.1 h_v - h_l comes from the same EOS: they agree
+        # to ~1e-4. (Earlier text and a 6 % tolerance here implied a 3-5 %
+        # latent-heat error in the legacy model; there is none -- the legacy
+        # error was in the Perry P_sat correlation, not in the tables.)
         for T in (230.0, 250.0, 270.0, 290.0, 300.0):
             legacy = _mcgill(T, "h_v") - _mcgill(T, "h_l")
-            assert math.isclose(h_fg(T), legacy, rel_tol=0.06), T
+            assert math.isclose(h_fg(T), legacy, rel_tol=1e-3), T
 
 
 class TestDegreeOfSubcooling:
@@ -325,8 +353,9 @@ class TestMuLiquidSat:
 class TestLiquidCp:
 
     def test_agrees_with_nist_table_rows(self):
+        # Same EOS as CoolProp: agreement ~1e-5 at the table nodes.
         for T in (252.33, 272.33, 292.33):
-            assert math.isclose(cp_liquid_sat(T), _nist_a4(T, "cp_l"), rel_tol=5e-3), T
+            assert math.isclose(cp_liquid_sat(T), _nist_a4(T, "cp_l"), rel_tol=1e-4), T
 
     def test_increases_toward_critical_point(self):
         assert cp_liquid_sat(305.0) > cp_liquid_sat(290.0) > cp_liquid_sat(250.0)
@@ -341,12 +370,12 @@ class TestEntropyFunctions:
     def test_s_fg_agrees_with_nist_table_rows(self):
         for T in (252.33, 272.33, 292.33):
             nist = _nist_a4(T, "s_v") - _nist_a4(T, "s_l")
-            assert math.isclose(s_fg(T), nist, rel_tol=5e-3), T
+            assert math.isclose(s_fg(T), nist, rel_tol=1e-4), T
 
     def test_entropy_difference_agrees_with_nist_table(self):
         d_model = s_liquid_sat(292.33) - s_liquid_sat(252.33)
         d_nist = _nist_a4(292.33, "s_l") - _nist_a4(252.33, "s_l")
-        assert math.isclose(d_model, d_nist, rel_tol=5e-3)
+        assert math.isclose(d_model, d_nist, rel_tol=1e-3)
 
     def test_s_fg_equals_vapour_minus_liquid(self):
         assert math.isclose(s_fg(270.0), s_vapor_sat(270.0) - s_liquid_sat(270.0), rel_tol=1e-12)

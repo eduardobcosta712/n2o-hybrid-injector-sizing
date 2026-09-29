@@ -28,18 +28,7 @@ The tool opens automatically in your browser at `http://localhost:8501`. It runs
 
 As of September 2026 the tool's saturation properties (pressure, densities, enthalpy, entropy) come from **CoolProp**, an accurate, open-source equation-of-state library (Lemmon & Span 2006), replacing an earlier set of approximate correlations. `pip install CoolProp` should work on a normal machine with internet access (pre-built wheels exist for Windows, macOS and Linux). If it fails on your machine, see `docs/references.md`, "CoolProp and alternatives", for what to try instead.
 
-The change has been confirmed with the real package installed: the validation report and Examples 1 and 2 were regenerated with it. Example 3's two headline figures are also CoolProp results, but its supporting detail (segment trace, kappa, exit quality, choking ceiling) is still a legacy-backend cross-check and is marked as such in that file (see `docs/future_work.md`, "Audit follow-ups").
-
----
-
-## Landing page
-
-The landing page presents two modes and two reference sections:
-
-- **Sizing mode** — you have an existing or proposed orifice geometry and want to predict the real mass flow the system will deliver.
-- **Design mode** — you have a target mass flow and want the orifice area required to deliver it, with the Dyer correction applied.
-- **Model assumptions** — lists what the model does and does not account for. Read this before interpreting results.
-- **Disclaimer** — the tool is for predictive purposes only. See the disclaimer for full details.
+The change has been confirmed with the real package installed: the validation report and all three worked examples (1, 2 and 3) were fully regenerated with it — see each example file for its own "Property-backend status" note.
 
 ---
 
@@ -47,9 +36,9 @@ The landing page presents two modes and two reference sections:
 
 Before using any number from the tool, keep the validation status in mind:
 
-- The Dyer injector model is validated against experiment (Waxman) for injector pressure drops of **8–14 bar**. Typical motor designs use larger drops (20–50 bar), where the tool's output is an **unvalidated model estimate**.
+- The Dyer injector model has been validated against experiment (Waxman 2013/2014) for injector pressure drops from well under 1 bar up to 46 bar. The original four-point subset (8–14 bar) gives MAPE = 2.76%; a much larger digitised dataset extends this to 104 points up to 46 bar. The controlling variable turns out to be the tank's **supercharge** (subcooling margin above P_sat), not the injector pressure drop itself: MAPE stays around 2% when supercharge is at least ~14 bar (~200 psi), whatever the pressure drop, but can rise to ~18% at low supercharge. See `README.md`, "Validation", and `validation/waxman_2013_results.md` for the full breakdown.
 - When the feed line flashes, the injector is evaluated with a HEM two-phase-inlet model that is implemented and unit tested but **not validated** against experimental data.
-- The amber **non-equilibrium choking warning** (below) marks operating points where a second, independent model predicts a lower flow than Dyer. Treat the pair of numbers as a plausible range.
+- The amber **non-equilibrium choking warning** (below) marks operating points where a second, independent model predicts a lower flow than Dyer. In the extended dataset this ceiling now has some genuine (if partial) predictive value at low supercharge — treat the pair of numbers as a plausible range, narrower toward the ceiling the lower the supercharge.
 
 A cold-flow or hot-fire measurement should confirm any hardware decision.
 
@@ -175,7 +164,7 @@ When Dyer is used, a caption shows kappa (non-equilibrium parameter), exit vapou
 
 ### Non-equilibrium choking warning
 
-Directly beneath that caption, an amber **"Non-equilibrium choking ceiling exceeded"** badge and warning box appear whenever the Dyer prediction exceeds the Henry-Fauske (1971) non-equilibrium choking ceiling for the current tank/chamber conditions. This is a **diagnostic warning only** — it does not change the displayed "Real mass flow" figure. The ceiling is theoretically sound (a primary-source non-equilibrium critical-flow model) but has only been confirmed not to interfere with the tool's validated reference case (Waxman 2013/2014, 8–14 bar pressure drop); outside that band it is an unconfirmed, conservative alternative estimate, not a certainty. If you see this warning, treat it as a prompt to think carefully about the operating point (and, ideally, to seek experimental confirmation) rather than as a correction to apply by hand. See `docs/future_work.md`, Priority 1, for the full reasoning.
+Directly beneath that caption, an amber **"Non-equilibrium choking ceiling exceeded"** badge and warning box appear whenever the Dyer prediction exceeds the Henry-Fauske (1971) non-equilibrium choking ceiling for the current tank/chamber conditions. This is a **diagnostic warning only** — it does not change the displayed "Real mass flow" figure. The extended digitised validation (`validation/waxman_2013_results.md`, Part B) found the ceiling binds at 31 of 64 two-phase points and improves the prediction at 30 of those 31 when applied as a cap — genuine, but still partial, evidence that has not yet been checked on other injector geometries; it is therefore still a diagnostic, not an automatic correction. If you see this warning, treat it as a prompt to think carefully about the operating point (and, ideally, to seek experimental confirmation), and note that the true flow is more likely to sit toward the ceiling the lower your tank's supercharge is. See `docs/future_work.md`, Priority 1, for the full reasoning.
 
 If the ceiling could not be computed at all, a grey caption states the reason instead of the warning. (With the CoolProp backend this no longer happens for tank temperatures up to the critical point; the former ≈307 K limit came from the older entropy tables.)
 

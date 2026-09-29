@@ -1,7 +1,6 @@
 # n2o_saturation_table.csv
 #
-# Saturated properties of nitrous oxide (N2O), transcribed by hand by the
-# project author from:
+# Saturated properties of nitrous oxide (N2O), transcribed by hand from:
 #   Jean-Philyppe, J. (2023). "A computational model for the design of a
 #   nitrous oxide-paraffin wax hybrid rocket engine." McGill Rocket Team.
 #   arXiv:2302.06725, Appendix A, Table A.1 and Table A.2.
@@ -10,23 +9,38 @@
 #                     u_v [kJ/mol], h_v [kJ/mol], cvv [kJ/(mol-K)], cpv [kJ/(mol-K)]
 # NOTE (unit trap): u_l, h_l, u_v, h_v, cvv, cpv are in per-MOL units in the
 # source table (kJ/mol), NOT per-kmol like the rest of this project's SI
-# convention. n2o_properties.py must convert (x1000) when reading these
+# convention. n2o_properties.py's parser converts (x1000) when reading these
 # columns. nu_v is already in m3/kmol, consistent with rho_liquid_sat().
+#
+# STATUS (September 2026 audit): since the CoolProp integration, only nu_v,
+# h_l and h_v from this table are still touched by n2o_properties.py, and
+# only as an INDEPENDENT test cross-check (tests/test_n2o_properties.py) --
+# the model itself gets P_sat, T_sat, rho_l, rho_v, h_l, h_v, h_fg from
+# CoolProp directly. This table comes from the same underlying equation of
+# state as CoolProp, so nu_v and h_fg = h_v - h_l agree with CoolProp to
+# about 1e-4 relative at these nodes -- it is not a source of the P_sat
+# error described below, and was never an independently-measured dataset.
 #
 # Table A.2 columns: T [K], dnu_v/dT [m3/(kmol-K)], du_l/dT, dh_l/dT,
 #                     du_v/dT, dh_v/dT [J/(kmol-K)], dcvv/dT, dcpv/dT [J/(kmol-K^2)]
 # Table A.2 is transcribed here for completeness / future use, but is NOT
-# currently used by n2o_properties.py (only Table A.1 -- nu_v, h_l, h_v --
-# is used, for the HEM/Dyer two-phase injector model).
+# used by n2o_properties.py at all (not even as a cross-check).
 #
 # KNOWN ANOMALY IN SOURCE (not a transcription error -- verified against
-# the original PDF table by the project author): in Table A.2, the
-# dcvv/dT column shows 1050.9 at T=245K and 742.1 at T=255K, both far out
-# of trend relative to their neighbors (148.5 -> 1050.9 -> 154 and
-# 146.5 -> ... -> 742.1 -> 162.8). This appears to be an error or artifact
-# in the original source table, not in this transcription. Not used by
-# the current model, so left as-is and flagged here rather than "corrected"
-# without a way to verify the true value.
+# the original PDF table): in Table A.1, the cvv
+# column shows 0.043798 at T=250K, badly out of trend relative to its
+# neighbours (0.034037 at 245K, 0.035577 at 255K; the local mean is
+# ~0.034807). This propagates directly into Table A.2's dcvv/dT column,
+# which is the central finite difference of Table A.1's cvv: (0.043798 -
+# 0.034037)/10 = 0.0009761 kJ/(mol.K^2) = 976.1 J/(kmol.K^2)/... i.e. the
+# 1050.9 and 742.1 entries at 245K/255K in Table A.2 are exactly what falls
+# out of differencing the anomalous 250K point against its two neighbours --
+# they are a consequence of the Table A.1 value, not a second, independent
+# error. Plausible cause: a single-digit transcription slip in the original
+# PDF (0.034798 fits the local trend and is one digit away from 0.043798).
+# Not used by the current model (Table A.2 is not read at all, and cvv is
+# not read from Table A.1 either), so left as transcribed rather than
+# "corrected" without a way to verify the true value against the PDF.
 #
 # T is the only column shared between the two tables; they are kept as
 # two separate blocks below rather than merged, to mirror the source
@@ -103,9 +117,14 @@ T_K,dnu_v_dT_m3_per_kmolK,du_l_dT_J_per_kmolK,dh_l_dT_J_per_kmolK,du_v_dT_J_per_
 #   Equation of state: Lemmon, E.W. and Span, R. (2006),
 #     "Short Fundamental Equations of State for 20 Industrial Fluids",
 #     J. Chem. Eng. Data, 51(3), 785-850. DOI:10.1021/je050186n
-#   Viscosity correlation: Millat, J., Vesovic, V., and Wakeham, W.A. (1991),
-#     "The Viscosity of Nitrous Oxide and Tetrafluoromethane in the Limit
-#     of Zero Density", Int. J. Thermophys., 12, 265.
+#   Viscosity correlation attribution (UNVERIFIED, September 2026 audit --
+#     see docs/references.md, "Open bibliographic points"): Millat, J.,
+#     Vesovic, V., and Wakeham, W.A. (1991), "The Viscosity of Nitrous
+#     Oxide and Tetrafluoromethane in the Limit of Zero Density", Int. J.
+#     Thermophys., 12, 265. This attribution could not be confirmed
+#     against the WebBook page itself or an independent source; treat the
+#     numerical data below as "NIST WebBook data, correlation reference
+#     unverified" until checked directly against the WebBook page.
 #
 # NIST uncertainty: ~2% at temperatures > 150 K (dilute gas limit);
 #   higher near the critical point (T > 295 K).
@@ -116,8 +135,13 @@ T_K,dnu_v_dT_m3_per_kmolK,du_l_dT_J_per_kmolK,dh_l_dT_J_per_kmolK,du_v_dT_J_per_
 # point), giving temperatures like 187.33, 192.33... rather than round
 # numbers. This is consistent with NIST's own saturation table convention.
 # Interpolation in n2o_properties.py uses linear interpolation between
-# these points, which is accurate because mu_v(T) is nearly linear in
-# this range (R^2 > 0.9999 for a linear fit over 182-300 K).
+# these points. mu_v(T) is close to, but not exactly, linear over this
+# range: fitting a straight line to the 26 points above gives R^2 = 0.971
+# (not > 0.9999), and the interpolation error between adjacent nodes is a
+# second-derivative (curvature) effect, not captured by an R^2 on a global
+# linear fit -- estimated directly from the table, it stays under ~0.8% of
+# the local value except in the final 302.33-307.33 K interval near the
+# critical point, where the curve steepens and the error is larger.
 
 [TABLE_A3]
 T_K,mu_v_uPa_s
@@ -153,7 +177,12 @@ T_K,mu_v_uPa_s
 # SOURCE: NIST Chemistry WebBook, SRD 69
 #   Species: Nitrous oxide (N2O), CAS 10024-97-2
 #   Equation of state: Lemmon & Span (2006), J. Chem. Eng. Data 51(3), 785-850
-#   Viscosity (liquid): Laesecke & Hafer (1998), Int. J. Thermophys. 19, 1557
+#   Liquid-viscosity correlation attribution (UNVERIFIED, same status as
+#   Table A.3 above): Laesecke & Hafer (1998), Int. J. Thermophys. 19,
+#   1557. By its own title ("Viscosity of fluorinated propane isomers")
+#   this reference is almost certainly NOT about N2O; do not cite it
+#   without checking the WebBook page directly (see
+#   docs/references.md, "Open bibliographic points").
 #   Downloaded: August 2026
 #
 # Units in this table (all converted to SI per-kg or per-kmol as noted):
@@ -169,10 +198,19 @@ T_K,mu_v_uPa_s
 #   mu_l: ~2% for T < 300 K; larger near critical point
 #   Entropy: ~0.5% throughout
 #
+# STATUS (September 2026 audit): mu_l is the only column of this table
+# still used by n2o_properties.py (mu_liquid_sat). cp_l, s_l and s_v are
+# no longer read by the model -- CoolProp now supplies cp_l and entropy
+# directly -- and are kept only as an independent test cross-check
+# (tests/test_n2o_properties.py); they come from the same equation of
+# state as CoolProp and agree with it to about 1e-4 relative at these
+# nodes. henry_fauske_critical_flow() (injector_two_phase.py) uses
+# CoolProp's s_liquid_sat/s_vapor_sat, not cp_l, for its throat-entropy
+# derivative.
+#
 # NOTE: cp_l diverges near the critical point (309.52 K) -- this is
-# physically correct (cp -> inf at critical point). The Henry-Fauske
-# model uses cp_l in the denominator; values above 300 K should be
-# used with caution. In practice, design conditions are T < 295 K.
+# physically correct (cp -> inf at critical point). Values above 300 K
+# should be used with caution.
 
 [TABLE_A4]
 T_K,cp_l_J_kgK,mu_l_Pa_s,s_l_J_molK,s_v_J_molK

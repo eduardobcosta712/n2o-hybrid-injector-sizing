@@ -127,7 +127,7 @@ been explored directly, as an alternative/complementary approach to the
 Henry-Fauske ceiling: rather than capping Dyer's *output*, the
 non-equilibrium parameter kappa itself is corrected below a supercharge
 threshold, motivated by a limitation of kappa already documented in the
-model's own source literature (Vargas Nino & Razavi, 2019: kappa "loses
+model's own source literature (Vargas Niño & Razavi, 2019: kappa "loses
 its physical interpretation" at saturation; the same authors already
 apply a structurally analogous supercharge-gated correction to a
 different model, their "Omega" formulation).
@@ -201,17 +201,26 @@ was not previously known.
    `examples/example_03_flashing.md`); a smooth transition, or at least
    a quantified uncertainty band around the threshold, is worth
    designing once data exist. The digitised Waxman data does not cover
-   this regime (all points there are liquid at the injector inlet).
+   this regime (all points there are liquid at the injector inlet). It
+   is also, separately, the source of a genuine solver-convergence gap:
+   `full_system.py`'s coupled solver can fail to converge (raising a
+   `RuntimeError`) for a narrow band of tank pressures sitting close
+   enough to the flashing threshold for a given line geometry, because
+   Dyer and HEM disagree there and the fixed-point iteration alternates
+   between the two branches instead of settling -- confirmed directly
+   with the CoolProp backend while regenerating
+   `examples/example_03_flashing.md` (see that file and
+   `docs/04_implementation.md`, Section 4.5). A smooth transition would
+   likely close this gap too, not just the accuracy question.
 3. **Geometries other than injector 3.** The extended dataset used only
    the rounded-inlet 1.5 mm injector (Waxman's "injector 3"); the
    square-edge injector 2 used in Part A (the original 4-point
    validation) still has only those 4 points at one supercharge level.
 
-**What is needed next.** A team's own cold-flow (water or N2O) data,
-specifically spanning a range of tank supercharge at a fixed, large
-pressure drop, would directly test the Priority 1 finding above (that
-supercharge, not dP, controls Dyer's error) on a different injector and
-rig than Waxman's.
+**What is needed next.** Cold-flow (water or N2O) data, specifically
+spanning a range of tank supercharge at a fixed, large pressure drop,
+would directly test the Priority 1 finding above (that supercharge, not
+dP, controls Dyer's error) on a different injector and rig than Waxman's.
 
 ---
 
@@ -268,13 +277,13 @@ is now Priority 4, ahead of the **Monte Carlo uncertainty analysis**, now
 Priority 5. Priority 4 is now implemented (see above), which is what makes
 this swap concrete rather than theoretical: Priority 5's sampled property
 values are the CoolProp ones as of this section, not the superseded
-Perry/McGill correlations.
+Perry correlations.
 
 **Rationale.** CoolProp directly improves the accuracy of every downstream
 model in this project — including the entropy data ($s_l$, $s_v$) used by
 the choking models — whereas running a Monte Carlo analysis on top of
-correlations with a known, unquantified ~2–3% systematic error near the
-critical point (Perry/McGill vs. REFPROP, see Priority 4 below) would
+correlations with a known, unquantified error in P_sat near the
+critical point (Perry vs. REFPROP, see Priority 4 below) would
 understate the real output uncertainty: the quoted confidence interval
 would reflect input-parameter noise only, not the model-form error
 already present in the property correlations. Fixing the property
@@ -313,8 +322,8 @@ alongside the existing circular case, not a replacement for it.
 
 **What was done.** `n2o_properties.py`'s thermodynamic functions now call
 **CoolProp** (Bell et al., 2014), implementing the Lemmon & Span (2006)
-equation of state for N₂O, replacing the closed-form Perry/McGill
-correlations and McGill Table A.1.
+equation of state for N₂O, replacing the closed-form Perry P_sat/rho_l
+correlations.
 
 **Confirmed with the real package (September 2026).** The full test suite (262 tests) 
 passes, `python src/model/n2o_properties.py`'s
@@ -326,25 +335,25 @@ self-check matches the literature reference values it targets, and
 `tests/test_n2o_properties.py::TestPsat::test_agrees_with_perry_correlation`
 failed at `rel_tol=0.04`: the real CoolProp P_sat differs from the Perry
 correlation by up to **4.81 %** at T = 230 K (far from the critical
-point), decreasing smoothly to about 0.9 % near T_MAX. This is the
-opposite trend from what the module's own docstring claimed ("Perry/McGill
-carried ~2–3 % error near the critical point") — the real data shows the
-Perry correlation is *better* near the critical point and *worse* well
-below it. The test's tolerance was widened to `rel_tol=0.06` (with a
-comment recording this finding) rather than silently loosened without
-explanation; the docstring in `n2o_properties.py` should be corrected to
-match this the next time that module is touched (not yet done in this
-pass — see "Audit follow-ups").
+point), decreasing smoothly to about 0.9 % near T_MAX. This confirms
+what the module's docstring now states: the Perry correlation is
+*worse* well below the critical point and comparatively *better* near
+it, the opposite of what an earlier draft of that docstring assumed. The
+test's tolerance was widened to `rel_tol=0.06` (with a comment recording
+this finding) rather than silently loosened. The legacy McGill Table A.1
+and the NIST Table A.4 entropy/cp columns, by contrast, were checked
+separately and agree with CoolProp to about 1e-4 relative -- they come
+from the same underlying equation of state, so they were never a source
+of the discrepancy; only the closed-form Perry P_sat correlation was.
 
 **Numbers that moved.** Every figure downstream of P_sat/h_fg shifted by
-roughly 1–5 %, in the direction the known Perry/McGill error would
-predict. Regenerated so far: `validation/waxman_2013_results.md` (full
-rewrite), `examples/example_01_sizing.md`, `examples/example_02_design.md`.
-`examples/example_03_flashing.md` could **not** be regenerated as-is — see
-the Priority 2 finding above. `docs/04_implementation.md`'s per-module
-numeric callouts (§4.1's literature self-check numbers, §4.4's isolated
-Dyer/HEM validation figures) have not yet been re-verified line by line
-in this pass.
+roughly 1–5 %, in the direction the known Perry P_sat error would
+predict. Regenerated: `validation/waxman_2013_results.md` (full
+rewrite), and all three worked examples --
+`examples/example_01_sizing.md`, `examples/example_02_design.md`, and
+`examples/example_03_flashing.md` (the last one needed a different
+starting operating point before it could be regenerated -- see the
+Priority 2 finding above and that file's own notes for why).
 
 ## Priority 5 — Quantitative uncertainty analysis (Monte Carlo)
 
@@ -357,7 +366,7 @@ and later in O/F ratio in the chamber.
 and pressure, uniform for Cd and geometry), run the coupled solver for
 each sample, and report the 5th–95th percentile of the mass-flow
 distribution. Once Priority 4 is done, sample CoolProp-backed properties
-directly rather than the Perry/McGill correlations, so the reported
+directly rather than the Perry correlations, so the reported
 confidence interval reflects only genuine input uncertainty, not
 correlation error.
 

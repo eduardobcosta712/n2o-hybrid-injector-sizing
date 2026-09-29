@@ -87,13 +87,13 @@ The Dyer model is a weighted combination of the SPI limit ("no time to vaporise"
 
 ## N₂O properties (CoolProp)
 
-Saturation thermodynamics (P_sat, T_sat, densities, enthalpy, entropy) are computed by **CoolProp** (Lemmon & Span 2006 equation of state) instead of the earlier Perry/McGill correlations, which is more accurate (the earlier correlations carried a known ~2–5 % error in P_sat, largest away from the critical point — see `docs/references.md`). This has now been confirmed with the real CoolProp package installed (September 2026): `pip install CoolProp` succeeded, the full 262-test suite passes, and `validation/waxman_2013_results.md` was regenerated end to end. Viscosity (used in the feed line) still comes from NIST WebBook tables, unaffected by this change — CoolProp has no N₂O viscosity model.
+Saturation thermodynamics (P_sat, T_sat, densities, enthalpy, entropy) are computed by **CoolProp** (Lemmon & Span 2006 equation of state) instead of the earlier closed-form Perry correlations, which is more accurate (the earlier P_sat correlation carried a known error of up to ~4.8 % at low temperature — see `docs/references.md`). This has now been confirmed with the real CoolProp package installed (September 2026): `pip install CoolProp` succeeded, the full 262-test suite passes, and `validation/waxman_2013_results.md` was regenerated end to end. Viscosity (used in the feed line) still comes from NIST WebBook tables, unaffected by this change — CoolProp has no N₂O viscosity model.
 
 ## Validation
 
 **Updated September 2026.** In addition to the original four Niño & Razavi (2019) operating points, the model has now been validated against a much larger dataset digitised directly from the source paper (Waxman et al., 2013, AIAA 2013-3636, Figs. 11–16): the full injector-3 mass-flow map across nine supercharge levels, at injector pressure drops from below 1 bar up to **46 bar**. Full detail, tables and a comparison figure in [`validation/waxman_2013_results.md`](validation/waxman_2013_results.md); the digitised data lives in `validation/digitized/` and the script `validation/waxman_2013_validation.py` reproduces every number.
 
-**Original four points (unchanged):** pressure drops of 8–14 bar give a MAPE of 2.76% (mean error −0.3%), with all points within ±5%.
+**Original four points:** pressure drops of 8–14 bar give a MAPE of 2.76% (mean error −0.3%), with all points within ±5%. (An earlier report, computed with the superseded Perry-correlation property backend, quoted 3.51% for this same comparison; that figure is now obsolete.)
 
 **Extended dataset (new):** 104 usable digitised points across dP = 0.3–46 bar. The single-phase (SPI) branch reproduces the calibration data essentially exactly (MAPE 1.25%, used only to fit one pooled discharge coefficient). The two-phase (Dyer) branch, evaluated at 64 points that did **not** enter the calibration, gives an overall MAPE of 6.85% — but this average hides a clear pattern: **the controlling variable is the tank's subcooling margin (supercharge above P_sat), not the injector pressure drop itself.**
 
@@ -111,14 +111,14 @@ Counter-intuitively, the **largest** pressure drops tested (30–46 bar, the ran
 The `hem_critical_flow()` and `hem_critical_flow_isentropic()` functions provide the *equilibrium* two-phase choking ceiling as standalone diagnostics (Waxman 2013 Eq. 5, isenthalpic and isentropic paths respectively — they agree to within 1.3%). At Waxman conditions they give ≈42–43 g/s; the Dyer predictions (43–50 g/s) sit above this, consistent with the non-equilibrium correction accounting for partial vaporisation inside the orifice.
 
 **What is *not* validated.**
-- The **two-phase feed-line model** and the **HEM two-phase-inlet injector path** (flashing in the line) are implemented and unit tested but have not been validated against any published data. The switch from Dyer to HEM at the flashing threshold is discontinuous (HEM at vanishing vapour quality predicts roughly half the Dyer flow), and this discontinuity can also make the coupled fixed-point solver fail to converge for operating points that sit close enough to the flashing threshold.
+- The **two-phase feed-line model** and the **HEM two-phase-inlet injector path** (flashing in the line) are implemented and unit tested but have not been validated against any published data. The switch from Dyer to HEM at the flashing threshold is discontinuous (HEM at vanishing vapour quality predicts roughly half the Dyer flow), and this discontinuity can also make the coupled fixed-point solver fail to converge for operating points that sit close enough to the flashing threshold — see `docs/future_work.md`, Priority 2, and `examples/example_03_flashing.md` for a worked scan showing where the non-convergent band actually sits for one line geometry.
 - The **coupled solver** has not been checked against a measured tank-to-chamber flow with a significant line.
 - The extended dataset (Part B/C/D) covers only injector 3 (1.5 mm, rounded inlet) at more than one supercharge; the square-edge injector-2 geometry of Part A still has only 4 points.
 - The **supercharge-gated κ correction** above is fitted to a single injector geometry and checked against only 4 points of a second geometry — see the report PDF for the full limitations list.
 
 ---
 
-> **262 automated tests** on Python 3.14 via `pytest tests/ -v` (6 test modules): `test_n2o_properties` 70, `test_feed_line` 32, `test_injector_spi` 13, `test_injector_two_phase` 55, `test_full_system` 45, `test_grain_sizing` 47. Confirmed passing with the real CoolProp package installed (September 2026).
+> **262 automated tests** on Python 3.10/3.12 via `pytest tests/ -v` (6 test modules): `test_n2o_properties` 70, `test_feed_line` 32, `test_injector_spi` 13, `test_injector_two_phase` 55, `test_full_system` 45, `test_grain_sizing` 47. Confirmed passing with the real CoolProp package installed (September 2026).
 
 ## Scope and known limitations
 
@@ -127,7 +127,7 @@ The `hem_critical_flow()` and `hem_critical_flow_isentropic()` functions provide
 - When flashing is detected in the feed line, the model estimates the vapour quality at the injector inlet via isenthalpic flash and applies HEM with a two-phase inlet enthalpy. The Dyer blend is not used in this regime: its SPI branch represents delayed nucleation in a *liquid*, and its inlet state is undefined once vapour is present (κ itself is not the problem — it equals 1 at a saturated inlet). The switch is discontinuous and the path is unvalidated (see above) — and, as of the September 2026 CoolProp confirmation, can cause the coupled solver to fail to converge right at the threshold.
 - Discharge coefficients use **literature reference values**, not team-calibrated data.
 - The Dyer model is now validated for pressure drops of 8–46 bar, but its accuracy depends strongly on the tank's subcooling margin (supercharge): reliable (MAPE ≈2%) above roughly 14 bar of supercharge, degrading to MAPE up to ≈18% below that, regardless of the injector pressure drop itself — see "Validation" above. A **non-equilibrium choking ceiling** (Henry-Fauske, 1971) is checked automatically and surfaced as a warning (not an automatic cap) when the Dyer prediction exceeds it; the extended dataset shows this cap improves the prediction in most cases where it fires, but not all, so it remains a diagnostic. An exploratory, alternative correction directly to κ exists (see "Validation" above) but is not wired into the tool.
-- N₂O thermophysical properties: saturation thermodynamics from CoolProp (Lemmon & Span 2006 equation of state, confirmed installed and passing); viscosity (μ_v, μ_l) and the legacy Perry/McGill Table A.1 (kept only as test cross-checks) still come from `n2o_saturation_table.csv`. The literature attribution of the NIST *viscosity* correlations is unverified (see `docs/references.md`, "Open bibliographic points").
+- N₂O thermophysical properties: saturation thermodynamics from CoolProp (Lemmon & Span 2006 equation of state, confirmed installed and passing); viscosity (μ_v, μ_l) and the legacy McGill Table A.1 (kept only as test cross-checks) still come from `n2o_saturation_table.csv`. The literature attribution of the NIST *viscosity* correlations is unverified (see `docs/references.md`, "Open bibliographic points").
 - Fuel grain sizing sizes the **initial** ($t=0$) circular-port geometry only; the regression-rate data point is a required user input (see `docs/03b_grain_sizing.md`).
 
 ---
@@ -188,9 +188,14 @@ n2o-hybrid-injector-sizing/
     └── example_03_flashing.md
 ```
 
+Note: `docs/future_work.md` and `docs/user_manual.md` reference a
+`tests/generate_example_03.py` helper script used to regenerate
+`examples/example_03_flashing.md`'s figures; add it to the tree above
+once it is committed (it is not currently tracked in this listing).
+
 ---
 
 ## Author
 
-Eduardo Costa — Aerospace Engineering, Instituto Superior Técnico (Técnico Lisboa).
+Eduardo Costa, aerospace engineering student, Instituto Superior Técnico (Técnico Lisboa).
 Developed independently as a personal project in hybrid rocket propulsion.

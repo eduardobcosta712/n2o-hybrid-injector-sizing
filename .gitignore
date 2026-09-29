@@ -16,6 +16,11 @@ venv/
 env/
 .env/
 
+# Test / tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Jupyter notebooks checkpoints
 .ipynb_checkpoints/
 

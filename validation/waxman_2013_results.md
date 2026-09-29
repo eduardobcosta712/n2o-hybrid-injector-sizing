@@ -13,7 +13,9 @@ Validation of the complete injector model against the Waxman (2013/2014)
 dataset. This report now uses **two** independent slices of the same paper:
 
 - **Part A** — the original four Niño & Razavi (2019) tabulated points
-  (injector 2 geometry, dP = 8–14 bar). Kept exactly as before.
+  (injector 2 geometry, dP = 8–14 bar). Same four points as before;
+  methodology unchanged, but the MAPE itself moved from 3.51% (the
+  earlier Perry-backend figure) to 2.76% once CoolProp was confirmed.
 - **Part B/C/D** — a much larger dataset digitised directly from the
   AIAA 2013-3636 PDF, using WebPlotDigitizer: the full injector-3 mass-flow map
   (Fig. 13, nine supercharge levels, dP up to ~46 bar), the matching
@@ -50,7 +52,7 @@ load-bearing.
 **Calibration.** The discharge coefficient is fit **once**, pooled over
 all nine curves, using only the single-phase window of each curve
 (30 psi ≤ dP ≤ supercharge — pure SPI there, no two-phase model involved):
-**Cd = 0.781** (n = 40 points, individual values 0.755–00.810). Waxman's
+**Cd = 0.781** (n = 40 points, individual values 0.755–0.810). Waxman's
 own text quotes ≈0.77 for this injector under one specific condition; the
 match is consistent. Every two-phase (Dyer) point is then a genuine
 prediction — none of them entered the fit.
@@ -68,7 +70,7 @@ prediction — none of them entered the fit.
 
 ---
 
-## 4. Results — Part A (unchanged)
+## 4. Results — Part A
 
 | Case | ΔP [bar] | m_exp [g/s] | m_dot [g/s] | Error | Regime |
 |---|---|---|---|---|---|
@@ -77,7 +79,12 @@ prediction — none of them entered the fit.
 | Post-critical 1 | 10.90 | 47.5 | 46.97 | −1.1% | Dyer |
 | Post-critical 2 | 13.70 | 48.0 | 50.37 | +4.9% | Dyer |
 
-**MAPE = 2.76 %**, mean −0.3 %, all 4 within ±5 %. Unchanged from before.
+**MAPE = 2.76 %**, mean −0.3 %, all 4 within ±5 %. This is the number
+that actually applies with the confirmed CoolProp backend; the 3.51 %
+figure quoted in earlier versions of this report (and, historically, in
+README.md) was computed with the superseded Perry-correlation backend and
+is now obsolete.
+
 Sensitivity check: re-running these same 4 points with Cd = 0.681 (the
 digitised Fig. 15 mean for injector **2**, the actual geometry of these
 points, vs the 0.65 assumed by the original report) gives MAPE = 4.41 %
@@ -85,7 +92,12 @@ points, vs the 0.65 assumed by the original report) gives MAPE = 4.41 %
 
 *(This 4.41 % figure is revisited in Section 10 below, alongside the
 gated κ correction — the two effects interact, and neither is fully
-separable from the other on this 4-point subset.)*
+separable from the other on this 4-point subset. A separate,
+direct-evaluation script (`validation/explore_supercharge_correction.py`,
+no upstream line, unrounded Cd = 0.6806) gets 4.47 % for the same
+comparison; the two figures differ only by that rounding and by the
+negligible upstream-line loss included here, not by any change in
+methodology.)*
 
 ---
 
@@ -118,7 +130,7 @@ correction rather than a coincidence.
 
 | dP band | Dyer MAPE | capped MAPE |
 |---|---|---|
-| ≤ 14 bar (previously validated) | 5.27% | 5.22% |
+| ≤ 14 bar (previously validated band) | 5.27% | 5.22% |
 | 14–30 bar | 9.18% | 6.14% |
 | 30–46 bar | **2.52%** | 1.02% |
 
@@ -184,9 +196,13 @@ critical point, in opposite directions, exactly as the theory in
 
 ## 7. Interpretation and consequences for the tool
 
-1. **The previously-validated 8–14 bar band remains fine** (Part A,
-   unchanged) and is now also confirmed by the larger dataset at
-   comparable supercharge (Part B, 169–206 psi curves: MAPE 4–6 %).
+1. **The previously-validated 8–14 bar band remains fine** (Part A) and
+   is now also confirmed by the larger dataset at comparable supercharge:
+   the 169 psi curve (11.7 bar of supercharge, close to Part A's own
+   ~95 psi but not identical) gives a Dyer MAPE of 5.9 % (Part B4),
+   within the range this project already treats as acceptable for that
+   regime, and the 206–371 psi curves (14–26 bar of supercharge) do
+   markedly better still, at 1.1–3.5 %.
 2. **The 20–50 bar band used by every worked example is now, for the
    first time, backed by data** — and the news is mixed: at *high*
    supercharge (≥ 1.38 MPa ≈ 14 bar) it is good (MAPE ≈ 2 %); at *low*
@@ -195,8 +211,8 @@ critical point, in opposite directions, exactly as the theory in
 3. **The Henry-Fauske ceiling is no longer merely a theoretical,
    never-triggered diagnostic.** In this larger dataset it fires on
    31/64 two-phase points and, when it fires, applying it as a cap
-   improves the prediction in 30/64 cases. This is still not strong
-   enough evidence to switch it from diagnostic to automatic cap
+   improves the prediction in 30 of those 31 cases. This is still not
+   strong enough evidence to switch it from diagnostic to automatic cap
    (it does not fully close the gap, and 28/31 experimental points sit
    below the ceiling too, meaning a *tighter* correction than Henry-Fauske
    would do even better) — but the negative result recorded before
@@ -238,7 +254,7 @@ critical point, in opposite directions, exactly as the theory in
 | `waxman_2013_results.md` | `validation/` (this file) |
 | `waxman_2013_validation.py` | `validation/` — Parts A–E, `--no-plot` to skip the figure |
 | `waxman_2013_fig13_comparison.png` | `validation/` — 9-panel model-vs-experiment figure |
-| `waxman_2013_experimental_data.csv` | `validation/` (unchanged; still not read by code) |
+| `waxman_2013_experimental_data.csv` | `validation/` (unchanged; still not read by code; see its own header for a known inconsistency against Fig. 16) |
 | `explore_supercharge_correction.py` | `validation/` — Section 10 exploration script |
 | `digitized/waxman_fig11_mdot_vs_dP_single_test.csv` | `validation/digitized/` |
 | `digitized/waxman_fig12_cd_vs_dP_single_test.csv` | `validation/digitized/` |
@@ -322,12 +338,13 @@ pooled = 0.781 (unchanged from Section 3):
 | 80 psi (protects Part A by construction*) | 2.5 | 4.63% | 2.75% |
 | 300 psi (unrestricted) | 1.0 | **1.86%** | 4.77% |
 
-\* Part A's own four points have a supercharge of ~95 psi — i.e. they sit
-*inside* the low-supercharge regime this correction targets, not safely
-above it. Only `supercharge_ref` values below Part A's own supercharge
-(≤ ~95 psi) protect it by mathematical construction; any larger threshold
-necessarily perturbs Part A too, since Part A itself qualifies as
-"low supercharge" by this same criterion.
+\* Part A's own four points have a supercharge of ~95 psi (94.7 psi with
+the CoolProp P_sat) — i.e. they sit *inside* the low-supercharge regime
+this correction targets, not safely above it. Only `supercharge_ref`
+values below Part A's own supercharge (≤ ~95 psi) protect it by
+mathematical construction; any larger threshold necessarily perturbs
+Part A too, since Part A itself qualifies as "low supercharge" by this
+same criterion.
 
 ### 10.5 Interaction with the discharge coefficient
 
@@ -340,8 +357,8 @@ measured Cd instead of the generic one:
 |---|---|
 | Cd = 0.65 (generic), no κ correction | 2.75% |
 | Cd = 0.65 (generic), with κ correction (β=1.0, ref=300 psi) | 4.77% |
-| Cd = 0.681 (measured, Fig. 15), no κ correction | 4.47% |
-| **Cd = 0.681 (measured, Fig. 15), with κ correction** | **1.14%** |
+| Cd = 0.681 (measured, Fig.15), no κ correction | 4.47% |
+| **Cd = 0.681 (measured, Fig.15), with κ correction** | **1.14%** |
 
 With the measured Cd, the κ correction does not degrade Part A — it
 improves it substantially, below even the original published baseline.

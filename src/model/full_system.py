@@ -350,8 +350,11 @@ if __name__ == "__main__":
         {"type": "fitting", "D": 0.008, "K": 0.90},
     ]
 
-    # One-pass result (old behaviour): use target m_dot to size the line
-    m_dot_target = 0.382   # kg/s -- the coupled-solver result of examples/example_01 (design guess)
+    # One-pass result (old behaviour): use target m_dot to size the line.
+    # This is only an illustrative starting guess for the demo below, not a
+    # value taken from examples/example_01_sizing.md (that example uses a
+    # different, shorter line and converges to 386.1 g/s).
+    m_dot_target = 0.382   # kg/s -- illustrative design guess for this demo
 
     fl_onepass   = evaluate_feed_line(m_dot_target, T_tank, P_tank, segments)
     P_in_onepass = fl_onepass["P_final"]
