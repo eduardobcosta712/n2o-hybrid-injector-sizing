@@ -45,13 +45,16 @@ Choking diagnostics (three, deliberately kept side by side):
       bound for a non-equilibrium (Dyer) prediction. dyer_mass_flow()
       returns it side by side with m_dot_Dyer as a "choked" diagnostic,
       never as an automatic cap. The two EQUILIBRIUM ceilings are NOT
-      valid caps for Dyer (Dyer legitimately exceeds them, and does so at
-      every validated Waxman point) -- see docs/future_work.md, Priority 1.
+      valid caps for Dyer (Dyer legitimately exceeds them at the validated
+      Waxman points) -- see docs/future_work.md, Priority 1.
 
 hem_critical_flow() (isenthalpic) is kept unchanged and side-by-side with
 hem_critical_flow_isentropic(): it is already validated and cited in
 validation/waxman_2013_results.md, and remains useful as a direct
 comparison against the more rigorous isentropic scan.
+
+An exploratory, supercharge-gated correction of kappa is provided by
+dyer_mass_flow_corrected(); it is not called by full_system.py.
 
 Units: SI throughout (Pa, K, kg/m^3, m^2, kg/s), except vapor quality x
 and the Dyer weighting parameter kappa, which are dimensionless.
@@ -99,9 +102,9 @@ def vapor_quality_isenthalpic(h_upstream, T_downstream):
     -------
     float
         Vapor quality x (dimensionless). Clamped to [0, 1]: values
-        slightly outside this range can occur from the linear-interpolation
-        and isenthalpic idealizations right at the boundary of validity,
-        and are physically meaningless outside [0, 1] (Section 1.7).
+        slightly outside this range can occur right at the boundary of
+        validity, and are physically meaningless outside [0, 1]
+        (Section 1.7).
     """
     x = (h_upstream - h_liquid_sat(T_downstream)) / h_fg(T_downstream)
     return max(0.0, min(1.0, x))
@@ -274,7 +277,8 @@ def hem_mass_flow_two_phase_inlet(Cd, A, T_tank, x_inlet,
     Known limitation: the switch from Dyer (liquid inlet) to this HEM
     two-phase-inlet model at the flashing threshold is DISCONTINUOUS --
     HEM at x_inlet -> 0 gives roughly half the Dyer flow at the same
-    conditions (about 200 g/s vs 365 g/s in examples/example_03). The
+    conditions (about 194 g/s just below the threshold vs about 340 g/s
+    just above it in the tank-pressure scan of examples/example_03). The
     two-phase-inlet path is implemented and unit tested but has not been
     validated against experimental data.
 
@@ -585,11 +589,11 @@ def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     Added September 2026 (docs/future_work.md, Priority 1) after
     `hem_critical_flow()`/`hem_critical_flow_isentropic()` were shown
     NOT to be the right ceiling for a non-equilibrium (Dyer) prediction:
-    all 4 validated Waxman operating points already sit 1.03x-1.21x
-    ABOVE the equilibrium HEM ceiling, which is correct, validated
-    behaviour (real non-equilibrium two-phase flow chokes at a HIGHER
-    mass flux than the full-equilibrium limit). Henry-Fauske models that
-    non-equilibrium choking directly, instead of assuming full
+    all 4 validated Waxman operating points already sit 1.01x-1.19x
+    ABOVE the isenthalpic equilibrium HEM ceiling, which is correct,
+    validated behaviour (real non-equilibrium two-phase flow chokes at a
+    HIGHER mass flux than the full-equilibrium limit). Henry-Fauske models
+    that non-equilibrium choking directly, instead of assuming full
     equilibrium.
 
     Source
@@ -636,10 +640,9 @@ def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     and ds_lE/dP is the derivative of saturated liquid specific entropy
     along the saturation curve, obtained via the chain rule
     ds_lE/dP = (ds_l/dT) / (dP_sat/dT), with ds_l/dT from a small
-    central finite difference on s_liquid_sat(T) (no closed-form
-    derivative is available, since s_l comes from table interpolation,
-    not a fitted correlation like P_sat) and dP_sat/dT from the existing
-    analytical dP_sat_dT(T).
+    central finite difference on s_liquid_sat(T) (the CoolProp backend
+    provides s_l(T) but no direct temperature derivative is used here)
+    and dP_sat/dT from the analytical dP_sat_dT(T).
 
     Eqs. (2) and (5) are coupled -- G_c depends on properties evaluated
     AT the throat pressure P_t, and P_t (via Eq. 2) depends on G_c -- so
@@ -709,29 +712,27 @@ def henry_fauske_critical_flow(Cd, A, T_upstream, P_upstream, x_inlet=0.0,
     Validation
     -----------
     At Waxman conditions (T=280 K, P=4.36 MPa, D=1.5 mm, Cd=0.65) with the
-    previous (Perry/McGill + NIST table) property set: m_dot_crit = 50.67
-    g/s -- above hem_critical_flow_isentropic's 41.64 g/s (correct:
-    non-equilibrium exceeds equilibrium), and above all 4 Dyer predictions
-    of that comparison (42.25-49.55 g/s), so it did not cut into any
-    validated result. These absolute values change slightly with the
-    CoolProp property set; the relations (above the equilibrium ceiling,
-    above the Dyer predictions at the Waxman points) are tested live in
-    tests/test_injector_two_phase.py. See
-    validation/waxman_2013_results.md for the full comparison.
+    CoolProp property set: m_dot_crit = 52.15 g/s (50.67 g/s with the
+    earlier Perry/McGill property set) -- above the equilibrium ceilings
+    (isenthalpic 42.48 g/s, isentropic 43.02 g/s; correct: non-equilibrium
+    exceeds equilibrium), and above all 4 Dyer predictions of that
+    comparison (42.91-50.37 g/s), so it does not cut into any validated
+    Part A result. The relations (above the equilibrium ceilings, above the
+    Dyer predictions at the Waxman points) are tested live in
+    tests/test_injector_two_phase.py. See validation/waxman_2013_results.md
+    for the full comparison.
 
     IMPORTANT CAVEAT (see docs/future_work.md, Priority 1). At OTHER
     operating points further from the Waxman geometry the ceiling DOES
     bind: for the conditions of examples/example_01_sizing.md (20 degC,
-    58->22 bar, 6x1.5mm holes) it sits ~14% below the uncapped Dyer
-    blend; see the two worked examples for the exact figures. There is
-    currently NO experimental data point in this project's validation set
-    where the Henry-Fauske ceiling actually changes the answer (all 4
-    Waxman points sit below it) -- so while the model is theoretically
-    sound and correctly implemented from a primary source, it is NOT
-    empirically confirmed in the regime where it matters. For this reason
-    it is surfaced as a side-by-side diagnostic value with a `choked`
-    flag in dyer_mass_flow(), NOT applied as an automatic override of
-    `m_dot_Dyer` -- see that function's docstring.
+    58->22 bar, 6x1.5mm holes) it sits ~17% below the uncapped Dyer
+    blend; see the worked examples for the exact figures. In the extended
+    validation against Waxman Figs. 11-16 (validation/waxman_2013_results.md,
+    Part B) the ceiling binds at 31 of 64 two-phase points and capping
+    improves 30 of those 31 -- real, but partial, evidence. It is still
+    NOT applied automatically: it is surfaced as a side-by-side
+    diagnostic value with a `choked` flag in dyer_mass_flow(), NOT as an
+    override of `m_dot_Dyer` -- see that function's docstring.
     """
     if not (T_MIN <= T_upstream <= T_MAX):
         raise ValueError(
@@ -849,17 +850,18 @@ def apply_choking_limit(m_dot_model, Cd, A, T_upstream, P_upstream,
     This was the original (September 2026, early) plan for bounding the
     Dyer model, and it was RETRACTED after numerical testing: the Dyer
     model is a non-equilibrium prediction and legitimately exceeds the
-    equilibrium ceiling -- all 4 validated Waxman points sit 1.03x-1.21x
-    above it -- so capping there would destroy the validated MAPE of
-    3.51%. See docs/future_work.md, Priority 1, and README "Scope and
-    known limitations". The appropriate non-equilibrium diagnostic is
-    henry_fauske_critical_flow(), surfaced through dyer_mass_flow()'s
-    "choked" flag.
+    equilibrium ceiling -- all 4 validated Waxman points sit 1.01x-1.19x
+    above the isenthalpic one -- so capping there would destroy the
+    validated MAPE of 2.76%. See docs/future_work.md, Priority 1, and
+    README "Scope and known limitations". The appropriate non-equilibrium
+    diagnostic is henry_fauske_critical_flow(), surfaced through
+    dyer_mass_flow()'s "choked" flag.
 
     The function is kept only for backward compatibility (nothing in the
-    repository calls it) and emits a DeprecationWarning. It is safe to
-    apply to a genuinely EQUILIBRIUM (HEM) prediction, which is the only
-    case where the isenthalpic ceiling is the right bound.
+    model or the interface calls it; only a deprecation test does) and
+    emits a DeprecationWarning. It is safe to apply to a genuinely
+    EQUILIBRIUM (HEM) prediction, which is the only case where the
+    isenthalpic ceiling is the right bound.
 
     Parameters
     ----------
@@ -1043,17 +1045,15 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     Priority 1). henry_fauske_critical_flow() is correctly implemented
     from a primary source (Henry & Fauske 1971, via Simoneau et al.
     1971) and is internally consistent (always sits above the
-    equilibrium HEM ceiling; does not perturb any of the 4 validated
-    Waxman operating points, since all 4 already sit below it). BUT at
-    other operating points -- e.g. examples/example_01_sizing.md's
-    conditions -- it DOES bind, and there is currently no experimental
-    data point in this project's validation set where the ceiling
-    actually changes the answer (all 4 Waxman points sit below it).
-    Silently overriding "m_dot_Dyer" with a value that is theoretically
-    well-founded but empirically unconfirmed in the regime where it
-    matters would risk quietly changing already-published results without
-    evidence. Instead, both values are returned, so calling code
-    (full_system.py, the Streamlit interface) can choose to display a
+    equilibrium HEM ceiling; does not perturb any of the 4 Part A Waxman
+    operating points, since all 4 already sit below it). At other
+    operating points -- e.g. examples/example_01_sizing.md's conditions --
+    it DOES bind. The extended validation (31/64 points, 30 improved when
+    capped) is genuine but partial evidence: the cap does not close the
+    whole gap, and it has not been checked on other injector geometries.
+    Silently overriding "m_dot_Dyer" would quietly change already-published
+    results on incomplete evidence. Instead, both values are returned, so
+    calling code (full_system.py, the Streamlit interface) can display a
     warning when "choked" is True, without silently changing the headline
     number.
     """
@@ -1098,30 +1098,14 @@ def dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     }
 
 
-if __name__ == "__main__":
-    # --- Validation case ---
-    T_upstream = 293.15   # K, 20 degC
-    P_upstream = 55e5     # Pa, 55 bar (subcooled: P_sat(20 degC) ~= 51.4 bar)
-    P_downstream = 20e5   # Pa, 20 bar chamber pressure
-    Cd = 0.65
-    A = 3.79e-6            # m^2
-
-    rho_l_upstream = rho_liquid_sat(T_upstream)
-    T_downstream = T_sat(P_downstream)
-    rho_l_downstream = rho_liquid_sat(T_downstream)
-    rho_v_downstream = M_N2O / nu_vapor_sat(T_downstream)
-
-    result = dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
-                             rho_l_upstream, rho_l_downstream, rho_v_downstream)
-
-
 def dyer_mass_flow_corrected(Cd, A, T_upstream, P_upstream, P_downstream,
                               rho_l_upstream, rho_l_downstream, rho_v_downstream,
                               beta, supercharge_ref_Pa):
     """
     Supercharge-gated correction to the Dyer/NHNE non-equilibrium parameter
     kappa (docs/future_work.md, Priority 1, item 1: "Investigate a
-    supercharge-dependent... correction").
+    supercharge-dependent... correction"). EXPLORATORY -- not called by
+    full_system.py or the interface.
 
     MOTIVATION AND PRIMARY-SOURCE SUPPORT
 
@@ -1129,7 +1113,7 @@ def dyer_mass_flow_corrected(Cd, A, T_upstream, P_upstream, P_downstream,
     T_upstream alone; it carries no explicit dependence on how close the
     tank itself sits to saturation (supercharge = P_upstream - P_sat
     (T_upstream)). Nino & Razavi (2019), AIAA 2019-4154 -- Eq. (4) of
-    that paper is exactly dyer_non_equilibrium_parameter() below -- state
+    that paper is exactly dyer_non_equilibrium_parameter() above -- state
     explicitly:
 
         "At saturated conditions the NHNE model loses its physical
@@ -1170,15 +1154,16 @@ def dyer_mass_flow_corrected(Cd, A, T_upstream, P_upstream, P_downstream,
     supercharge >= supercharge_ref are mathematically identical to the
     uncorrected Dyer model, by construction, regardless of beta.
 
-    KNOWN LIMITATION (relevant to any use of this function): the four already-published Part A points
-    (Nino & Razavi 2019 table, dP = 8-14 bar, MAPE = 3.51% as reported
-    in validation/waxman_2013_results.md and README.md) have a
-    supercharge of only ~95 psi -- i.e. they sit INSIDE the low-
-    supercharge regime this correction targets, not safely above it.
-    Any supercharge_ref >= 95 psi therefore also perturbs Part A; only
-    supercharge_ref values below Part A's own supercharge protect it by
-    construction. See validation/explore_supercharge_correction.py for
-    the full grid-search trade-off between the two.
+    KNOWN LIMITATION (relevant to any use of this function): the four
+    Part A points (Nino & Razavi 2019 table, dP = 8-14 bar, MAPE = 2.76%
+    as reported in validation/waxman_2013_results.md and README.md) have a
+    supercharge of only ~95 psi (94.7 psi with the CoolProp P_sat) -- i.e.
+    they sit INSIDE the low-supercharge regime this correction targets,
+    not safely above it. Any supercharge_ref >= 95 psi therefore also
+    perturbs Part A; only supercharge_ref values below Part A's own
+    supercharge protect it by construction. See
+    validation/explore_supercharge_correction.py for the full grid-search
+    trade-off between the two.
 
     A second, related finding from the same exploration: at least part
     of the apparent degradation of Part A under an "aggressive" (higher
@@ -1266,6 +1251,23 @@ def dyer_mass_flow_corrected(Cd, A, T_upstream, P_upstream, P_downstream,
         "m_dot_HEM":            m_dot_HEM,
         "x_exit":               hem_result["x_exit"],
     }
+
+
+if __name__ == "__main__":
+    # --- Validation case ---
+    T_upstream = 293.15   # K, 20 degC
+    P_upstream = 55e5     # Pa, 55 bar (subcooled: P_sat(20 degC) ~= 50.5 bar)
+    P_downstream = 20e5   # Pa, 20 bar chamber pressure
+    Cd = 0.65
+    A = 3.79e-6            # m^2 (illustrative area, not a published design)
+
+    rho_l_upstream = rho_liquid_sat(T_upstream)
+    T_downstream = T_sat(P_downstream)
+    rho_l_downstream = rho_liquid_sat(T_downstream)
+    rho_v_downstream = M_N2O / nu_vapor_sat(T_downstream)
+
+    result = dyer_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
+                             rho_l_upstream, rho_l_downstream, rho_v_downstream)
 
     print("Two-phase injector model (HEM + Dyer) -- example evaluation")
     print("-" * 60)

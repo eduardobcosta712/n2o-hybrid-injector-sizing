@@ -1,40 +1,47 @@
 """
 explore_supercharge_correction.py
 
-*** EXPLORATORIO -- NAO altera injector_two_phase.py nem full_system.py ***
+*** EXPLORATORY -- does NOT change injector_two_phase.py or full_system.py ***
 
-Testa a hipotese de que uma correcao dependente de supercharge no parametro
-kappa de Dyer,
+Tests the hypothesis that a supercharge-dependent correction of Dyer's
+parameter kappa,
 
     kappa' = kappa * (supercharge / supercharge_ref) ** beta
 
-reduz o MAPE observado a baixo supercharge (docs/future_work.md, Priority 1,
-ponto 1), SEM degradar a banda ja validada (dP = 8-14 bar, alto supercharge).
+reduces the MAPE observed at low supercharge (docs/future_work.md,
+Priority 1, item 1) WITHOUT degrading the already-validated band
+(dP = 8-14 bar, Part A).
 
-COMO CORRER (no teu repo local, com CoolProp instalado):
-  1. Aplica o PATCH_injector_two_phase.py: cola a funcao
-     dyer_mass_flow_corrected() em src/model/injector_two_phase.py, logo a
-     seguir a dyer_mass_flow() existente (nao mexe em mais nada).
-  2. Copia este ficheiro para validation/explore_supercharge_correction.py
-  3. python validation/explore_supercharge_correction.py
-     (corre de qualquer diretoria, tal como o waxman_2013_validation.py)
+HOW TO RUN (in your local repo, with CoolProp installed):
+  python validation/explore_supercharge_correction.py
+  (runs from any directory, like waxman_2013_validation.py). It needs
+  dyer_mass_flow_corrected(), which now lives in
+  src/model/injector_two_phase.py right after dyer_mass_flow().
 
-Reutiliza directamente as funcoes de carregamento e calibracao de
+It directly reuses the loading and calibration functions of
 validation/waxman_2013_validation.py (load_multiseries, curve_state,
-spi_cd_samples) -- nao ha logica duplicada para o parsing dos CSVs
-digitalizados.
+spi_cd_samples) -- there is no duplicated CSV-parsing logic.
 
-Metodologia (espelha run_part_b() de waxman_2013_validation.py):
-  1. Cd calibrado UMA vez, pooled sobre a janela de fase unica de cada
-     curva (30 psi <= dP <= supercharge) -- kappa nao entra aqui, e por
-     isso a calibracao de Cd nao e afetada pela correcao.
-  2. Para cada (beta, supercharge_ref) numa grelha, recalcula-se
-     m_dot_Dyer_corrected em TODOS os pontos de duas fases (dP > supercharge)
-     e mede-se o MAPE global e por banda de supercharge/dP.
-  3. Restricao dura: a banda "sagrada" (Parte A original, os 4 pontos
-     Nino&Razavi, dP 8-14 bar, injector 2 geometry, Cd=0.65) nao pode
-     degradar significativamente -- IMPORTANTE: usa sempre CD_PART_A=0.65,
-     NAO o Cd pooled da Fig.13 (injector 3) -- sao geometrias diferentes.
+Methodology (mirrors run_part_b() of waxman_2013_validation.py):
+  1. Cd is calibrated ONCE, pooled over the single-phase window of each
+     curve (30 psi <= dP <= supercharge) -- kappa does not enter there, so
+     the Cd calibration is not affected by the correction.
+  2. For each (beta, supercharge_ref) on a grid, the corrected mass flow is
+     recomputed at ALL two-phase points (dP > supercharge) and the global
+     MAPE and the MAPE per supercharge band are measured.
+  3. Hard constraint: the "sacred" band (original Part A, the 4
+     Nino & Razavi points, dP 8-14 bar, injector-2 geometry, Cd = 0.65)
+     must not degrade significantly -- IMPORTANT: always use
+     CD_PART_A = 0.65, NOT the pooled Cd of Fig. 13 (injector 3) -- they
+     are different geometries.
+
+Note on small numerical differences against waxman_2013_results.md: this
+script evaluates the injector model directly (no upstream line), whereas
+validation/waxman_2013_validation.py goes through the coupled solver with a
+5 cm line. That gives a baseline Part A MAPE of 2.75 % here vs 2.76 % there.
+Likewise CD_PART_A_FIG15 is the ROUNDED value 0.681 (unrounded digitised
+mean: 0.6806); with 0.681 the no-correction Part A MAPE is 4.47 %, with
+0.6806 it is 4.41 % (Section 4 of the results report).
 """
 
 import math
@@ -47,30 +54,32 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "src", "model"))
 from n2o_properties import P_sat, T_sat, rho_liquid_sat, nu_vapor_sat, M_N2O
 from injector_two_phase import dyer_mass_flow, dyer_mass_flow_corrected
 
-# Reutiliza o loader e a calibracao ja escritos e testados em
-# waxman_2013_validation.py -- evita duplicar logica de parsing.
+# Reuse the loader and calibration already written and tested in
+# waxman_2013_validation.py -- avoids duplicating parsing logic.
 sys.path.insert(0, _REPO_ROOT)
 from validation.waxman_2013_validation import (
     load_multiseries, curve_state, spi_cd_samples, A_INJ3, MIN_DP_PSI,
     PSI_PA, BAR_PER_PSI, pct_error, summarize,
 )
 
-# --- Parte A original (Nino & Razavi 2019, injector 2 geometry) ------------
-# Geometria DIFERENTE do injector 3 usado na Fig.13 -- Cd proprio, nao
-# o cd_pooled calibrado mais abaixo.
+# --- Original Part A (Nino & Razavi 2019, injector-2 geometry) -------------
+# DIFFERENT geometry from injector 3 (Fig. 13) -- own Cd, not the pooled
+# Cd calibrated below.
 T1_A = 280.0
 P1_A = 4.36e6
 D_A = 0.0015
 A_A = math.pi * (D_A / 2.0) ** 2
-CD_PART_A = 0.65   # valor generico ja assumido pelo repo para o injector 2
-CD_PART_A_FIG15 = 0.681   # Cd MEDIDO para o injector 2 (Waxman Fig.15, digitised) --
-                          # ver waxman_2013_validation.py, print_part_d() /
-                          # a sensibilidade ja feita la: MAPE baseline sobe de
-                          # 2.76% para 4.41% so por trocar 0.65 -> 0.681 (sem
-                          # nenhuma correcao de kappa envolvida). Usado abaixo
-                          # para isolar quanto da degradacao com a correcao
-                          # "agressiva" e de facto efeito de kappa, e quanto
-                          # e so o Cd assumido ja nao ser o correto.
+CD_PART_A = 0.65   # generic value already assumed by the repo for injector 2
+CD_PART_A_FIG15 = 0.681   # MEASURED Cd for injector 2 (Waxman Fig. 15,
+                          # digitised; rounded from 0.6806). Already known,
+                          # see waxman_2013_validation.py print_part_d():
+                          # merely swapping 0.65 -> 0.681 raises the
+                          # baseline MAPE from 2.76 % to ~4.4 %, with no
+                          # kappa correction involved. Used below to
+                          # separate how much of the degradation seen
+                          # under the "aggressive" correction is really a
+                          # kappa effect, and how much is just the assumed
+                          # Cd no longer being the right one.
 CASES_A = [
     ("Pre-critical",  0.84, 44.0),
     ("Critical",      0.98, 46.5),
@@ -84,8 +93,8 @@ def _rho_v(T):
 
 
 def two_phase_points(curves):
-    """Todos os pontos de duas fases (dP > supercharge) do injector 3,
-    com o estado a montante -- mesma selecao que dy_rows em run_part_b()."""
+    """All two-phase points (dP > supercharge) of injector 3, with the
+    upstream state -- same selection as dy_rows in run_part_b()."""
     pts = []
     for c in curves:
         T, P1_pa = curve_state(c)
@@ -104,8 +113,8 @@ def two_phase_points(curves):
 
 
 def predict_baseline(pts, cd):
-    """Dyer original (beta=0), sem linha a montante -- negligivel, tal
-    como assumido no script original (LINE ~= 5 cm de 25.4 mm ID)."""
+    """Original Dyer (beta = 0), no upstream line -- negligible, as
+    assumed in the original script (LINE ~= 5 cm of 25.4 mm ID)."""
     out = []
     for p in pts:
         T_d = T_sat(p["P2"])
@@ -139,16 +148,16 @@ def fmt(s):
 
 def run_part_a_corrected(beta, supercharge_ref_pa, cd=None):
     """
-    Verifica a banda sagrada (8-14 bar, Nino & Razavi) com a correcao
-    aplicada.
+    Checks the sacred band (8-14 bar, Nino & Razavi) with the correction
+    applied.
 
-    cd : float ou None
-        Se None (default), usa CD_PART_A (0.65 -- o valor generico ja
-        assumido pelo repo). Passa CD_PART_A_FIG15 (0.681, o valor
-        MEDIDO para esta geometria) para testar se a degradacao vista
-        com a correcao "agressiva" e efeito genuino da correcao de
-        kappa, ou (parcial/totalmente) um artefacto do Cd assumido ja
-        estar errado antes de qualquer correcao entrar em jogo.
+    cd : float or None
+        If None (default), uses CD_PART_A (0.65 -- the generic value
+        already assumed by the repo). Pass CD_PART_A_FIG15 (0.681, the
+        MEASURED value for this geometry) to test whether the degradation
+        seen with the "aggressive" correction is a genuine effect of the
+        kappa correction, or (partly/entirely) an artefact of the assumed
+        Cd already being wrong before any correction comes into play.
     """
     if cd is None:
         cd = CD_PART_A
@@ -171,27 +180,27 @@ def run_part_a_corrected(beta, supercharge_ref_pa, cd=None):
 
 def main():
     print("=" * 78)
-    print("EXPLORACAO: correcao GATED de kappa dependente do supercharge")
-    print("(CoolProp real -- confirmar que 'import CoolProp' funciona antes)")
+    print("EXPLORATION: GATED supercharge-dependent correction of kappa")
+    print("(real CoolProp -- check that 'import CoolProp' works first)")
     print("=" * 78)
 
     curves, _n_dropped = load_multiseries("waxman_fig13_mdot_vs_dP_by_supercharge.csv")
     samples = [v for c in curves for v in spi_cd_samples(c)]
     cd_pooled = sum(samples) / len(samples)
-    print(f"\nCd pooled (janela monofasica, injector 3, n={len(samples)}): {cd_pooled:.4f}")
+    print(f"\nPooled Cd (single-phase window, injector 3, n={len(samples)}): {cd_pooled:.4f}")
 
     pts = two_phase_points(curves)
-    print(f"Pontos de duas fases (dP > supercharge): {len(pts)}")
+    print(f"Two-phase points (dP > supercharge): {len(pts)}")
 
     supercharge_A_psi = (P1_A - P_sat(T1_A)) / PSI_PA
-    print(f"\nATENCAO: o supercharge dos 4 pontos da Parte A e "
-          f"{supercharge_A_psi:.1f} psi -- QUALQUER supercharge_ref >= "
-          f"{supercharge_A_psi:.0f} psi faz a correcao atuar TAMBEM na "
-          f"Parte A (nao fica protegida so por a correcao ser 'gated').")
+    print(f"\nNOTE: the supercharge of the 4 Part A points is "
+          f"{supercharge_A_psi:.1f} psi -- ANY supercharge_ref >= "
+          f"{supercharge_A_psi:.0f} psi makes the correction act on "
+          f"Part A too (being 'gated' alone does not protect it).")
 
-    # --- Baseline (beta=0, Dyer original) ---
+    # --- Baseline (beta = 0, original Dyer) ---
     base = predict_baseline(pts, cd_pooled)
-    print(f"\nBASELINE (Dyer original) -- deve bater com waxman_2013_results.md:")
+    print(f"\nBASELINE (original Dyer) -- must match waxman_2013_results.md:")
     print("  Global:", fmt(summarize([r["err"] for r in base])))
     for lo, hi, name in [(0, 100, "supercharge < 100 psi"),
                          (100, 200, "100 <= supercharge < 200 psi"),
@@ -200,14 +209,14 @@ def main():
         print(f"  {name:<32}", fmt(summarize(b)))
 
     part_a_base = run_part_a_corrected(beta=0.0, supercharge_ref_pa=200 * PSI_PA)
-    print("  Parte A (4 pontos, 8-14 bar, deve dar ~3.51%):",
+    print("  Part A (4 points, 8-14 bar, should give ~2.75 %):",
           fmt(summarize([r["err"] for r in part_a_base])))
 
-    # --- Grid search (GATED: factor=1 fora da zona corrigida) ---
+    # --- Grid search (GATED: factor = 1 outside the corrected region) ---
     print(f"\n{'='*78}\nGRID SEARCH (GATED): beta x supercharge_ref\n{'='*78}")
     betas = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0]
-    # refs_psi inclui valores ABAIXO e ACIMA do supercharge da Parte A
-    # (~82 psi), para tornar visivel o trade-off no relatorio.
+    # refs_psi includes values BELOW and ABOVE the supercharge of Part A
+    # (~95 psi), to make the trade-off visible in the report.
     refs_psi = [50, 60, 70, 80, 100, 150, 200, 250, 300]
 
     results = []
@@ -224,79 +233,81 @@ def main():
                             "protects_A": ref_psi <= supercharge_A_psi})
 
     print(f"\n{'ref[psi]':>8} {'beta':>5} {'global MAPE':>12} {'global mean':>12} "
-          f"{'PartA MAPE':>11} {'PartA mean':>11}  {'ProtegeA?':>10}")
+          f"{'PartA MAPE':>11} {'PartA mean':>11}  {'Protects A?':>11}")
     for r in results:
-        flag = "SIM (gate)" if r["protects_A"] else ("degrada" if r["mape_a"] > 3.6 else "-")
+        flag = "YES (gate)" if r["protects_A"] else ("degrades" if r["mape_a"] > 3.6 else "-")
         print(f"{r['ref_psi']:8.0f} {r['beta']:5.1f} {r['mape_global']:12.2f} "
-              f"{r['mean_global']:+12.2f} {r['mape_a']:11.2f} {r['mean_a']:+11.2f}  {flag:>10}")
+              f"{r['mean_global']:+12.2f} {r['mape_a']:11.2f} {r['mean_a']:+11.2f}  {flag:>11}")
 
-    # --- Duas leituras separadas, para deixar o trade-off explicito ---
+    # --- Two readings, to make the trade-off explicit ---
     print(f"\n{'='*78}")
     protected = [r for r in results if r["protects_A"]]
     if protected:
         best_protected = min(protected, key=lambda r: r["mape_global"])
-        print("OPCAO CONSERVADORA -- Parte A protegida por CONSTRUCAO "
+        print("CONSERVATIVE OPTION -- Part A protected BY CONSTRUCTION "
               f"(supercharge_ref <= {supercharge_A_psi:.0f} psi):")
         print(f"  beta = {best_protected['beta']}, "
               f"supercharge_ref = {best_protected['ref_psi']} psi")
-        print(f"  MAPE global: {best_protected['mape_global']:.2f}% "
+        print(f"  Global MAPE: {best_protected['mape_global']:.2f}% "
               f"(baseline: {summarize([r['err'] for r in base])['mape']:.2f}%)")
-        print(f"  MAPE Parte A: {best_protected['mape_a']:.2f}% "
-              f"(identico ao baseline, por construcao)")
+        print(f"  Part A MAPE: {best_protected['mape_a']:.2f}% "
+              f"(identical to the baseline, by construction)")
 
     print()
     unrestricted = [r for r in results if r["mape_a"] <= 5.0]
     if unrestricted:
         best_unrestricted = min(unrestricted, key=lambda r: r["mape_global"])
-        print("OPCAO AGRESSIVA -- so exige MAPE_A <= 5% (Parte A pode "
-              "degradar um pouco):")
+        print("AGGRESSIVE OPTION -- only requires Part A MAPE <= 5% (Part A "
+              "may degrade a little):")
         print(f"  beta = {best_unrestricted['beta']}, "
               f"supercharge_ref = {best_unrestricted['ref_psi']} psi")
-        print(f"  MAPE global: {best_unrestricted['mape_global']:.2f}% "
+        print(f"  Global MAPE: {best_unrestricted['mape_global']:.2f}% "
               f"(baseline: {summarize([r['err'] for r in base])['mape']:.2f}%)")
-        print(f"  MAPE Parte A: {best_unrestricted['mape_a']:.2f}% "
+        print(f"  Part A MAPE: {best_unrestricted['mape_a']:.2f}% "
               f"(baseline: {summarize([r['err'] for r in part_a_base])['mape']:.2f}%)")
 
         best_corr = predict_corrected(pts, cd_pooled, best_unrestricted["beta"],
                                        best_unrestricted["ref_psi"] * PSI_PA)
-        print(f"\n  Breakdown por supercharge (opcao agressiva):")
+        print(f"\n  Breakdown by supercharge (aggressive option):")
         for lo, hi, name in [(0, 100, "< 100 psi"), (100, 200, "100-200 psi"),
                              (200, 1000, ">= 200 psi")]:
             b = [r["err"] for r in best_corr if lo <= r["super_psi"] < hi]
             print(f"    {name:<15}", fmt(summarize(b)))
 
         # -------------------------------------------------------------
-        # TESTE: quanto da degradacao da Parte A e efeito de kappa vs.
-        # efeito do Cd assumido (0.65) ja nao ser o correto para comecar?
-        # Cd_FIG15 (0.681) e o valor MEDIDO diretamente para este injector
-        # (Waxman Fig.15, digitised) -- ja se sabia, mesmo antes desta
-        # correcao, que so trocar o Cd fazia o MAPE baseline subir de
-        # 2.76% para 4.41% (ver waxman_2013_validation.py print_part_d()
-        # e a sensibilidade ja feita la).
+        # TEST: how much of the Part A degradation is a kappa effect vs.
+        # an effect of the assumed Cd (0.65) already not being the
+        # correct one to begin with? CD_PART_A_FIG15 (0.681) is the value
+        # MEASURED directly for this injector (Waxman Fig. 15,
+        # digitised) -- it was already known, before this correction,
+        # that merely swapping the Cd raised the baseline MAPE from
+        # 2.76 % to ~4.4 % (see waxman_2013_validation.py
+        # print_part_d() and the sensitivity done there).
         # -------------------------------------------------------------
         print(f"\n{'='*78}")
-        print("ISOLAR EFEITO DE Cd vs. EFEITO DE KAPPA na Parte A")
+        print("SEPARATING THE EFFECT OF Cd FROM THE EFFECT OF KAPPA on Part A")
         print(f"{'='*78}")
 
         beta_best = best_unrestricted["beta"]
         ref_best_pa = best_unrestricted["ref_psi"] * PSI_PA
 
         combos = [
-            ("Cd=0.65 (assumido), beta=0 (sem correcao)", CD_PART_A, 0.0, 200 * PSI_PA),
-            ("Cd=0.65 (assumido), beta=best (com correcao)", CD_PART_A, beta_best, ref_best_pa),
-            ("Cd=0.681 (medido, Fig.15), beta=0 (sem correcao)", CD_PART_A_FIG15, 0.0, 200 * PSI_PA),
-            ("Cd=0.681 (medido, Fig.15), beta=best (com correcao)", CD_PART_A_FIG15, beta_best, ref_best_pa),
+            ("Cd=0.65 (assumed), beta=0 (no correction)", CD_PART_A, 0.0, 200 * PSI_PA),
+            ("Cd=0.65 (assumed), beta=best (corrected)", CD_PART_A, beta_best, ref_best_pa),
+            ("Cd=0.681 (measured, Fig.15), beta=0 (no correction)", CD_PART_A_FIG15, 0.0, 200 * PSI_PA),
+            ("Cd=0.681 (measured, Fig.15), beta=best (corrected)", CD_PART_A_FIG15, beta_best, ref_best_pa),
         ]
         for label, cd_test, beta_test, ref_test in combos:
             rows = run_part_a_corrected(beta_test, ref_test, cd=cd_test)
             s = summarize([r["err"] for r in rows])
             print(f"  {label:<52}", fmt(s))
 
-        print(f"\n  Leitura: compara a 1a linha com a 3a (efeito de trocar so o Cd,")
-        print(f"  SEM correcao de kappa) contra a 2a vs a 4a (mesmo efeito, MAS com")
-        print(f"  a correcao ja aplicada). Se a diferenca 3a-1a for parecida com a")
-        print(f"  diferenca 4a-2a, o Cd explica a maior parte do 'aumento' de MAPE")
-        print(f"  que atribuimos a correcao de kappa -- nao a correcao em si.")
+        print(f"\n  Reading: compare line 1 with line 3 (effect of swapping only the")
+        print(f"  Cd, WITHOUT the kappa correction) against line 2 vs line 4 (the same")
+        print(f"  effect, BUT with the correction already applied). If the 3-1")
+        print(f"  difference is similar to the 4-2 difference, the Cd explains most")
+        print(f"  of the MAPE 'increase' we attributed to the kappa correction -- not")
+        print(f"  the correction itself.")
 
 
 if __name__ == "__main__":

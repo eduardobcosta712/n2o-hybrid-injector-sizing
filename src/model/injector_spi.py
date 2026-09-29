@@ -107,18 +107,16 @@ def spi_sufficient(P_upstream, T_upstream, P_downstream):
 
 
 if __name__ == "__main__":
-    # --- Validation case, referenced in docs/references.md: a published
-    #     hybrid motor injector operating point, comparing the SPI
-    #     prediction against the documented real (flashing-affected) flow.
+    # --- Illustrative evaluation (NOT a published design point). ---
+    # An earlier version of this comment called this a "published hybrid
+    # motor injector operating point"; docs/references.md cites no such
+    # source, so the numbers below are only illustrative.
     #
-    # Reference case parameters (representative of the documented
-    # discrepancy discussed in the theory docs -- see references.md for
-    # the exact source and figures):
-    #   - N2O at ~20 degC upstream of the injector
-    #   - Upstream (tank/run-line) pressure and downstream (chamber)
-    #     pressure such that the pressure drop crosses saturation
-    #   - SPI over-predicts flow because it assumes single-phase liquid
-    #     throughout
+    # Note: 50 bar upstream is already slightly BELOW P_sat(20 degC)
+    # (~50.5 bar with the CoolProp backend), i.e. the liquid enters the
+    # orifice at the edge of saturation -- a deliberately demanding case
+    # (see docs/04_implementation.md, Section 4.3). SPI over-predicts the
+    # flow because it assumes single-phase liquid throughout.
 
     from n2o_properties import rho_liquid_sat
 
@@ -126,8 +124,7 @@ if __name__ == "__main__":
     P_upstream = 50e5         # Pa, 50 bar upstream
     P_downstream = 20e5       # Pa, 20 bar chamber pressure (example)
     Cd = 0.65                 # typical injector discharge coefficient
-    A = 3.79e-6               # m^2, example total orifice area (from a
-                               # published design point, see references.md)
+    A = 3.79e-6               # m^2, illustrative total orifice area
 
     rho = rho_liquid_sat(T_upstream)
     delta_P = P_upstream - P_downstream

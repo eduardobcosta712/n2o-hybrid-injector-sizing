@@ -3,6 +3,21 @@
 #  with Self-Pressurizing Oxidizers in Hybrid Rockets"
 # Stanford University / NASA Ames Research Center
 #
+# *** WARNING (September 2026 audit) -- READ BEFORE USING THIS FILE ***
+# This file is NOT read by any code and its m_dot_crit_exp column is
+# INCONSISTENT with the digitised Fig. 16 (validation/digitized/):
+#   - Fig. 16 gives ~0.067-0.072 kg/s (67-72 g/s) for injector 3 at
+#     169-205 psi of supercharge; this file lists 18.0 g/s for injector 3
+#     (P1_super = 1.26 MPa = 183 psi). Physically, a 1.5 mm hole with
+#     Cd ~ 0.77 at that state passes ~70-80 g/s, so 14.8-18.0 g/s cannot be
+#     right for the 1.50 mm injectors (the injector-5 value was "scaled by
+#     area ratio" from the same unreliable reading).
+#   - The upstream state (P1 = 4.96 MPa, super = 1.26 MPa) also disagrees
+#     with Fig. 11 (P1 = 704 psia = 4.85 MPa, super = 169 psi = 1.17 MPa)
+#     and with the Part A validation (P1 = 4.36 MPa, super = 0.62 MPa).
+# Use validation/digitized/*.csv instead. The values below are left
+# unchanged until they are re-checked against the paper.
+#
 # DATA EXTRACTION NOTES:
 #   - All data are for N2O (not CO2), with helium supercharge (QF_upstream = 0)
 #   - Geometry: L = 18.4 mm fixed for all injectors
@@ -14,12 +29,13 @@
 #
 # EXPERIMENTAL UNCERTAINTY:
 #   - Cd_SPI: graph read-off uncertainty ~ +/-0.01
-#   - m_dot_crit: graph read-off uncertainty ~ +/-5%
+#   - m_dot_crit: graph read-off uncertainty ~ +/-5% (does not explain the
+#     factor ~4 discrepancy above)
 #   - Upstream conditions: time-averaged over test (P1, T1 drift slightly)
 #
 # DOMAIN OF VALIDITY for the model:
-#   - QF_upstream = 0 (supercharged) -> liquid at injector inlet ✓
-#   - P_downstream < P_sat(T1) -> two-phase flashing inside orifice ✓
+#   - QF_upstream = 0 (supercharged) -> liquid at injector inlet
+#   - P_downstream < P_sat(T1) -> two-phase flashing inside orifice
 #   - This is the correct domain for validating the Dyer model as implemented
 
 injector_id,style,D_mm,L_mm,L_D,inlet_geometry,fluid,T1_K,P1_MPa,P1_super_MPa,P2_MPa,Cd_SPI_exp,m_dot_crit_exp_gs,notes
