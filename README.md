@@ -136,7 +136,14 @@ The `hem_critical_flow()` and `hem_critical_flow_isentropic()` functions provide
 
 ```
 n2o-hybrid-injector-sizing/
+├── .gitignore
+├── .github/
+│   └── workflows/
+│       └── tests.yml
 ├── README.md
+├── LICENSE
+├── requirements.txt
+├── requirements-dev.txt
 ├── docs/
 │   ├── 01_n2o_thermodynamics.md
 │   ├── 02_spi_model.md
@@ -186,14 +193,6 @@ n2o-hybrid-injector-sizing/
     ├── example_01_sizing.md
     ├── example_02_design.md
     └── example_03_flashing.md
-```
-
-Note: `docs/future_work.md` and `docs/user_manual.md` reference a
-`tests/generate_example_03.py` helper script used to regenerate
-`examples/example_03_flashing.md`'s figures; add it to the tree above
-once it is committed (it is not currently tracked in this listing).
-
----
 
 ## Author
 
