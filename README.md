@@ -140,8 +140,10 @@ n2o-hybrid-injector-sizing/
 ├── .github/
 │   └── workflows/
 │       └── tests.yml
-├── README.md
+├── CHANGELOG.md                  
+├── CITATION.cff                  
 ├── LICENSE
+├── README.md
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── docs/
@@ -183,6 +185,7 @@ n2o-hybrid-injector-sizing/
 │       └── waxman_fig16_critical_mdot_vs_supercharge.csv
 ├── tests/
 │   ├── conftest.py
+│   ├── generate_example_03.py    
 │   ├── test_n2o_properties.py
 │   ├── test_feed_line.py
 │   ├── test_injector_spi.py

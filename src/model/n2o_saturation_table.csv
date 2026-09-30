@@ -114,17 +114,11 @@ T_K,dnu_v_dT_m3_per_kmolK,du_l_dT_J_per_kmolK,dh_l_dT_J_per_kmolK,du_v_dT_J_per_
 #   Species: Nitrous oxide (N2O), CAS 10024-97-2
 #   Data type: Saturation properties, temperature increments
 #   Downloaded: August 2026
-#   Equation of state: Lemmon, E.W. and Span, R. (2006),
-#     "Short Fundamental Equations of State for 20 Industrial Fluids",
-#     J. Chem. Eng. Data, 51(3), 785-850. DOI:10.1021/je050186n
-#   Viscosity correlation attribution (UNVERIFIED, September 2026 audit --
-#     see docs/references.md, "Open bibliographic points"): Millat, J.,
-#     Vesovic, V., and Wakeham, W.A. (1991), "The Viscosity of Nitrous
-#     Oxide and Tetrafluoromethane in the Limit of Zero Density", Int. J.
-#     Thermophys., 12, 265. This attribution could not be confirmed
-#     against the WebBook page itself or an independent source; treat the
-#     numerical data below as "NIST WebBook data, correlation reference
-#     unverified" until checked directly against the WebBook page.
+#   Viscosity correlation: reference not identified. Earlier versions of,
+#   this header cited Millat, Vesovic & Wakeham (1991), which covers only,
+#   the zero-density limit and cannot account for saturated-vapour values,
+#   at finite density; the citation was removed in the pre-1.0.0 audit.,
+#   The numerical values are NIST WebBook data (see docs/references.md).
 #
 # NIST uncertainty: ~2% at temperatures > 150 K (dilute gas limit);
 #   higher near the critical point (T > 295 K).
@@ -176,14 +170,10 @@ T_K,mu_v_uPa_s
 #
 # SOURCE: NIST Chemistry WebBook, SRD 69
 #   Species: Nitrous oxide (N2O), CAS 10024-97-2
-#   Equation of state: Lemmon & Span (2006), J. Chem. Eng. Data 51(3), 785-850
-#   Liquid-viscosity correlation attribution (UNVERIFIED, same status as
-#   Table A.3 above): Laesecke & Hafer (1998), Int. J. Thermophys. 19,
-#   1557. By its own title ("Viscosity of fluorinated propane isomers")
-#   this reference is almost certainly NOT about N2O; do not cite it
-#   without checking the WebBook page directly (see
-#   docs/references.md, "Open bibliographic points").
-#   Downloaded: August 2026
+#   Viscosity (liquid): correlation reference not identified. An earlier,
+#   attribution to Laesecke & Hafer (1998), a paper on fluorinated,
+#   propanes, was removed in the pre-1.0.0 audit. The numerical values,
+#   are NIST WebBook data (see docs/references.md).
 #
 # Units in this table (all converted to SI per-kg or per-kmol as noted):
 #   cp_l_J_kgK  : isobaric heat capacity of saturated liquid, J/(kg.K)

@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "n2o-hybrid-injector-sizing"
+abstract: >-
+  Physics-based tool and technical reference for predicting premature
+  vaporisation (flashing) of N2O in the feed systems of hybrid rocket motors
+  and for sizing injector orifices that account for two-phase flow effects.
+type: software
+authors:
+  - family-names: "Costa"
+    given-names: "Eduardo"
+    affiliation: "Instituto Superior Técnico, Universidade de Lisboa"
+version: "1.0.0"
+date-released: "2026-09-30"
+license: MIT
+repository-code: "https://github.com/eduardobcosta712/n2o-hybrid-injector-sizing"
+keywords:
+  - nitrous oxide
+  - hybrid rocket
+  - injector
+  - two-phase flow
+  - Dyer model
+  - flashing
