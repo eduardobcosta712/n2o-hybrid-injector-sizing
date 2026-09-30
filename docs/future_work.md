@@ -12,7 +12,7 @@ technical importance per the project roadmap document.
 - Coupled feed-line / injector solver (iterative, damped fixed-point)  
 - Two-phase HEM pressure-drop model in feed line (rho_mix, mu_mix, x(s) per segment)  
 - Saturated vapour viscosity mu_v(T) from NIST WebBook (Table A.3)  
-- Saturated liquid Cp, mu_l, entropy (liquid+vapour) from NIST WebBook (Table A.4, Lemmon & Span 2006)  
+- Saturated liquid Cp, mu_l, entropy (liquid+vapour) from NIST WebBook (Table A.4); since the CoolProp integration (Priority 4) only mu_l is still read from this table -- cp_l and entropy now come from CoolProp  
 - Temperature-dependent liquid viscosity mu_l(T) actually used in the feed line  
 - HEM isenthalpic critical flow (hem_critical_flow, Waxman Eq.5) -- standalone  
 - HEM **isentropic** critical flow (hem_critical_flow_isentropic) -- standalone, kept side-by-side
@@ -81,6 +81,13 @@ points (Part A) are all comfortably at high supercharge and still show
 `choked = False`, so nothing published earlier is disturbed by this
 finding.
 
+> *Correction (September 2026 audit):* the sentence above says the Part A
+> points are "comfortably at high supercharge". That is wrong: their
+> supercharge is only ~95 psi (94.7 psi with the CoolProp P_sat), i.e.
+> inside the low-supercharge regime. They still show `choked = False`
+> because of their small pressure drop (8-14 bar), not because of a large
+> supercharge. See the exploratory kappa-correction section below.
+
 **What is now genuinely still open (revised).**
 1. Investigate a supercharge-dependent (rather than binary choked/not)
    correction -- the data suggests the *size* of the needed correction
@@ -100,8 +107,8 @@ finding.
 even though the "never binds" premise it was partly based on is now
 outdated).** At operating points further from the Waxman geometry the
 Henry-Fauske ceiling *does* bind: 17% below the Dyer prediction in
-`examples/example_01_sizing.md`, 10% below the target in
-`example_02_design.md`. Silently overriding `m_dot_Dyer` with a value
+`examples/example_01_sizing.md`, about 9% (456.2 vs 500 g/s) below the
+target in `example_02_design.md`. Silently overriding `m_dot_Dyer` with a value
 whose net effect on accuracy was, until now, never checked against data
 would have been the wrong precedent regardless of how the individual
 numbers happened to compare -- the extended validation above is the
@@ -135,8 +142,8 @@ different model, their "Omega" formulation).
 **Summary of the finding** (full derivation, primary-source support, and
 limitations in `docs/reports/dyer_supercharge_correction.pdf`):
 
-- A gated correction, kappa'' = kappa for supercharge >= S_ref, and
-  kappa'' = kappa*(supercharge/S_ref)^beta below it, reduces the global
+- A gated correction, kappa' = kappa for supercharge >= S_ref, and
+  kappa' = kappa*(supercharge/S_ref)^beta below it, reduces the global
   MAPE on the 64 digitised two-phase points from 6.86% (baseline) to as
   low as 1.86% (unrestricted grid-search optimum), at the cost of
   perturbing the original 4-point Part A validation subset (MAPE 2.75%
@@ -269,26 +276,6 @@ dP, controls Dyer's error) on a different injector and rig than Waxman's.
 
 ---
 
-## Reordering note (September 2026)
-
-Priorities 4 and 5 were swapped relative to the original roadmap draft:
-**improved N₂O thermophysical properties (CoolProp/REFPROP integration)**
-is now Priority 4, ahead of the **Monte Carlo uncertainty analysis**, now
-Priority 5. Priority 4 is now implemented (see above), which is what makes
-this swap concrete rather than theoretical: Priority 5's sampled property
-values are the CoolProp ones as of this section, not the superseded
-Perry correlations.
-
-**Rationale.** CoolProp directly improves the accuracy of every downstream
-model in this project — including the entropy data ($s_l$, $s_v$) used by
-the choking models — whereas running a Monte Carlo analysis on top of
-correlations with a known, unquantified error in P_sat near the
-critical point (Perry vs. REFPROP, see Priority 4 below) would
-understate the real output uncertainty: the quoted confidence interval
-would reflect input-parameter noise only, not the model-form error
-already present in the property correlations. Fixing the property
-backbone first is the more useful order of operations.
-
 ## Priority 3b — Non-circular grain port shapes (star, wagon-wheel)
 
 **Motivation.** Split off from Priority 3 above during implementation
@@ -317,6 +304,26 @@ implement as an additional port-shape option in `grain_sizing.py`
 alongside the existing circular case, not a replacement for it.
 
 ---
+
+## Reordering note (September 2026)
+
+Priorities 4 and 5 were swapped relative to the original roadmap draft:
+**improved N₂O thermophysical properties (CoolProp/REFPROP integration)**
+is now Priority 4, ahead of the **Monte Carlo uncertainty analysis**, now
+Priority 5. Priority 4 is now implemented (see above), which is what makes
+this swap concrete rather than theoretical: Priority 5's sampled property
+values are the CoolProp ones as of this section, not the superseded
+Perry correlations.
+
+**Rationale.** CoolProp directly improves the accuracy of every downstream
+model in this project — including the entropy data ($s_l$, $s_v$) used by
+the choking models — whereas running a Monte Carlo analysis on top of
+correlations with a known, unquantified error in P_sat near the
+critical point (Perry vs. REFPROP, see Priority 4 below) would
+understate the real output uncertainty: the quoted confidence interval
+would reflect input-parameter noise only, not the model-form error
+already present in the property correlations. Fixing the property
+backbone first is the more useful order of operations.
 
 ## Priority 4 — Improved N₂O thermophysical properties -  RESOLVED (September 2026)
 

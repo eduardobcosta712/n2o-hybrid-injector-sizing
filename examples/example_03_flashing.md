@@ -1,8 +1,7 @@
 # Example 3 — Flashing Case: Diagnosis and Design Correction
 
 > **Property-backend status: CONFIRMED (September 2026).** Every figure below
-> was regenerated with the real CoolProp package installed, by running
-> `tests/generate_example_03.py` (same geometry, same solver settings as the
+> was regenerated with the real CoolProp package installed(same geometry, same solver settings as the
 > tool). It replaces the earlier version of this example, which mixed two
 > CoolProp headline numbers with legacy Perry/McGill cross-check values. Two
 > statements of that earlier version turned out to be wrong and were corrected
@@ -104,7 +103,7 @@ Across the band the flow changes from 193.9 g/s (53.5 bar) to 340.3 g/s (55.25 b
 
 ## Caveats that the tool also reports
 
-1. **The choking warning appears on the corrected design.** The Henry-Fauske (1971) non-equilibrium ceiling is **267.8 g/s** at Step 2 (Dyer 347.7 g/s, `choked = True`, ceiling 23 % below Dyer) and **278.1 g/s** at Step 3 (Dyer 356.2 g/s, ceiling 22 % below). This is the same pattern as in Examples 1 and 2 at comparably large pressure drops (36–38 bar here). It is a diagnostic, not a correction: the Dyer model is validated only at 8–14 bar, and the ceiling itself has no experimental confirmation where it binds. A defensible planning range for the final design is roughly **278–356 g/s**, to be narrowed by a cold-flow or hot-fire measurement. In either case it is far below the ≈ 506 g/s that SPI predicts at 56 bar.
+1. **The choking warning appears on the corrected design.** The Henry-Fauske (1971) non-equilibrium ceiling is **267.8 g/s** at Step 2 (Dyer 347.7 g/s, `choked = True`, ceiling 23 % below Dyer) and **278.1 g/s** at Step 3 (Dyer 356.2 g/s, ceiling 22 % below), at pressure drops of 36–38 bar. It is a diagnostic, not a correction, but the extended Waxman validation (`validation/waxman_2013_results.md`, Part B) makes it more credible here than it was when this example was first written: the tank supercharge at 56 bar and 22 °C is only 3.14 bar (≈46 psi), i.e. in the lowest-supercharge band of that dataset (41 psi curve: Dyer MAPE 17.7 %, 12.3 % if capped at the ceiling; Dyer always over-predicted there). The validation covers one injector geometry, so a defensible planning range for the final design remains roughly **278–356 g/s**, leaning toward the lower end, to be narrowed by a cold-flow or hot-fire measurement. In either case it is far below the ≈ 506 g/s that SPI predicts at 56 bar.
 2. **The jump between Steps 0 and 2 is partly a model artefact.** Dyer (liquid inlet) and HEM (two-phase inlet) are different models, and HEM at vanishing vapour quality predicts noticeably less than Dyer at the same conditions (`docs/future_work.md`, Priority 2). The qualitative message, that crossing into flashing in the line is very costly, is robust. The exact size of the jump, and the behaviour inside the non-convergent band, are not pinned down by any experimental data.
 3. **The tool's own margin guideline is 5 bar before line losses.** 56 bar gives 3.14 bar at 22 °C. If more margin is wanted, the scan above shows a converging Dyer solution at 58 bar (5.14 bar margin) for the original needle-valve geometry, 355.1 g/s; re-run the final geometry in the tool to get its own figure.
 
@@ -134,4 +133,3 @@ Across the band the flow changes from 193.9 g/s (53.5 bar) to 340.3 g/s (55.25 b
 1. Set P = **56 bar**, ball valve, 8 mm line: Flashing NO, Dyer, **347.7 g/s**, plus the amber choking-ceiling warning (267.8 g/s).
 2. Change the line ID to **12 mm**: **356.2 g/s**, ceiling 278.1 g/s.
 
-The scripted version of all of the above is `tests/generate_example_03.py`.

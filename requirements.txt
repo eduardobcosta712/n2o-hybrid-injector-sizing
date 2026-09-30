@@ -1,0 +1,11 @@
+# Runtime dependencies for the model and the Streamlit interface.
+# Lower bounds only: CoolProp 8.0.0 is the version the test suite and the
+# validation were run with; the other bounds are conservative minimums.
+# To reproduce an exact environment, run `pip freeze > requirements-lock.txt`
+# on a working install and commit that file too.
+CoolProp>=8.0.0
+numpy>=1.24
+streamlit>=1.30
+plotly>=5.18
+matplotlib>=3.7
+reportlab>=4.0

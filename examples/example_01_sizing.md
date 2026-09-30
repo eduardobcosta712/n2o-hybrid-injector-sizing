@@ -77,9 +77,9 @@ The team sized the injector using the SPI model and expects approximately 515 g/
 
 Running this exact case in the tool also shows a **choking warning**: the Dyer prediction exceeds the Henry-Fauske (1971) non-equilibrium choking ceiling, which at these tank/chamber conditions is **322.1 g/s** — 17% below the 386.1 g/s Dyer prediction.
 
-This does **not** change the 386.1 g/s figure — see `docs/future_work.md`, Priority 1, for why the ceiling is surfaced as a diagnostic warning rather than applied automatically: it is theoretically sound (a primary-source non-equilibrium critical flow model) but has only been confirmed *not* to interfere with the Waxman-validated cases (8–14 bar pressure drop); it has not itself been experimentally validated at this example's conditions (here, roughly 35.6 bar pressure drop, well outside that validated band).
+This does **not** change the 386.1 g/s figure — see `docs/future_work.md`, Priority 1, for why the ceiling is surfaced as a diagnostic warning rather than applied automatically. Its standing is better than when this example was first written: in the extended Waxman validation (injector 3, dP up to 46 bar, `validation/waxman_2013_results.md`, Part B) the ceiling is exceeded at 31 of 64 two-phase points, and capping at it improves the prediction at 30 of those 31. This example sits in exactly the regime where that matters: the tank's subcooling margin (supercharge) is 7.47 bar (≈108 psi), well below the ≈14 bar (200 psi) level above which Dyer alone gave MAPE ≈2 %, and below that level Dyer always over-predicted (never under-predicted) in the validation data. The evidence is still partial: one injector geometry (rounded-inlet 1.5 mm hole) on one rig.
 
-**How to read this result honestly:** the Dyer model itself is validated only at 8–14 bar. At 35 bar the prediction is a model estimate, and the choking diagnostic says the true flow may be as low as ≈322 g/s. A defensible planning range is therefore roughly **322–386 g/s**, to be narrowed by a cold-flow or hot-fire measurement — but in either case far below the SPI figure the motor was designed around.
+**How to read this result honestly:** the Dyer model has been validated against experiment up to 46 bar of injector pressure drop, but its accuracy is controlled by the tank's supercharge, not by the pressure drop: MAPE ≈2 % above ≈14 bar of supercharge, up to ≈18 % below it (always over-predicting). With 7.47 bar of supercharge this example is in the less reliable regime, so 386.1 g/s is more likely an upper estimate, and the choking diagnostic says the true flow may be as low as ≈322 g/s. A defensible planning range is therefore roughly **322–386 g/s**, to be narrowed by a cold-flow or hot-fire measurement — but in either case far below the SPI figure the motor was designed around.
 
 ---
 
@@ -88,7 +88,7 @@ This does **not** change the 386.1 g/s figure — see `docs/future_work.md`, Pri
 The SPI model over-predicts the mass flow by 25.0% against the Dyer estimate (and by about 37% if the choking ceiling turns out to be the binding one). If the motor was designed around 515 g/s, the real O/F ratio will be lower than expected, reducing specific impulse and potentially compromising combustion stability.
 
 **Combustion stability check:**
-- Injector pressure drop (57.56 − 22 = 35.56 bar) / P_chamber (22 bar) = **161.7%** — well above the 15% minimum. Stable.
+- Injector pressure drop (57.56 − 22 = 35.56 bar) / P_chamber (22 bar) = **161.6%** — well above the 15% minimum. Stable.
 
 **Corrective options if 515 g/s is required:**
 1. Increase total orifice area — size with Dyer instead of SPI (see Example 2).

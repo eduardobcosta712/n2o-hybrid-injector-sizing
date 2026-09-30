@@ -37,7 +37,7 @@ class TestFlashingInLine:
     """
     When flashing is detected in the feed line, the model now uses HEM with
     a two-phase inlet (hem_mass_flow_two_phase_inlet) instead of returning None.
-    The fluid arrives partially vaporised; x_inlet > 0 is computed isentalpically.
+    The fluid arrives partially vaporised; x_inlet > 0 is computed isenthalpically.
     """
 
     def setup_method(self):

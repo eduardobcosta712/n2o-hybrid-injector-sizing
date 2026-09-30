@@ -69,7 +69,7 @@ The question is: what diameter should each hole be, and how does the SPI-sized i
 
 Design mode also shows a **choking warning**: at these tank/chamber conditions the Henry-Fauske (1971) non-equilibrium choking ceiling is **456.2 g/s** for the recommended area — below the 500 g/s target itself.
 
-**Important physical point:** this ceiling scales linearly with orifice area, exactly like the Dyer prediction, so the *ratio* between them does not depend on the area chosen. This is not something the Dyer area above can be adjusted to avoid. If the ceiling turns out, with future validation, to be the physically binding one, the 500 g/s target would not be achievable at this ΔP (about 40 bar) regardless of hole sizing — the fix would be tank pressure or chamber pressure, not area. As with Example 1, this ceiling is theoretically sound but not experimentally confirmed at this example's pressure drop (outside the 8–14 bar Waxman-validated band), so the 12.497 mm² / 1.410 mm Dyer sizing above remains the tool's primary recommendation — the warning is a flag to investigate further, not a correction to apply by hand.
+**Important physical point:** this ceiling scales linearly with orifice area, exactly like the Dyer prediction, so the *ratio* between them does not depend on the area chosen. This is not something the Dyer area above can be adjusted to avoid. If the ceiling turns out to be the physically binding one, the 500 g/s target would not be achievable at this ΔP (about 40 bar) regardless of hole sizing — the fix would be tank pressure or chamber pressure, not area. Context from the extended Waxman validation (`validation/waxman_2013_results.md`, Part B): this example's tank supercharge is 14.96 bar (≈217 psi), just above the ≈14 bar (200 psi) level at which Dyer alone reproduced the data with MAPE ≈2 % (1.1–3.5 % for the 206–371 psi curves), including at large pressure drops (30–46 bar band: MAPE 2.5 %). The 12.497 mm² / 1.410 mm Dyer sizing above is therefore in the best-validated regime and remains the tool's primary recommendation; the warning is a flag to investigate, not a correction to apply by hand. The validation used a different injector geometry (rounded-inlet 1.5 mm hole), so it does not confirm this exact design.
 
 ---
 
@@ -88,7 +88,7 @@ instead of the target 500 g/s — a shortfall of about 24%.
 **Combustion stability check:**
 - Injector pressure drop (59.77 − 20 = 39.77 bar) / P_chamber (20 bar) = **198.8%** — well above the 15% minimum. Stable.
 
-**Recommended manufacture:** 8 holes of **1.410 mm** diameter (or the nearest available drill size — re-run the tool in Sizing mode with that diameter to verify the resulting mass flow). Remember that the Dyer model is validated only at 8–14 bar pressure drops: treat the recommendation as a model estimate and confirm it with a water/cold-flow test before machining the final plate.
+**Recommended manufacture:** 8 holes of **1.410 mm** diameter (or the nearest available drill size — re-run the tool in Sizing mode with that diameter to verify the resulting mass flow). The Dyer model has been validated up to 46 bar of pressure drop and is most reliable for tanks with ≥ ~14 bar of supercharge (as here), but only for one injector geometry: treat the recommendation as a model estimate and confirm it with a water/cold-flow test before machining the final plate.
 
 ---
 

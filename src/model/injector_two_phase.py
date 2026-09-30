@@ -201,11 +201,11 @@ def hem_mass_flow(Cd, A, T_upstream, P_upstream, P_downstream,
     P_downstream : float
         Downstream pressure, Pa.
     rho_l_upstream : float
-        Saturated liquid density at T_upstream, kg/m^3 -- used only to
-        evaluate the upstream enthalpy via h_liquid_sat(T_upstream)
-        (liquid entering the orifice is assumed saturated or subcooled
-        liquid, per Section 1.4; its enthalpy is well approximated by
-        the saturated-liquid value at its own temperature).
+        Saturated liquid density at T_upstream, kg/m^3. Accepted for API
+        symmetry with dyer_mass_flow(), but NOT used in this function: the
+        upstream enthalpy is evaluated directly as h_liquid_sat(T_upstream)
+        (liquid entering the orifice is assumed saturated or subcooled,
+        per Section 1.4).
     rho_l_downstream : float
         Saturated liquid density at T_downstream = T_sat(P_downstream),
         kg/m^3.

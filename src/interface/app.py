@@ -5,7 +5,10 @@ Two modes:
   Sizing — known orifice area -> predicted real mass flow (SPI / Dyer / HEM two-phase inlet)
   Design — target mass flow   -> required orifice area (SPI + Dyer correction)
 
-Both modes have now a calculator for the fuel mass flow rate, regarding the a,n coefficients provided by the user.
+Both modes end with a grain-sizing panel (fuel side): from the oxidiser mass
+flow and a target O/F it sizes the initial circular-port geometry, using a
+regression-rate data point (mm/s at a stated G_o, plus n) entered by the
+user -- never the Marxman coefficient a itself.
 """
 
 import os, sys, math
@@ -21,7 +24,7 @@ from plotting import (plot_pressure_along_line, plot_PT_diagram, plot_model_comp
                       plot_tornado,
                       plot_segment_losses)
 from export import generate_pdf
-from grain_sizing import size_grain, FUEL_PROPERTIES
+from grain_sizing import size_grain, FUEL_PROPERTIES, a_from_reference_rate
 
 st.set_page_config(page_title="N2O Injector Sizing", page_icon=None, layout="wide")
 
@@ -81,6 +84,16 @@ FITTING_K = {
     "Union / coupling":           0.04,
     "Custom (enter K manually)":  None,
 }
+
+# ── Dyer-model reliability threshold ──────────────────────────────────────────
+# Tank supercharge (P - P_sat(T) at the injector inlet) above which the Dyer
+# model reproduced the digitised Waxman (2013) injector-3 data with MAPE ~2 %,
+# versus ~12 % below it (worst band ~18 %, always over-predicting). Source:
+# validation/waxman_2013_results.md, Part B4 -- 200 psi. The threshold was set
+# from that dataset (one injector geometry, one rig); it is an empirical
+# reliability marker, not a physical limit.
+PSI_TO_BAR = 6894.757 / 1e5
+DYER_RELIABLE_SUPERCHARGE_BAR = 200.0 * PSI_TO_BAR   # ~13.79 bar
 
 # ── Session state ─────────────────────────────────────────────────────────────
 if "page" not in st.session_state:
@@ -411,7 +424,7 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None,
     """
     Corrective suggestions when flashing is detected in the feed line.
 
-    Shown in BOTH modes (audit, September 2026). The header differs:
+    Shown in BOTH modes. The header differs:
       - Sizing mode: the injector result above is a HEM two-phase-inlet
         estimate (physically implemented, not validated against data) --
         the panel explains how to remove the flashing.
@@ -435,7 +448,10 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None,
             f"<b>Increase the subcooling margin</b>: only {margin_bar:.2f} bar "
             f"above P_sat ({Psat/1e5:.2f} bar at {T_tank-273.15:.1f} deg C). "
             "Aim for at least 5 bar before line losses, by raising tank "
-            "pressure (e.g. helium supercharge) or lowering tank temperature.")
+            "pressure (e.g. helium supercharge) or lowering tank temperature. "
+            f"(About {DYER_RELIABLE_SUPERCHARGE_BAR:.0f} bar is what the Dyer "
+            "injector model needs to be at its most reliable -- a separate "
+            "criterion from avoiding flashing in the line.)")
     if total_L > 1.5:
         suggestions.append(
             f"<b>Shorten the feed line</b>: {total_L:.1f} m total. "
@@ -482,14 +498,60 @@ def render_diagnostics(T_tank, P_tank, P_chamber, Cd, A_injector=None,
         except Exception:
             pass
 
+# ── Supercharge reliability notice ────────────────────────────────────────────
+def render_supercharge_notice(T_tank, P_inlet, mode="sizing"):
+    """
+    Reliability note for the Dyer regime, based on the tank supercharge at the
+    injector inlet (P_inlet - P_sat(T_tank)).
+
+    In the extended Waxman (2013) validation (validation/waxman_2013_results.md,
+    Part B4) the Dyer model had MAPE ~2 % above ~200 psi (~13.8 bar) of
+    supercharge and ~12 % below it (worst band ~18 %), ALWAYS over-predicting.
+    This note tells the user which side of that line the operating point is on.
+    It does not change any computed number. Only meaningful when the injector
+    is evaluated with Dyer (liquid at the inlet, two-phase inside the orifice).
+    """
+    supercharge_bar = (P_inlet - P_sat(T_tank)) / 1e5
+    supercharge_psi = supercharge_bar / PSI_TO_BAR
+    thr = DYER_RELIABLE_SUPERCHARGE_BAR
+
+    if supercharge_bar >= thr:
+        st.caption(
+            f"Tank supercharge at the injector inlet: {supercharge_bar:.1f} bar "
+            f"({supercharge_psi:.0f} psi) — above the ≈{thr:.1f} bar (200 psi) "
+            "level where the Dyer model was best validated (MAPE ≈2 % in the "
+            "Waxman 2013 data, one injector geometry).")
+        return
+
+    if mode == "design":
+        consequence = (
+            "Treat the predicted flow as an upper estimate: the recommended "
+            "orifice area may be too small, and the real flow could fall short "
+            "of the target. ")
+    else:
+        consequence = (
+            "Treat the predicted mass flow as an upper estimate: the real flow "
+            "is more likely lower than higher. ")
+    st.warning(
+        f"**Low tank supercharge:** {supercharge_bar:.1f} bar "
+        f"({supercharge_psi:.0f} psi) above P_sat at the injector inlet, below "
+        f"the ≈{thr:.1f} bar (200 psi) level where the Dyer model was best "
+        "validated. In the Waxman (2013) dataset (one injector geometry) the "
+        "model had MAPE ≈2 % above that level and ≈12 % below it (worst band "
+        "≈18 %), and it always over-predicted, never under-predicted. "
+        + consequence +
+        "This is a different criterion from the ≥5 bar margin suggested to "
+        "avoid flashing in the line: 5 bar keeps the line liquid, ≈14 bar is "
+        "where the injector model is most reliable. Raising tank pressure "
+        "(e.g. helium supercharge) or lowering tank temperature increases it. "
+        "See validation/waxman_2013_results.md, Part B4.")
+
 # ── Result cards ──────────────────────────────────────────────────────────────
 def render_result_cards(result):
     """
     Render the four result cards for a Sizing-mode result. Returns nothing:
     the caller decides what else to show (diagnostics when flashing, the
-    diagrams in every case). (Audit, September 2026: this function used to
-    return a boolean that was always True, with a dead "if not ok" branch
-    in the caller -- both removed.)
+    diagrams in every case).
     """
     if result["feed_line_result"]["flashing_detected"]:
         ir     = result.get("injector_result") or {}
@@ -565,9 +627,9 @@ def render_result_cards(result):
         # Priority 1). Surfaced as a warning, NOT applied to m_dot itself --
         # see injector_two_phase.dyer_mass_flow docstring for why: the ceiling
         # is theoretically sound (Henry & Fauske 1971) and the extended
-        # September 2026 validation gives real (if partial) evidence it helps
-        # at low tank supercharge; at other conditions it may be the more
-        # conservative, if not yet fully confirmed, estimate.
+        # validation gives real (if partial) evidence it helps at low tank
+        # supercharge; at other conditions it may be the more conservative,
+        # if not yet fully confirmed, estimate.
         if ir.get("choked"):
             st.markdown(
                 '<div class="badge-choke">&#9888; Non-equilibrium choking ceiling '
@@ -577,7 +639,7 @@ def render_result_cards(result):
                 f"choking ceiling (Henry-Fauske, 1971) at these tank/chamber "
                 f"conditions is only {ir['m_dot_crit_HF']*1000:.1f} g/s — "
                 f"independent of orifice area. This ceiling is theoretically "
-                f"sound and, per the September 2026 extended validation, "
+                f"sound and, per the extended validation, "
                 f"tends to improve the prediction at low tank supercharge; "
                 f"treat it as a conservative alternative estimate, not a "
                 f"certainty. See docs/future_work.md, Priority 1.")
@@ -590,9 +652,8 @@ def render_result_cards(result):
 # ── Grain sizing (fuel side) ──────────────────────────────────────────────────
 def render_grain_sizing(m_dot_ox, mode_key):
     """
-    Priority 3 (docs/future_work.md): from the already-computed oxidiser
-    mass flow, size the initial fuel grain geometry via the Marxman
-    regression rate correlation (grain_sizing.py).
+    From the already-computed oxidiser mass flow, size the initial fuel grain
+    geometry via the Marxman regression rate correlation (grain_sizing.py).
 
     The user never enters the Marxman coefficient `a` directly (its implied
     units depend on n and are very easy to get wrong). Instead they enter a
@@ -610,7 +671,7 @@ def render_grain_sizing(m_dot_ox, mode_key):
     fuel/oxidiser pair differ by 2-3x between independent studies. Only fuel
     density (a genuine material property) is defaulted, from FUEL_PROPERTIES.
     """
-    with st.expander("Grain sizing (fuel side) — Priority 3", expanded=False):
+    with st.expander("Grain sizing (fuel side)", expanded=False):
         st.markdown(
             "Sizes the **initial** fuel grain geometry for a target O/F "
             "ratio, given the oxidiser mass flow already computed above. "
@@ -701,7 +762,6 @@ def render_grain_sizing(m_dot_ox, mode_key):
                     "reference G_o, and n) to size the grain.")
             return
 
-        from grain_sizing import a_from_reference_rate
         a_coef = a_from_reference_rate(r_dot_ref, G_o_ref, n_exp)
 
         try:
@@ -817,8 +877,11 @@ if st.session_state.page == "landing":
                 accuracy depends strongly on the tank's <strong>subcooling
                 margin (supercharge)</strong> rather than on the pressure drop
                 itself — MAPE around 2% above roughly 14 bar of supercharge,
-                degrading to up to ~18% below that, regardless of dP. See
-                README.md, "Validation", for the full breakdown.</li>
+                degrading to up to ~18% below that (always over-predicting),
+                regardless of dP. The tool shows a warning whenever an
+                operating point falls below that level. Validation covers one
+                injector geometry. See README.md, "Validation", for the full
+                breakdown.</li>
             <li>When flashing is detected in the feed line, the injector is
                 evaluated with a <strong>HEM two-phase-inlet</strong> model
                 (Sizing mode); this path is implemented and unit tested but
@@ -892,6 +955,9 @@ if st.session_state.page == "sizing":
             if result["feed_line_result"]["flashing_detected"]:
                 render_diagnostics(T_tank, P_tank, P_chamber, Cd,
                                     A_injector=A_total, mode="sizing")
+            elif result["regime"] == "Dyer":
+                render_supercharge_notice(T_tank, result["P_injector_inlet"],
+                                           mode="sizing")
 
             # Combustion stability check on actual injector dP
             P_inlet = result["P_injector_inlet"]
@@ -959,7 +1025,7 @@ if st.session_state.page == "sizing":
                     use_container_width=True,
                     config={"scrollZoom": True})
 
-            # Grain sizing (Priority 3, docs/future_work.md)
+            # Grain sizing (docs/future_work.md, Priority 3)
             render_grain_sizing(result["m_dot_real"], "siz")
 
             # PDF export
@@ -1123,13 +1189,17 @@ elif st.session_state.page == "design":
                         f"achievable at this ΔP regardless of how the orifice is "
                         f"sized; consider raising tank pressure or lowering chamber "
                         f"pressure instead. This ceiling is theoretically sound, and "
-                        f"the September 2026 extended validation shows it tends to "
+                        f"the extended validation shows it tends to "
                         f"improve the prediction at low tank supercharge; treat it as "
                         f"a conservative, though not yet fully confirmed, estimate. "
                         f"See docs/future_work.md, Priority 1.")
                 elif dr is not None and dr.get("HF_unavailable_reason"):
                     st.caption(f"Non-equilibrium ceiling check unavailable: "
                                f"{dr['HF_unavailable_reason']}")
+
+                # Dyer reliability vs tank supercharge (Dyer regime only)
+                if use_dyer:
+                    render_supercharge_notice(T_tank, P_inlet, mode="design")
 
                 # Combustion stability check
                 actual_dP = P_inlet - P_chamber
@@ -1197,7 +1267,7 @@ elif st.session_state.page == "design":
                         use_container_width=True,
                         config={"scrollZoom": True})
 
-                # Grain sizing (Priority 3, docs/future_work.md)
+                # Grain sizing (docs/future_work.md, Priority 3)
                 render_grain_sizing(m_dot_target, "des")
 
                 # PDF export
