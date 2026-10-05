@@ -196,13 +196,17 @@ critical point, in opposite directions, exactly as the theory in
 
 ## 7. Interpretation and consequences for the tool
 
-1. **The previously-validated 8–14 bar band remains fine** (Part A) and
-   is now also confirmed by the larger dataset at comparable supercharge:
-   the 169 psi curve (11.7 bar of supercharge, close to Part A's own
-   ~95 psi but not identical) gives a Dyer MAPE of 5.9 % (Part B4),
-   within the range this project already treats as acceptable for that
-   regime, and the 206–371 psi curves (14–26 bar of supercharge) do
-   markedly better still, at 1.1–3.5 %.
+1. **The previously-validated 8–14 bar band is supported, but less tightly
+   than the headline figure suggests.** Part A's 2.76 % rests on 4 points
+   and a generic Cd = 0.65 (4.41 % with the measured Cd = 0.681,
+   Section 4). In the larger dataset, the two-phase points with
+   dP ≤ 14 bar have a Dyer MAPE of 5.3 % (Part B3). Part A's own
+   supercharge is only ~95 psi (6.5 bar), i.e. inside the low-supercharge
+   regime; the nearest curves of Fig. 13 are the 79 psi (MAPE 13.5 %) and
+   115 psi (6.6 %) ones, so Part A's 2.76 % should be read as a favourable
+   4-point sample, not as the expected error at that supercharge. The
+   169 psi curve (11.7 bar, MAPE 5.9 %) and the 206–371 psi curves
+   (14–26 bar, 1.1–3.5 %) do markedly better.
 2. **The 20–50 bar band used by every worked example is now, for the
    first time, backed by data** — and the news is mixed: at *high*
    supercharge (≥ 1.38 MPa ≈ 14 bar) it is good (MAPE ≈ 2 %); at *low*
@@ -254,8 +258,8 @@ critical point, in opposite directions, exactly as the theory in
 | `waxman_2013_results.md` | `validation/` (this file) |
 | `waxman_2013_validation.py` | `validation/` — Parts A–E, `--no-plot` to skip the figure |
 | `waxman_2013_fig13_comparison.png` | `validation/` — 9-panel model-vs-experiment figure |
-| `waxman_2013_experimental_data.csv` | `validation/` (unchanged; still not read by code; see its own header for a known inconsistency against Fig. 16) |
 | `explore_supercharge_correction.py` | `validation/` — Section 10 exploration script |
+| `kappa_correction/` | `validation/` — Section 11: leave-one-curve-out validation of the κ correction, functional-form comparison, threshold-continuity scan (scripts, results `.txt`, README) |
 | `digitized/waxman_fig11_mdot_vs_dP_single_test.csv` | `validation/digitized/` |
 | `digitized/waxman_fig12_cd_vs_dP_single_test.csv` | `validation/digitized/` |
 | `digitized/waxman_fig13_mdot_vs_dP_by_supercharge.csv` | `validation/digitized/` |
@@ -392,7 +396,8 @@ found here empirically.
 
 ### 10.7 Status and next step
 
-Exploratory. Not called by `full_system.py`. Tracked in
+Exploratory. Available in `full_system.py` only as an optional, default-off
+argument (Section 11). Tracked in
 `docs/future_work.md`, Priority 1, alongside the Henry-Fauske ceiling —
 both are diagnostic-only corrections at this stage, pending either more
 data (other geometries, more low-supercharge points) or a first-principles
@@ -402,3 +407,125 @@ See `validation/explore_supercharge_correction.py` for the full grid
 search and reproducibility, and the accompanying report
 (`docs/reports/dyer_supercharge_correction.pdf`) for the complete
 derivation and discussion.
+
+---
+
+## 11. Out-of-sample validation of the κ correction (September 2026)
+
+*Follow-up of Section 10. Scripts, raw output and a README are in
+`validation/kappa_correction/`. Still exploratory (see 11.8).*
+
+### 11.1 Why
+
+The 1.86 % of Section 10.4 is **in-sample**: β and `supercharge_ref` were fitted
+on the same 64 two-phase points on which the error is measured. Its optimum also
+sat at the edge of the search grid (300 psi), a first sign that the data do not
+identify a gate.
+
+### 11.2 Protocol
+
+Leave-one-curve-out over the nine supercharge curves of Fig. 13. In each fold:
+(1) Cd is re-calibrated on the single-phase windows of the other eight curves;
+(2) the correction parameters are fitted on the two-phase points of those eight
+curves; (3) the held-out curve is predicted. Nothing of it enters (1)–(2). Part A
+(injector 2, 4 points) never enters any fit. The search grid was fixed before any
+out-of-sample result was seen.
+
+### 11.3 Result: the correction generalises
+
+| (64 two-phase points) | mean | MAPE | max \|err\| |
+|---|---|---|---|
+| baseline Dyer | +6.72 % | 6.88 % | 33.5 % |
+| gated κ, out of sample (free fit) | −0.35 % | **1.36 %** | 11.6 % |
+| gated κ, `supercharge_ref` ≤ 95 psi (Part-A-protected), out of sample | +3.50 % | 4.62 % | 25.4 % |
+
+In-sample the free fit gives 1.11 %: the optimism of the in-sample figure is small.
+By band, out of sample: < 100 psi 15.6 % → 2.6 %; 100–200 psi 6.2 % → 1.1 %;
+≥ 200 psi 1.95 % → 0.70 %. The 41 psi curve, held out (the only one close to
+saturation, hence an extrapolation), goes from 17.8 % to 4.1 %. The parameters are
+stable across folds (β 0.9–1.1; `supercharge_ref` 385–400 psi).
+
+**Correction of Section 10.** The optimum `supercharge_ref` is again at the edge of
+the grid (400 psi; data end at 371 psi): all 64 points lie on the corrected
+branch, so the data identify an approximately **linear rescaling**
+κ' ≈ κ·S/S₀, not a gate. The Part-A-protected variant fails (4.62 %) because it
+acts only below 100 psi, while the Dyer over-prediction extends well beyond.
+The conflict with Part A seen in Section 10.5 is a Cd issue, not a gate issue.
+
+### 11.4 Which functional form (mode A: Cd from the single-phase windows)
+
+| form | parameters | pooled OOS MAPE | max \|err\| | 41 psi fold | Part A, Cd 0.65 / 0.681 |
+|---|---|---|---|---|---|
+| F0 baseline Dyer | 0 | 6.88 % | 33.5 % | 17.80 % | 2.75 % / 4.47 % |
+| F1 gated power (β, ref) | 2 | 1.30 % | 11.6 % | 4.08 % | 5.51 % / 1.21 % |
+| **F2 linear κ·S/S₀** | **1** | **1.17 %** | 10.3 % | 3.42 % | 5.83 % / 1.34 % |
+| F6 soft gate κ·S/(S+S₁) | 1 | 2.25 % | 6.1 % | 2.17 % | 5.11 % / 1.15 % |
+| F7 soft gate with exponent | 2 | 2.66 % | 12.9 % | 4.69 % | 5.00 % / 1.13 % |
+| F4 κ' = √(κ²−1) = √(S/D) | 0 | 3.66 % | 13.7 % | 7.72 % | 2.56 % / 3.31 % |
+| F5 κ' = κ²−1 = S/D | 0 | 3.19 % | 8.3 % | 2.98 % | 1.79 % / 3.94 % |
+
+(D = P_sat − P_down; the identity κ² = 1 + S/D makes F4/F5 dimensionless.) A
+single parameter does as well as two: S₀ = 380–411 psi across folds (F2).
+F4/F5 have no fitted parameter, at the price of 3–4 % MAPE.
+
+### 11.5 It is not a disguised Cd shift
+
+Fitting Cd jointly with the form (mode B), the baseline improves only from 6.88 %
+to 6.08 % (Cd = 0.755), while every corrected form selects Cd = 0.785–0.790,
+the pooled single-phase value (0.781). The Dyer over-prediction is not a
+mis-calibrated Cd.
+
+### 11.6 Part A, a second geometry
+
+With the measured injector-2 Cd (0.681), the correction lowers Part A's MAPE from
+4.47 % to 1.2–1.3 % (F1/F2/F6), although injector 2 never entered any fit. With the
+generic Cd = 0.65 it rises (2.75 % → 5–6 %) because the model then under-predicts.
+This supports reading the original 2.76 % as a favourable cancellation between the
+Dyer over-prediction and an under-estimated Cd (inference, 4 points, one
+supercharge level).
+
+### 11.7 The flashing-threshold discontinuity
+
+* **Origin.** For a saturated inlet κ = 1, so Dyer = (SPI + HEM)/2, while the
+  two-phase-inlet branch at x → 0 is HEM. Hence Dyer/HEM = (1 + SPI/HEM)/2: ≈ 1.16
+  at the Waxman conditions but ≈ 1.75 in Example 3 (SPI/HEM ≈ 2.5; (489 + 194)/2 ≈
+  341 g/s vs 340.3 g/s found). "HEM gives half the Dyer flow" is true only for
+  SPI ≫ HEM.
+* **Removal.** With κ' → 0 as S → 0 the corrected Dyer tends to HEM (corr/HEM =
+  1.000 at 0.05 psi, 1.004 at 5 psi; T = 280 K, P_down = 30 bar).
+* **In the coupled solver** (`scan_threshold_continuity.py`, tank pressure 52–58 bar):
+
+| Example-3 geometry | baseline: non-converging | corrected (β = 1, 400 psi): non-converging | largest adjacent jump |
+|---|---|---|---|
+| needle valve, 8 mm | 6/25 (53.75–55.00 bar) | **0/25** | 1.5 % (baseline: 193.9 → 340.3 g/s across the band) |
+| ball valve, 8 mm | 5/25 (53.50–54.50 bar) | **0/25** | 1.6 % |
+
+Example 3, recomputed (g/s): Step 1 no convergence → 195.4; Step 2 347.7 → 225.6;
+Step 3 356.2 → 233.7. The Henry-Fauske warning no longer fires (ceilings 259–279
+g/s). Gain from 53.5 to 56 bar: +79 % (baseline) vs +16 % (corrected).
+At 58 bar the two corrected variants give 245 and 272 g/s: ≈ 10 % model spread.
+
+### 11.8 What this does **not** establish
+
+* **Transfer.** All nine curves are injector 3, 280–283 K, one rig. S₀ is in psi
+  with no physical scaling; whether it scales with P_sat, with ΔT_sub or stays
+  fixed cannot be told from these data. Example 3 is at 295 K. F4/F5 are
+  dimensionless but fit worse.
+* **S > 371 psi.** F2 grows without bound (κ'/κ = 2.4 at 1000 psi); the defensible
+  form is κ·min(1, S/S₀), identical to F2 in the data and equal to the original
+  Dyer above S₀, but its cap is untested.
+* **Model selection.** Seven forms were compared on the same data; the best one
+  was not selected inside the cross-validation, so 1.17 % is slightly optimistic.
+  A planning figure is 1.2–1.5 %.
+* **HEM level.** The correction removes the artificial jump, not a possible error
+  of the HEM branch itself, which has no experimental validation. Data reach only
+  S ≥ 41 psi; below that the HEM limit is a consequence of the functional form.
+* Part A is 4 points at one supercharge level.
+
+### 11.9 Status
+
+Exploratory. `full_system.evaluate_full_system()` and `design_injector_area()`
+accept `kappa_correction={"beta": ..., "supercharge_ref_Pa": ...}`; the default
+(`None`) leaves every result unchanged and the interface does not use it.
+Promotion criteria: independent data (another geometry or temperature), and a
+decision on the form (F2 with cap vs F6 vs a dimensionless form).

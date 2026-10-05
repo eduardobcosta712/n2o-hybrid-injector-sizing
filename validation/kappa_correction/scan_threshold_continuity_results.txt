@@ -1,0 +1,111 @@
+================================================================================================
+Tank-pressure scan -- (A) original: needle valve K=2.0, 8 mm line
+================================================================================================
+ P [bar] | baseline                       | LOOCV optimum (b=1.0, ref=400  | Part-A-protected (b=2.5, ref=9 
+   52.00 |   186.7 g/s HEM2ph             |   186.7 g/s HEM2ph             |   186.7 g/s HEM2ph             
+   52.25 |   187.9 g/s HEM2ph             |   187.9 g/s HEM2ph             |   187.9 g/s HEM2ph             
+   52.50 |   189.1 g/s HEM2ph             |   189.1 g/s HEM2ph             |   189.1 g/s HEM2ph             
+   52.75 |   190.3 g/s HEM2ph             |   190.3 g/s HEM2ph             |   190.3 g/s HEM2ph             
+   53.00 |   191.5 g/s HEM2ph             |   191.5 g/s HEM2ph             |   191.5 g/s HEM2ph             
+   53.25 |   192.7 g/s HEM2ph             |   192.7 g/s HEM2ph             |   192.7 g/s HEM2ph             
+   53.50 |   193.9 g/s HEM2ph             |   193.9 g/s HEM2ph             |   193.9 g/s HEM2ph             
+   53.75 | NO CONVERGENCE                 |   196.1 g/s Dyer               |   194.8 g/s Dyer               
+   54.00 | NO CONVERGENCE                 |   199.1 g/s Dyer               |   195.7 g/s Dyer               
+   54.25 | NO CONVERGENCE                 |   202.1 g/s Dyer               |   197.0 g/s Dyer               
+   54.50 | NO CONVERGENCE                 |   205.1 g/s Dyer               |   198.8 g/s Dyer               
+   54.75 | NO CONVERGENCE                 |   208.0 g/s Dyer               |   201.2 g/s Dyer               
+   55.00 | NO CONVERGENCE                 |   211.0 g/s Dyer               |   204.1 g/s Dyer               
+   55.25 |   340.3 g/s Dyer               |   213.9 g/s Dyer               |   207.6 g/s Dyer               
+   55.50 |   341.7 g/s Dyer               |   216.9 g/s Dyer               |   211.6 g/s Dyer               
+   55.75 |   343.1 g/s Dyer               |   219.8 g/s Dyer               |   216.2 g/s Dyer               
+   56.00 |   344.4 g/s Dyer               |   222.7 g/s Dyer               |   221.2 g/s Dyer               
+   56.25 |   345.8 g/s Dyer               |   225.6 g/s Dyer               |   226.6 g/s Dyer               
+   56.50 |   347.2 g/s Dyer               |   228.4 g/s Dyer               |   232.5 g/s Dyer               
+   56.75 |   348.5 g/s Dyer               |   231.3 g/s Dyer               |   238.6 g/s Dyer               
+   57.00 |   349.8 g/s Dyer               |   234.1 g/s Dyer               |   245.0 g/s Dyer               
+   57.25 |   351.1 g/s Dyer               |   237.0 g/s Dyer               |   251.6 g/s Dyer               
+   57.50 |   352.5 g/s Dyer               |   239.8 g/s Dyer               |   258.4 g/s Dyer               
+   57.75 |   353.8 g/s Dyer               |   242.6 g/s Dyer               |   265.4 g/s Dyer               
+   58.00 |   355.1 g/s Dyer               |   245.4 g/s Dyer               |   272.4 g/s Dyer               
+
+Summary
+  baseline
+    non-converging: 6/25  at 53.75..55.00 bar
+    largest adjacent jump: 0.6 % between 52.50 and 52.75 bar (HEM_two_phase_inlet -> HEM_two_phase_inlet)
+    flow at the ends of the converged range: 186.7 -> 355.1 g/s
+  LOOCV optimum (b=1.0, ref=400 psi)
+    non-converging: 0/25
+    largest adjacent jump: 1.5 % between 53.75 and 54.00 bar (Dyer -> Dyer)
+    flow at the ends of the converged range: 186.7 -> 245.4 g/s
+  Part-A-protected (b=2.5, ref=90 psi)
+    non-converging: 0/25
+    largest adjacent jump: 2.7 % between 57.25 and 57.50 bar (Dyer -> Dyer)
+    flow at the ends of the converged range: 186.7 -> 272.4 g/s
+
+================================================================================================
+Tank-pressure scan -- (B) ball valve K=0.05, 8 mm line
+================================================================================================
+ P [bar] | baseline                       | LOOCV optimum (b=1.0, ref=400  | Part-A-protected (b=2.5, ref=9 
+   52.00 |   187.6 g/s HEM2ph             |   187.6 g/s HEM2ph             |   187.6 g/s HEM2ph             
+   52.25 |   188.8 g/s HEM2ph             |   188.8 g/s HEM2ph             |   188.8 g/s HEM2ph             
+   52.50 |   190.0 g/s HEM2ph             |   190.0 g/s HEM2ph             |   190.0 g/s HEM2ph             
+   52.75 |   191.2 g/s HEM2ph             |   191.2 g/s HEM2ph             |   191.2 g/s HEM2ph             
+   53.00 |   192.4 g/s HEM2ph             |   192.4 g/s HEM2ph             |   192.4 g/s HEM2ph             
+   53.25 |   193.6 g/s HEM2ph             |   193.6 g/s HEM2ph             |   193.6 g/s HEM2ph             
+   53.50 | NO CONVERGENCE                 |   195.4 g/s Dyer               |   194.6 g/s Dyer               
+   53.75 | NO CONVERGENCE                 |   198.5 g/s Dyer               |   195.5 g/s Dyer               
+   54.00 | NO CONVERGENCE                 |   201.5 g/s Dyer               |   196.7 g/s Dyer               
+   54.25 | NO CONVERGENCE                 |   204.6 g/s Dyer               |   198.4 g/s Dyer               
+   54.50 | NO CONVERGENCE                 |   207.6 g/s Dyer               |   200.7 g/s Dyer               
+   54.75 |   340.8 g/s Dyer               |   210.7 g/s Dyer               |   203.6 g/s Dyer               
+   55.00 |   342.2 g/s Dyer               |   213.7 g/s Dyer               |   207.1 g/s Dyer               
+   55.25 |   343.6 g/s Dyer               |   216.7 g/s Dyer               |   211.2 g/s Dyer               
+   55.50 |   345.0 g/s Dyer               |   219.7 g/s Dyer               |   215.9 g/s Dyer               
+   55.75 |   346.3 g/s Dyer               |   222.7 g/s Dyer               |   221.1 g/s Dyer               
+   56.00 |   347.7 g/s Dyer               |   225.6 g/s Dyer               |   226.8 g/s Dyer               
+   56.25 |   349.1 g/s Dyer               |   228.6 g/s Dyer               |   233.0 g/s Dyer               
+   56.50 |   350.4 g/s Dyer               |   231.5 g/s Dyer               |   239.6 g/s Dyer               
+   56.75 |   351.8 g/s Dyer               |   234.4 g/s Dyer               |   246.4 g/s Dyer               
+   57.00 |   353.2 g/s Dyer               |   237.3 g/s Dyer               |   253.6 g/s Dyer               
+   57.25 |   354.5 g/s Dyer               |   240.2 g/s Dyer               |   261.0 g/s Dyer               
+   57.50 |   355.9 g/s Dyer               |   243.1 g/s Dyer               |   268.5 g/s Dyer               
+   57.75 |   357.2 g/s Dyer               |   246.0 g/s Dyer               |   276.2 g/s Dyer               
+   58.00 |   358.6 g/s Dyer               |   248.8 g/s Dyer               |   283.9 g/s Dyer               
+
+Summary
+  baseline
+    non-converging: 5/25  at 53.50..54.50 bar
+    largest adjacent jump: 0.6 % between 52.50 and 52.75 bar (HEM_two_phase_inlet -> HEM_two_phase_inlet)
+    flow at the ends of the converged range: 187.6 -> 358.6 g/s
+  LOOCV optimum (b=1.0, ref=400 psi)
+    non-converging: 0/25
+    largest adjacent jump: 1.6 % between 53.50 and 53.75 bar (Dyer -> Dyer)
+    flow at the ends of the converged range: 187.6 -> 248.8 g/s
+  Part-A-protected (b=2.5, ref=90 psi)
+    non-converging: 0/25
+    largest adjacent jump: 2.9 % between 56.75 and 57.00 bar (Dyer -> Dyer)
+    flow at the ends of the converged range: 187.6 -> 283.9 g/s
+
+================================================================================================
+Example 3 steps recomputed with each variant
+================================================================================================
+Step 0: original (53.5 bar, needle valve K=2.0, 8 mm)
+  baseline                                   193.9 g/s  HEM_two_phase_inlet  flashing=True
+  LOOCV optimum (b=1.0, ref=400 psi)         193.9 g/s  HEM_two_phase_inlet  flashing=True
+  Part-A-protected (b=2.5, ref=90 psi)       193.9 g/s  HEM_two_phase_inlet  flashing=True
+
+Step 1: needle valve -> ball valve K=0.05 (53.5 bar, 8 mm)
+  baseline                                 NO CONVERGENCE
+  LOOCV optimum (b=1.0, ref=400 psi)         195.4 g/s  Dyer                 flashing=False kappa=1.001->0.003 | HF ceiling 258.6, choked=False
+  Part-A-protected (b=2.5, ref=90 psi)       194.6 g/s  Dyer                 flashing=False kappa=1.001->0.000 | HF ceiling 258.6, choked=False
+
+Step 2: raise tank pressure to 56 bar (ball valve, 8 mm)
+  baseline                                   347.7 g/s  Dyer                 flashing=False kappa=1.020 | HF ceiling 267.8, choked=True
+  LOOCV optimum (b=1.0, ref=400 psi)         225.6 g/s  Dyer                 flashing=False kappa=1.034->0.090 | HF ceiling 274.6, choked=False
+  Part-A-protected (b=2.5, ref=90 psi)       226.8 g/s  Dyer                 flashing=False kappa=1.034->0.095 | HF ceiling 274.6, choked=False
+
+Step 3: pipe ID 8 -> 12 mm (56 bar, ball valve)
+  baseline                                   356.2 g/s  Dyer                 flashing=False kappa=1.041 | HF ceiling 278.1, choked=True
+  LOOCV optimum (b=1.0, ref=400 psi)         233.7 g/s  Dyer                 flashing=False kappa=1.043->0.114 | HF ceiling 279.1, choked=False
+  Part-A-protected (b=2.5, ref=90 psi)       246.9 g/s  Dyer                 flashing=False kappa=1.042->0.171 | HF ceiling 279.0, choked=False
+

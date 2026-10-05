@@ -46,7 +46,62 @@ Units: SI throughout (Pa, K, kg/m^3, m^2, kg/s).
 from n2o_properties import rho_liquid_sat, nu_vapor_sat, T_sat, M_N2O
 from feed_line import evaluate_feed_line
 from injector_spi import spi_mass_flow, spi_sufficient, orifice_area_from_target_flow
-from injector_two_phase import dyer_mass_flow, hem_mass_flow_two_phase_inlet
+from injector_two_phase import (dyer_mass_flow, dyer_mass_flow_corrected,
+                                 hem_mass_flow_two_phase_inlet)
+
+
+# ---------------------------------------------------------------------------
+# Optional (default OFF) supercharge-gated correction of Dyer's kappa.
+# EXPLORATORY: see validation/kappa_correction/loocv_kappa_correction.py and
+# docs/future_work.md, Priority 1. beta and supercharge_ref are fitted to the
+# project's own digitised Waxman data, not derived from a primary source.
+# ---------------------------------------------------------------------------
+
+def _validate_kappa_correction(kappa_correction):
+    """None, or a dict with exactly the keys "beta" (>= 0) and
+    "supercharge_ref_Pa" (> 0). Raises ValueError otherwise."""
+    if kappa_correction is None:
+        return
+    if (not isinstance(kappa_correction, dict)
+            or set(kappa_correction) != {"beta", "supercharge_ref_Pa"}):
+        raise ValueError(
+            "kappa_correction must be None or a dict with exactly the keys "
+            "'beta' and 'supercharge_ref_Pa'.")
+    if kappa_correction["beta"] < 0:
+        raise ValueError(
+            f"kappa_correction['beta'] = {kappa_correction['beta']} must be >= 0.")
+    if kappa_correction["supercharge_ref_Pa"] <= 0:
+        raise ValueError(
+            "kappa_correction['supercharge_ref_Pa'] = "
+            f"{kappa_correction['supercharge_ref_Pa']} must be positive.")
+
+
+def _dyer(Cd, A, T_up, P_up, P_down, rho_l_up, rho_l_down, rho_v_down,
+          kappa_correction=None):
+    """
+    dyer_mass_flow() result, optionally with the gated kappa correction.
+
+    With a correction, "m_dot_Dyer" is replaced by the corrected flow, the
+    Henry-Fauske "choked" flag is re-evaluated against it, and the original
+    value and the correction are reported in extra keys. The supercharge used
+    by the correction is P_up - P_sat(T_up), i.e. the margin AT THE INJECTOR
+    INLET (the same quantity as in the validation, where tank = inlet).
+    """
+    ir = dyer_mass_flow(Cd, A, T_up, P_up, P_down,
+                        rho_l_up, rho_l_down, rho_v_down)
+    if kappa_correction is None:
+        return ir
+    cr = dyer_mass_flow_corrected(
+        Cd, A, T_up, P_up, P_down, rho_l_up, rho_l_down, rho_v_down,
+        beta=kappa_correction["beta"],
+        supercharge_ref_Pa=kappa_correction["supercharge_ref_Pa"])
+    ir["m_dot_Dyer_uncorrected"] = ir["m_dot_Dyer"]
+    ir["m_dot_Dyer"] = cr["m_dot_Dyer_corrected"]
+    ir["kappa_corrected"] = cr["kappa_corrected"]
+    ir["kappa_correction_factor"] = cr["factor"]
+    if ir["m_dot_crit_HF"] is not None:
+        ir["choked"] = ir["m_dot_Dyer"] > ir["m_dot_crit_HF"]
+    return ir
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +109,7 @@ from injector_two_phase import dyer_mass_flow, hem_mass_flow_two_phase_inlet
 # ---------------------------------------------------------------------------
 
 def _evaluate_injector(Cd, A_injector, T_tank, P_injector_inlet,
-                        P_chamber, feed_line_result):
+                        P_chamber, feed_line_result, kappa_correction=None):
     """
     Given the feed-line result at a specific mass flow, evaluate the
     injector model and return (m_dot_injector, regime, injector_result).
@@ -76,6 +131,9 @@ def _evaluate_injector(Cd, A_injector, T_tank, P_injector_inlet,
         Downstream chamber pressure, Pa.
     feed_line_result : dict
         Return value of evaluate_feed_line() at the current m_dot.
+    kappa_correction : dict or None
+        Optional gated kappa correction for the Dyer branch (see _dyer).
+        None (default) leaves the model unchanged.
 
     Returns
     -------
@@ -114,9 +172,9 @@ def _evaluate_injector(Cd, A_injector, T_tank, P_injector_inlet,
     rho_l_down = rho_liquid_sat(T_down)
     rho_v_down = M_N2O / nu_vapor_sat(T_down)
 
-    ir = dyer_mass_flow(
+    ir = _dyer(
         Cd, A_injector, T_tank, P_injector_inlet, P_chamber,
-        rho_l_up, rho_l_down, rho_v_down)
+        rho_l_up, rho_l_down, rho_v_down, kappa_correction)
     return ir["m_dot_Dyer"], "Dyer", ir
 
 
@@ -127,7 +185,8 @@ def _evaluate_injector(Cd, A_injector, T_tank, P_injector_inlet,
 def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
                           Cd, A_injector, P_chamber,
                           roughness=1.5e-6,
-                          tol=1e-4, max_iter=50, alpha=0.5):
+                          tol=1e-4, max_iter=50, alpha=0.5,
+                          kappa_correction=None):
     """
     Solve for the self-consistent operating point of the full
     tank -> feed line -> injector system using damped fixed-point iteration.
@@ -160,6 +219,14 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
     alpha : float
         Damping factor in (0, 1]. Lower values converge more slowly but
         more robustly. Default 0.5.
+    kappa_correction : dict or None
+        EXPLORATORY, default None (model unchanged). A dict
+        {"beta": float >= 0, "supercharge_ref_Pa": float > 0} makes the Dyer
+        branch use the supercharge-gated kappa correction
+        (injector_two_phase.dyer_mass_flow_corrected); the Dyer result then
+        also carries "m_dot_Dyer_uncorrected", "kappa_corrected" and
+        "kappa_correction_factor". Parameters are fitted to the project's own
+        digitised Waxman data -- see docs/future_work.md, Priority 1.
 
     Returns
     -------
@@ -191,6 +258,7 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
         )
     if tol <= 0:
         raise ValueError(f"tol = {tol} must be positive.")
+    _validate_kappa_correction(kappa_correction)
 
     # --- Iteration ---
     # Start from the design guess.
@@ -207,7 +275,8 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
         # Step 2: evaluate injector model at this P_inlet.
         # This gives the injector's predicted m_dot as a function of P_inlet.
         m_dot_new, regime, injector_result = _evaluate_injector(
-            Cd, A_injector, T_tank, P_inlet, P_chamber, fl)
+            Cd, A_injector, T_tank, P_inlet, P_chamber, fl,
+            kappa_correction)
 
         # Step 3: damped update.
         # Without damping (alpha=1): m_dot = m_dot_new directly.
@@ -231,7 +300,8 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
                                            segments, roughness)
             P_inlet_final = fl_final["P_final"]
             _, regime_final, ir_final = _evaluate_injector(
-                Cd, A_injector, T_tank, P_inlet_final, P_chamber, fl_final)
+                Cd, A_injector, T_tank, P_inlet_final, P_chamber, fl_final,
+                kappa_correction)
 
             return {
                 "feed_line_result": fl_final,
@@ -263,7 +333,7 @@ def evaluate_full_system(m_dot_design, T_tank, P_tank, segments,
 
 
 def design_injector_area(m_dot_target, Cd, T_tank, P_injector_inlet, P_chamber,
-                          tol=1e-7, max_iter=40):
+                          tol=1e-7, max_iter=40, kappa_correction=None):
     """
     Design-mode sizing: total orifice area that delivers a target mass flow
     at a KNOWN injector inlet pressure (no feed-line flashing).
@@ -292,6 +362,9 @@ def design_injector_area(m_dot_target, Cd, T_tank, P_injector_inlet, P_chamber,
         Convergence tolerance (relative, on the Dyer mass flow) and cap for
         the area iteration. All flow models scale linearly with area, so it
         converges in one or two steps.
+    kappa_correction : dict or None
+        Optional gated kappa correction for the Dyer branch, exactly as in
+        evaluate_full_system() (default None: unchanged).
 
     Returns
     -------
@@ -302,6 +375,7 @@ def design_injector_area(m_dot_target, Cd, T_tank, P_injector_inlet, P_chamber,
         "dyer_result"   : dyer_mass_flow() result at A_recommended, or None
                           when regime is "SPI"
     """
+    _validate_kappa_correction(kappa_correction)
     rho_l_up = rho_liquid_sat(T_tank)
     A_spi = orifice_area_from_target_flow(m_dot_target, Cd, rho_l_up,
                                           P_injector_inlet - P_chamber)
@@ -317,8 +391,8 @@ def design_injector_area(m_dot_target, Cd, T_tank, P_injector_inlet, P_chamber,
     A_iter = A_spi
     dr = None
     for _ in range(max_iter):
-        dr = dyer_mass_flow(Cd, A_iter, T_tank, P_injector_inlet, P_chamber,
-                            rho_l_up, rho_l_down, rho_v_down)
+        dr = _dyer(Cd, A_iter, T_tank, P_injector_inlet, P_chamber,
+                   rho_l_up, rho_l_down, rho_v_down, kappa_correction)
         if abs(dr["m_dot_Dyer"] - m_dot_target) / m_dot_target < tol:
             break
         A_iter *= m_dot_target / dr["m_dot_Dyer"]

@@ -181,6 +181,32 @@ Reproducibility: `validation/explore_supercharge_correction.py` (reuses
 the existing data-loading and C_d-calibration functions of
 `validation/waxman_2013_validation.py`, no duplicated logic).
 
+### Priority 1, item 1 — UPDATE (September 2026): out-of-sample validation
+
+Leave-one-curve-out validation (`validation/kappa_correction/`,
+`validation/waxman_2013_results.md` Section 11):
+
+- The correction **generalises**: pooled out-of-sample two-phase MAPE 6.88 % ->
+  1.36 %; the held-out 41 psi curve 17.8 % -> 4.1 %; parameters stable across
+  folds. The 1.86 % quoted above was in-sample *and* a grid-edge artefact.
+- The data identify a **linear rescaling** kappa' ~ kappa*S/S0 (S0 = 380-411 psi),
+  one parameter, not a two-parameter gate; the Part-A-protected gate (ref <= 95 psi)
+  fails out of sample (4.62 %).
+- It is **not a disguised Cd shift** (joint Cd fit: baseline 6.08 %, corrected forms
+  keep Cd ~ 0.785), and it improves the injector-2 points (Part A, Cd 0.681:
+  4.47 % -> 1.2-1.3 %) although they never entered a fit.
+- It removes the Dyer <-> HEM **discontinuity** and the non-convergent band of
+  Example 3 in the coupled solver (0/25 failures vs 6/25 and 5/25). Available in
+  `full_system.py` as an optional, default-off `kappa_correction` argument.
+
+Still open before promotion: (a) independent data (other geometry or
+temperature; S0 may scale with P_sat or DeltaT_sub, not distinguishable here);
+(b) behaviour above 371 psi (use kappa*min(1, S/S0)) and a decision between the
+linear form, a bounded soft gate and a dimensionless form (kappa^2 - 1 = S/D);
+(c) the HEM branch itself is unvalidated; (d) show the uncorrected and corrected
+results as an interval in the interface and Design mode; (e) re-generate the
+Example 3 figures (Step 2 would drop from 347.7 to ~226 g/s).
+
 ## Priority 2 — Full-system experimental validation - PARTIALLY RESOLVED (September 2026)
 
 **What changed.** The main gap this priority flagged -- "pressure drops of
@@ -203,8 +229,7 @@ was not previously known.
 2. **The two-phase inlet path** (flashing in the line): the two-phase
    line model and the HEM two-phase-inlet injector model are implemented
    and unit tested only. The switch from Dyer to HEM at the flashing
-   threshold remains discontinuous (HEM at x_inlet -> 0 gives roughly
-   half of the Dyer flow at the same conditions -- see
+   threshold remains discontinuous (HEM at x_inlet -> 0 gives a flow lower than Dyer by the factor (1 + SPI/HEM)/2 at the same conditions (Dyer at a saturated inlet is (SPI + HEM)/2; roughly half only when SPI >> HEM) -- see
    `examples/example_03_flashing.md`); a smooth transition, or at least
    a quantified uncertainty band around the threshold, is worth
    designing once data exist. The digitised Waxman data does not cover

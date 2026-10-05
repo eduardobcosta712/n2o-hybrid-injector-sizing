@@ -402,12 +402,39 @@ def generate_pdf(mode, inputs, results, segments_ui, model_segments):
             f"<b>Non-equilibrium choking note:</b> the Dyer prediction above "
             f"exceeds the Henry-Fauske (1971) non-equilibrium choking ceiling "
             f"({m_crit_flag*1000:.1f} g/s at these tank/chamber conditions, "
-            f"independent of orifice area). This ceiling is theoretically "
+            f"for this orifice area; the ceiling scales with area like the "
+            f"Dyer prediction, so their ratio does not depend on it). "
+            f"This ceiling is theoretically "
             f"sound, and the September 2026 extended validation shows it "
             f"tends to improve the prediction at low tank supercharge -- it "
             f"is not yet applied automatically. Treat it as a conservative "
             f"alternative estimate. See docs/future_work.md, "
             f"Priority 1.", choke_style))
+
+    # ── Exploratory kappa-correction note (shown only if it changes the result) ──
+    kc_m = results.get("_m_dot_kappa_corr")
+    kc_A = results.get("_A_kappa_corr")
+    note = None
+    if mode == "sizing" and kc_m is not None and results.get("m_dot_real"):
+        m_dyer_ = results["m_dot_real"]
+        if abs(kc_m - m_dyer_) / m_dyer_ >= 0.02:
+            note = (f"the Dyer prediction above ({m_dyer_*1000:.1f} g/s) may be an "
+                    f"upper estimate; the exploratory correction would give "
+                    f"{kc_m*1000:.1f} g/s ({100*(kc_m-m_dyer_)/m_dyer_:+.1f}%)")
+    elif mode == "design" and kc_A is not None and results.get("A_dyer"):
+        A_dyer_ = results["A_dyer"]
+        if abs(kc_A - A_dyer_) / A_dyer_ >= 0.02:
+            note = (f"the Dyer area above ({A_dyer_*1e6:.3f} mm2) may be too small; "
+                    f"the exploratory correction would require {kc_A*1e6:.3f} mm2 "
+                    f"({100*(kc_A-A_dyer_)/A_dyer_:+.1f}%)")
+    if note:
+        story.append(Paragraph(
+            "<b>Exploratory note (not applied):</b> " + note + ". A "
+            "supercharge-dependent correction of Dyer's kappa lowered the "
+            "out-of-sample error from 6.9% to 1.4% on the Waxman (2013) data (one "
+            "injector geometry, 280-283 K), but its parameters are empirical and "
+            "it has not been tested elsewhere. See "
+            "validation/waxman_2013_results.md, Section 11.", choke_style))
 
     # ── Charts — show when trace is available (including two-phase inlet regime)
     if fl.get("trace"):

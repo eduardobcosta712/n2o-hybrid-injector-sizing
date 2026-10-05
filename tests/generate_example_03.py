@@ -6,7 +6,7 @@ real CoolProp backend, so the example can be closed without any hand-copied
 or legacy-backend figures.
 
 Run from anywhere:
-    python examples/generate_example_03.py
+    python tests/generate_example_03.py
 
 It prints, for each step of the correction table:
   - feed-line trace (P after each segment, vapour quality x, effective density)
@@ -128,5 +128,6 @@ if __name__ == "__main__":
     scan_convergence_band()
     print()
     print("Compare with the values currently in examples/example_03_flashing.md:")
-    print("  Step 0 = 193.9 g/s (HEM two-phase inlet), Step 2 = 344.4 g/s (Dyer)")
-    print("  (headline figures already CoolProp-confirmed; everything else was legacy.)")
+    print("  Step 0 = 193.9 g/s (HEM two-phase inlet), Step 2 = 347.7 g/s (Dyer), "
+          "Step 3 = 356.2 g/s (Dyer)")
+    print("  (all figures CoolProp-confirmed.)")

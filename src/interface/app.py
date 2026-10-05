@@ -95,6 +95,15 @@ FITTING_K = {
 PSI_TO_BAR = 6894.757 / 1e5
 DYER_RELIABLE_SUPERCHARGE_BAR = 200.0 * PSI_TO_BAR   # ~13.79 bar
 
+# ── Exploratory kappa correction (shown as a WARNING only, never applied) ─────
+# kappa' = kappa * min(1, S/S_ref), S = supercharge at the injector inlet.
+# beta = 1, S_ref = 400 psi: leave-one-curve-out optimum on the digitised Waxman
+# (2013) injector-3 data (validation/kappa_correction/, waxman_2013_results.md,
+# Section 11). Empirical parameters, one injector geometry, 280-283 K.
+KAPPA_CORRECTION = {"beta": 1.0,
+                    "supercharge_ref_Pa": 400.0 * PSI_TO_BAR * 1e5}
+KAPPA_NOTICE_MIN_PCT = 2.0   # below this change, only a one-line caption
+
 # ── Session state ─────────────────────────────────────────────────────────────
 if "page" not in st.session_state:
     st.session_state.page = "landing"
@@ -166,6 +175,18 @@ def _run_full_system(m_dot, T_tank, P_tank, seg_t, Cd, A, P_chamber, roughness):
 def _run_feed_line(m_dot, T_tank, P_tank, seg_t, roughness):
     return evaluate_feed_line(m_dot, T_tank, P_tank,
                               [dict(s) for s in seg_t], roughness)
+
+@st.cache_data
+def _run_full_system_kappa(m_dot, T_tank, P_tank, seg_t, Cd, A, P_chamber, roughness):
+    """Same as _run_full_system, with the exploratory kappa correction.
+    Returns None if the solver does not converge or the inputs are invalid."""
+    try:
+        return evaluate_full_system(m_dot, T_tank, P_tank,
+                                    [dict(s) for s in seg_t], Cd, A, P_chamber,
+                                    roughness,
+                                    kappa_correction=dict(KAPPA_CORRECTION))
+    except (ValueError, RuntimeError):
+        return None
 
 def _to_tuple(segments):
     return tuple(tuple(sorted(s.items())) for s in segments)
@@ -546,6 +567,86 @@ def render_supercharge_notice(T_tank, P_inlet, mode="sizing"):
         "(e.g. helium supercharge) or lowering tank temperature increases it. "
         "See validation/waxman_2013_results.md, Part B4.")
 
+
+# ── Exploratory kappa-correction warning ──────────────────────────────────────
+def _kappa_corrected_flow(m_dot_guess, T_tank, P_tank, seg_t, Cd, A, P_chamber,
+                          roughness):
+    """Flow (kg/s) with the exploratory kappa correction in the Dyer regime, or
+    None if unavailable (non-convergence, or the correction run left the Dyer
+    regime)."""
+    rc = _run_full_system_kappa(m_dot_guess, T_tank, P_tank, seg_t, Cd, A,
+                                P_chamber, roughness)
+    if rc is None or rc["regime"] != "Dyer":
+        return None
+    return rc["m_dot_real"]
+
+
+def _kappa_corrected_area(m_dot_target, Cd, T_tank, P_inlet, P_chamber):
+    """Orifice area (m2) for the target flow with the exploratory kappa
+    correction, or None if unavailable."""
+    try:
+        sc = design_injector_area(m_dot_target, Cd, T_tank, P_inlet, P_chamber,
+                                  kappa_correction=dict(KAPPA_CORRECTION))
+    except (ValueError, RuntimeError):
+        return None
+    return sc["A_recommended"] if sc["regime"] == "Dyer" else None
+
+
+def render_kappa_notice_sizing(m_dot, m_dot_corr):
+    """Sizing mode, Dyer regime. m_dot / m_dot_corr in kg/s. Warning only: the
+    reported mass flow is NOT changed."""
+    if m_dot_corr is None:
+        return
+    delta = (m_dot_corr - m_dot) / m_dot * 100.0
+    if abs(delta) < KAPPA_NOTICE_MIN_PCT:
+        st.caption(
+            f"Exploratory supercharge-dependent correction of Dyer's kappa (not "
+            f"applied): would change the prediction by {delta:+.1f}% here — "
+            "negligible at this supercharge.")
+        return
+    lo, hi = sorted((m_dot_corr, m_dot))
+    st.warning(
+        "**Exploratory — the Dyer prediction may be an upper estimate.** In a "
+        "leave-one-curve-out validation on the Waxman (2013) data (one injector "
+        "geometry, 280–283 K), a supercharge-dependent correction of Dyer's kappa "
+        "lowered the out-of-sample error of the two-phase predictions from 6.9% to "
+        "1.4%; Dyer over-predicted at every low-supercharge point. Applying it here "
+        f"would give **{m_dot_corr*1000:.1f} g/s** ({delta:+.1f}%) instead of "
+        f"{m_dot*1000:.1f} g/s. It is **not applied** to the figure above: its "
+        "parameters are empirical, fitted to one injector geometry and temperature "
+        "range, and it has not been tested elsewhere. Until you have cold-flow data, "
+        f"read {lo*1000:.0f}–{hi*1000:.0f} g/s as a plausible range. See "
+        "validation/waxman_2013_results.md, Section 11.")
+
+
+def render_kappa_notice_design(A_rec, A_corr, N_holes):
+    """Design mode, Dyer regime. Areas in m2. Warning only: the recommended area
+    is NOT changed."""
+    if A_corr is None:
+        return
+    pct = (A_corr / A_rec - 1.0) * 100.0
+    if abs(pct) < KAPPA_NOTICE_MIN_PCT:
+        st.caption(
+            f"Exploratory supercharge-dependent correction of Dyer's kappa (not "
+            f"applied): would change the required area by {pct:+.1f}% here — "
+            "negligible at this supercharge.")
+        return
+    d_rec = math.sqrt(4 * A_rec / (N_holes * math.pi)) * 1000
+    d_cor = math.sqrt(4 * A_corr / (N_holes * math.pi)) * 1000
+    st.warning(
+        "**Exploratory — the Dyer area may be too small.** In a leave-one-curve-out "
+        "validation on the Waxman (2013) data (one injector geometry, 280–283 K), a "
+        "supercharge-dependent correction of Dyer's kappa lowered the out-of-sample "
+        "error from 6.9% to 1.4%, and Dyer over-predicted at every low-supercharge "
+        f"point. Applying it, the area needed for the target flow would be "
+        f"**{A_corr*1e6:.3f} mm²** ({d_cor:.3f} mm x {N_holes}), {pct:+.1f}% more than "
+        f"the Dyer area ({d_rec:.3f} mm). It is **not applied** to the recommended "
+        "area above: its parameters are empirical, fitted to one injector geometry "
+        "and temperature range, and it has not been tested elsewhere. Treat the "
+        f"Dyer diameter ({d_rec:.3f} mm) as the lower end of the design range "
+        f"({d_rec:.3f}–{d_cor:.3f} mm per hole) until a cold-flow test narrows it. "
+        "See validation/waxman_2013_results.md, Section 11.")
+
 # ── Result cards ──────────────────────────────────────────────────────────────
 def render_result_cards(result):
     """
@@ -638,7 +739,9 @@ def render_result_cards(result):
                 f"Dyer predicts {m_dot*1000:.1f} g/s, but the non-equilibrium "
                 f"choking ceiling (Henry-Fauske, 1971) at these tank/chamber "
                 f"conditions is only {ir['m_dot_crit_HF']*1000:.1f} g/s — "
-                f"independent of orifice area. This ceiling is theoretically "
+                f"for this orifice area (the ceiling scales with area exactly as "
+                f"the Dyer prediction does, so their ratio does not depend "
+                f"on it). This ceiling is theoretically "
                 f"sound and, per the extended validation, "
                 f"tends to improve the prediction at low tank supercharge; "
                 f"treat it as a conservative alternative estimate, not a "
@@ -958,6 +1061,11 @@ if st.session_state.page == "sizing":
             elif result["regime"] == "Dyer":
                 render_supercharge_notice(T_tank, result["P_injector_inlet"],
                                            mode="sizing")
+                render_kappa_notice_sizing(
+                    result["m_dot_real"],
+                    _kappa_corrected_flow(m_dot_line / 1000.0, T_tank, P_tank,
+                                          seg_t, Cd, A_total, P_chamber,
+                                          roughness))
 
             # Combustion stability check on actual injector dP
             P_inlet = result["P_injector_inlet"]
@@ -1036,6 +1144,10 @@ if st.session_state.page == "sizing":
             result_copy["_T_tank"] = T_tank
             result_copy["_P_tank"] = P_tank
             result_copy["_P_chamber"] = P_chamber
+            if result["regime"] == "Dyer":
+                result_copy["_m_dot_kappa_corr"] = _kappa_corrected_flow(
+                    m_dot_line / 1000.0, T_tank, P_tank, seg_t, Cd, A_total,
+                    P_chamber, roughness)
             pdf_bytes = generate_pdf(
                 mode="sizing",
                 inputs={"T_tank_C": T_tank - 273.15,
@@ -1181,18 +1293,27 @@ elif st.session_state.page == "design":
                     st.markdown(
                         '<div class="badge-choke">&#9888; Non-equilibrium choking '
                         'ceiling exceeded</div>', unsafe_allow_html=True)
+                    m_ratio = m_dot_target / dr["m_dot_crit_HF"]
+                    A_cons = A_rec * m_ratio
+                    d_cons = math.sqrt(4 * A_cons / (N_holes * math.pi)) * 1000
                     st.warning(
-                        f"The non-equilibrium choking ceiling (Henry-Fauske, 1971) "
-                        f"at these tank/chamber conditions is "
-                        f"{dr['m_dot_crit_HF']*1000:.1f} g/s — independent of orifice "
-                        f"area. The target of {m_dot_target_gs:.0f} g/s may not be "
-                        f"achievable at this ΔP regardless of how the orifice is "
-                        f"sized; consider raising tank pressure or lowering chamber "
-                        f"pressure instead. This ceiling is theoretically sound, and "
-                        f"the extended validation shows it tends to "
-                        f"improve the prediction at low tank supercharge; treat it as "
-                        f"a conservative, though not yet fully confirmed, estimate. "
-                        f"See docs/future_work.md, Priority 1.")
+                        f"At the recommended area the Dyer prediction "
+                        f"({m_dot_target_gs:.0f} g/s) exceeds the non-equilibrium "
+                        f"choking ceiling (Henry-Fauske, 1971), "
+                        f"{dr['m_dot_crit_HF']*1000:.1f} g/s. Both scale linearly "
+                        f"with orifice area, so the ceiling is not an unreachable "
+                        f"limit: if the real flow follows it, the area needed for "
+                        f"{m_dot_target_gs:.0f} g/s is {A_cons*1e6:.3f} mm² "
+                        f"({d_cons:.3f} mm x {N_holes}), {(m_ratio-1)*100:.1f}% "
+                        f"larger than the Dyer area. A defensible design range is "
+                        f"therefore {d_rec:.3f}-{d_cons:.3f} mm per hole (Dyer to "
+                        f"ceiling-limited), to be narrowed by a cold-flow test. "
+                        f"Alternatively raise tank pressure (more supercharge) or "
+                        f"lower chamber pressure. The ceiling is theoretically "
+                        f"sound and, in the extended validation, tends to improve "
+                        f"the prediction at low tank supercharge, but it is not yet "
+                        f"confirmed across geometries. See docs/future_work.md, "
+                        f"Priority 1.")
                 elif dr is not None and dr.get("HF_unavailable_reason"):
                     st.caption(f"Non-equilibrium ceiling check unavailable: "
                                f"{dr['HF_unavailable_reason']}")
@@ -1200,6 +1321,11 @@ elif st.session_state.page == "design":
                 # Dyer reliability vs tank supercharge (Dyer regime only)
                 if use_dyer:
                     render_supercharge_notice(T_tank, P_inlet, mode="design")
+                    render_kappa_notice_design(
+                        A_rec,
+                        _kappa_corrected_area(m_dot_target, Cd, T_tank,
+                                              P_inlet, P_chamber),
+                        N_holes)
 
                 # Combustion stability check
                 actual_dP = P_inlet - P_chamber
@@ -1282,6 +1408,9 @@ elif st.session_state.page == "design":
                     "A_spi": A_spi, "A_dyer": A_rec,
                     "d_spi": d_spi, "d_dyer": d_rec, "pct": pct,
                 }
+                if use_dyer:
+                    export_results["_A_kappa_corr"] = _kappa_corrected_area(
+                        m_dot_target, Cd, T_tank, P_inlet, P_chamber)
                 if use_dyer:
                     export_results.update({
                         "m_spi": dr["m_dot_SPI"], "m_hem": dr["m_dot_HEM"],

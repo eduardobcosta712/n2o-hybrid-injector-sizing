@@ -54,7 +54,8 @@ validation/waxman_2013_results.md, and remains useful as a direct
 comparison against the more rigorous isentropic scan.
 
 An exploratory, supercharge-gated correction of kappa is provided by
-dyer_mass_flow_corrected(); it is not called by full_system.py.
+dyer_mass_flow_corrected(); full_system.py uses it only through its optional, default-off
+kappa_correction argument.
 
 Units: SI throughout (Pa, K, kg/m^3, m^2, kg/s), except vapor quality x
 and the Dyer weighting parameter kappa, which are dimensionless.
@@ -276,8 +277,10 @@ def hem_mass_flow_two_phase_inlet(Cd, A, T_tank, x_inlet,
 
     Known limitation: the switch from Dyer (liquid inlet) to this HEM
     two-phase-inlet model at the flashing threshold is DISCONTINUOUS --
-    HEM at x_inlet -> 0 gives roughly half the Dyer flow at the same
-    conditions (about 194 g/s just below the threshold vs about 340 g/s
+    Dyer at a saturated
+    inlet equals (SPI + HEM)/2, so Dyer/HEM = (1 + SPI/HEM)/2 at x_inlet -> 0
+    (about 1.16 at the Waxman conditions, about 1.75 in Example 3; "roughly
+    half" only when SPI >> HEM) (about 194 g/s just below the threshold vs about 340 g/s
     just above it in the tank-pressure scan of examples/example_03). The
     two-phase-inlet path is implemented and unit tested but has not been
     validated against experimental data.
@@ -1104,8 +1107,9 @@ def dyer_mass_flow_corrected(Cd, A, T_upstream, P_upstream, P_downstream,
     """
     Supercharge-gated correction to the Dyer/NHNE non-equilibrium parameter
     kappa (docs/future_work.md, Priority 1, item 1: "Investigate a
-    supercharge-dependent... correction"). EXPLORATORY -- not called by
-    full_system.py or the interface.
+    supercharge-dependent... correction"). EXPLORATORY -- used by
+    full_system.py only through its optional, default-off kappa_correction
+    argument; never by default, and not by the interface.
 
     MOTIVATION AND PRIMARY-SOURCE SUPPORT
 

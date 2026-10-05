@@ -1,0 +1,81 @@
+==============================================================================
+LOOCV of the gated kappa correction -- Waxman Fig. 13, injector 3
+==============================================================================
+Two-phase points: 64 on 9 curves | pooled Cd (all curves) = 0.7808 | grid: 31 betas x 77 refs
+Part A supercharge = 94.7 psi -> GATED<=A restricts ref to <= that
+Vectorised formula verified against dyer_mass_flow_corrected(): OK
+
+IN-SAMPLE fit on all 64 points (for comparison; this is what 1.86 % was):
+  free  : beta=1.0 ref=400 psi -> in-sample MAPE 1.11 %
+  gated : beta=2.5 ref=90 psi -> in-sample MAPE 4.20 %
+
+PER FOLD (held-out curve; parameters fitted on the other 8 curves)
+ held-out   n  Cd_fold |  baseline |  FREE b/ref  train  OOS MAPE | GATED b/ref  train  OOS MAPE
+     41psi   9   0.7813 |    17.80% |  1.1/  385  0.74%     4.07% |  3.0/   90  4.45%     3.65%
+     79psi  10   0.7819 |    13.67% |  0.9/  400  1.14%     1.31% |  2.5/   85  3.10%    11.93%
+    115psi   7   0.7799 |     6.50% |  0.9/  400  1.11%     1.48% |  2.5/   90  3.83%     6.50%
+    169psi   6   0.7814 |     5.93% |  1.0/  395  1.14%     0.75% |  2.5/   90  4.08%     5.93%
+    206psi   6   0.7812 |     3.58% |  1.0/  395  1.12%     1.00% |  2.5/   90  4.30%     3.58%
+    269psi   5   0.7803 |     1.08% |  1.0/  400  1.15%     0.84% |  2.5/   90  4.42%     1.08%
+    290psi   8   0.7811 |     2.16% |  1.0/  400  1.21%     0.39% |  2.5/   90  4.52%     2.16%
+    329psi   7   0.7808 |     1.60% |  1.0/  400  1.18%     0.55% |  2.5/   90  4.52%     1.60%
+    371psi   6   0.7791 |     1.19% |  0.9/  400  1.18%     0.87% |  2.5/   90  4.36%     1.19%
+
+POOLED OUT-OF-SAMPLE (every point predicted by a model that never saw its curve)
+  baseline (Dyer)     : n= 64  mean= +6.72%  MAPE= 6.88%  max|err|= 33.5%
+  FREE                : n= 64  mean= -0.35%  MAPE= 1.36%  max|err|= 11.6%
+  GATED<=A            : n= 64  mean= +3.50%  MAPE= 4.62%  max|err|= 25.4%
+
+OUT-OF-SAMPLE by supercharge band:
+  < 100 psi    baseline: n= 19  mean=+15.39%  MAPE=15.62%  max|err|= 33.5%
+  < 100 psi    FREE    : n= 19  mean= -1.33%  MAPE= 2.62%  max|err|= 11.6%
+  < 100 psi    GATED<=A: n= 19  mean= +4.55%  MAPE= 8.01%  max|err|= 25.4%
+  100-200 psi  baseline: n= 13  mean= +5.96%  MAPE= 6.24%  max|err|= 16.4%
+  100-200 psi  FREE    : n= 13  mean= +0.11%  MAPE= 1.14%  max|err|=  2.6%
+  100-200 psi  GATED<=A: n= 13  mean= +5.96%  MAPE= 6.24%  max|err|= 16.4%
+  >= 200 psi   baseline: n= 32  mean= +1.88%  MAPE= 1.95%  max|err|=  8.1%
+  >= 200 psi   FREE    : n= 32  mean= +0.05%  MAPE= 0.70%  max|err|=  2.0%
+  >= 200 psi   GATED<=A: n= 32  mean= +1.88%  MAPE= 1.95%  max|err|=  8.1%
+
+THE 41 psi FOLD (closest to saturation = extrapolation towards the threshold):
+  baseline : n=  9  mean=+17.29%  MAPE=17.80%  max|err|= 33.5%
+  FREE     : n=  9  mean= -4.07%  MAPE= 4.07%  max|err|= 11.6%   (beta=1.1, ref=385)
+  GATED<=A : n=  9  mean= -3.65%  MAPE= 3.65%  max|err|= 10.7%   (beta=3.0, ref=90)
+
+STABILITY of the FREE fit across folds:
+  beta: min 0.9  max 1.1 | ref: min 385  max 400 psi
+  (in-sample optimum: beta=1.0, ref=400)
+
+PART A (4 points, injector 2; never used in any fit)
+  parameters                                                Cd=0.65 |            Cd=0.681 (measured)
+  baseline (beta=0)                  mean= -0.28% MAPE= 2.75% | mean= +4.47% MAPE= 4.47%
+  in-sample FREE (1.0/400)           mean= -5.74% MAPE= 5.74% | mean= -1.25% MAPE= 1.26%
+  in-sample GATED<=A (2.5/90)        mean= -0.28% MAPE= 2.75% | mean= +4.47% MAPE= 4.47%
+  FREE params of the 9 folds: Part A MAPE range 5.27-6.06 % (Cd 0.65) | 1.17-1.58 % (Cd 0.681)
+
+LIMIT CHECK: corrected Dyer vs HEM as supercharge -> 0 (T=280 K, P_down=30 bar)
+  (corr/HEM -> 1 means Dyer joins HEM at the flashing threshold; the HEM
+   two-phase-inlet path at x_inlet -> 0 is exactly this HEM flow.)
+  beta = 1.0, ref = 400 psi, Cd = 0.781
+   S [psi]      Dyer  corrected       HEM  corr/HEM  corr/Dyer
+      0.05     42.60      36.79     36.78     1.000      0.864
+      0.50     42.70      36.88     36.86     1.000      0.864
+      2.00     43.03      37.19     37.13     1.002      0.864
+      5.00     43.68      37.81     37.66     1.004      0.866
+     10.00     44.76      38.84     38.53     1.008      0.868
+     20.00     46.84      40.86     40.20     1.016      0.872
+     41.00     50.97      45.00     43.51     1.034      0.883
+     95.00     60.42      55.05     51.04     1.078      0.911
+    200.00     75.79      72.40     63.17     1.146      0.955
+
+  beta = 2.5, ref = 90 psi, Cd = 0.781
+   S [psi]      Dyer  corrected       HEM  corr/HEM  corr/Dyer
+      0.05     42.60      36.78     36.78     1.000      0.863
+      0.50     42.70      36.86     36.86     1.000      0.863
+      2.00     43.03      37.13     37.13     1.000      0.863
+      5.00     43.68      37.67     37.66     1.000      0.862
+     10.00     44.76      38.58     38.53     1.001      0.862
+     20.00     46.84      40.52     40.20     1.008      0.865
+     41.00     50.97      45.47     43.51     1.045      0.892
+     95.00     60.42      60.42     51.04     1.184      1.000
+    200.00     75.79      75.79     63.17     1.200      1.000

@@ -4,6 +4,41 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Optional, default-off `kappa_correction` argument in
+  `evaluate_full_system()` and `design_injector_area()` (supercharge-gated
+  kappa correction, exploratory). Default behaviour is unchanged and the
+  interface does not use it. New tests: `tests/test_kappa_correction_option.py`.
+- `validation/kappa_correction/loocv_kappa_correction.py`,
+  `validation/kappa_correction/loocv_functional_forms.py`
+  (leave-one-curve-out validation of the correction and of alternative forms)
+  and `validation/kappa_correction/scan_threshold_continuity.py` (flashing-threshold scan with
+  and without the correction).
+
+### Fixed
+- "HEM gives roughly half the Dyer flow at the flashing threshold" (README,
+  `03_two_phase_flow.md`, `future_work.md`, docstring): true only when SPI >> HEM;
+  in general Dyer/HEM = (1 + SPI/HEM)/2 at a saturated inlet.
+- Henry-Fauske warning (Design mode, Sizing mode, PDF, user manual,
+  Example 2, `04_implementation.md`): it claimed the target could be
+  unachievable "regardless of how the orifice is sized". Both the Dyer
+  prediction and the ceiling scale linearly with orifice area, so only
+  their *ratio* is area-independent. Design mode now reports the
+  ceiling-limited area (recommended area x target / ceiling) and a design
+  range per hole; the wording elsewhere was corrected accordingly.
+- Validation wording (`README.md`, `waxman_2013_results.md` Section 7):
+  Part A's 2.76 % (4 points, generic Cd) is no longer presented as the
+  general accuracy at 8-14 bar, and a wrong "close to Part A's own
+  supercharge" comparison was corrected (Part A is ~95 psi, not ~169 psi).
+- `tests/generate_example_03.py`: wrong run path in the docstring and an
+  outdated Step 2 reference value (344.4 -> 347.7 g/s).
+
+### Removed
+- `validation/waxman_2013_experimental_data.csv`: not read by any code and
+  known to be inconsistent with the digitised Fig. 16.
+
 ## [1.0.0] - 2026-09-30
 
 First stable release. The open items of the release candidate (bibliographic

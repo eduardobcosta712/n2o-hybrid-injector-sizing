@@ -81,7 +81,7 @@ The Dyer model is a weighted combination of the SPI limit ("no time to vaporise"
 
 **Non-equilibrium choking diagnostic.** Every Dyer evaluation is also checked against a Henry-Fauske (1971) non-equilibrium critical-flow ceiling — the physically correct bound for a non-equilibrium prediction, as opposed to the *equilibrium* HEM ceiling (which Dyer legitimately and correctly exceeds by design). This ceiling is surfaced as a warning (`choked` flag, both in the interface and the PDF export) when exceeded, rather than silently applied to the reported mass flow. As of the September 2026 extended validation (see "Validation" below), this ceiling now demonstrably improves the prediction at low tank-subcooling operating points when applied as a cap — it is still not automatically applied, but this is no longer a purely theoretical diagnostic; see `docs/future_work.md`, Priority 1.
 
-**Exploratory: supercharge-gated κ correction.** A second, independent correction candidate for the same low-supercharge over-prediction — targeting Dyer's κ parameter directly rather than capping its output — was explored in September 2026 and is documented in [`docs/reports/dyer_supercharge_correction.pdf`](docs/reports/dyer_supercharge_correction.pdf). It is implemented as an additional function, `dyer_mass_flow_corrected()`, alongside the unmodified `dyer_mass_flow()`; `full_system.py` and the interactive tool are unaffected. See `docs/future_work.md`, Priority 1, for status and limitations.
+**Exploratory: supercharge-gated κ correction.** A second, independent correction candidate for the same low-supercharge over-prediction — targeting Dyer's κ parameter directly rather than capping its output — was explored in September 2026 and is documented in [`docs/reports/dyer_supercharge_correction.pdf`](docs/reports/dyer_supercharge_correction.pdf). It is implemented as an additional function, `dyer_mass_flow_corrected()`, alongside the unmodified `dyer_mass_flow()`; `full_system.py` (default behaviour) and the interactive tool are unaffected. See `docs/future_work.md`, Priority 1, for status and limitations.
 
 ---
 
@@ -93,7 +93,7 @@ Saturation thermodynamics (P_sat, T_sat, densities, enthalpy, entropy) are compu
 
 **Updated September 2026.** In addition to the original four Niño & Razavi (2019) operating points, the model has now been validated against a much larger dataset digitised directly from the source paper (Waxman et al., 2013, AIAA 2013-3636, Figs. 11–16): the full injector-3 mass-flow map across nine supercharge levels, at injector pressure drops from below 1 bar up to **46 bar**. Full detail, tables and a comparison figure in [`validation/waxman_2013_results.md`](validation/waxman_2013_results.md); the digitised data lives in `validation/digitized/` and the script `validation/waxman_2013_validation.py` reproduces every number.
 
-**Original four points:** pressure drops of 8–14 bar give a MAPE of 2.76% (mean error −0.3%), with all points within ±5%. (An earlier report, computed with the superseded Perry-correlation property backend, quoted 3.51% for this same comparison; that figure is now obsolete.)
+**Original four points:** pressure drops of 8–14 bar give a MAPE of 2.76% (mean error −0.3%), with all points within ±5% — but this is only 4 points, with a generic Cd = 0.65; with the Cd measured for that injector (0.681) it is 4.4%, and the two-phase points of the extended dataset with dP ≤ 14 bar have a MAPE of 5.3%. The number to quote for overall accuracy is the extended-dataset one below (6.85%, split by supercharge). (An earlier report, computed with the superseded Perry-correlation property backend, quoted 3.51% for this same comparison; that figure is now obsolete.)
 
 **Extended dataset (new):** 104 usable digitised points across dP = 0.3–46 bar. The single-phase (SPI) branch reproduces the calibration data essentially exactly (MAPE 1.25%, used only to fit one pooled discharge coefficient). The two-phase (Dyer) branch, evaluated at 64 points that did **not** enter the calibration, gives an overall MAPE of 6.85% — but this average hides a clear pattern: **the controlling variable is the tank's subcooling margin (supercharge above P_sat), not the injector pressure drop itself.**
 
@@ -106,19 +106,19 @@ Counter-intuitively, the **largest** pressure drops tested (30–46 bar, the ran
 
 **Henry-Fauske ceiling — no longer purely theoretical.** In the extended dataset the ceiling is exceeded (`choked = True`) at 31 of the 64 two-phase points (previously it had never bound at any validated point); applying it as a cap improves the prediction at 30 of those 31. This is genuine new evidence, though not yet strong enough to make the cap automatic — see `docs/future_work.md`, Priority 1, for the reasoning.
 
-**Exploratory: a second, targeted correction to κ itself.** Independently of the Henry-Fauske ceiling, a *gated* correction to Dyer's non-equilibrium parameter κ — motivated by a limitation of κ already identified in the model's own source literature (Vargas Niño & Razavi, 2019) — was explored against the same 64-point dataset. It reduces the two-phase MAPE to as low as 1.86% in an unrestricted grid search, at the cost of perturbing the original 4-point validation subset (whose own supercharge, ~95 psi, sits inside the low-supercharge regime the correction targets). A previously undocumented interaction with discharge-coefficient calibration was also found: with the injector-specific, Waxman-measured C_d instead of a generic value, the correction does not degrade the 4-point subset — it improves it, to MAPE 1.14%. Full derivation, primary-source support, and an explicit list of what remains unverified: [`docs/reports/dyer_supercharge_correction.pdf`](docs/reports/dyer_supercharge_correction.pdf). Exploratory only — not called by `full_system.py` or the interactive tool.
+**Exploratory: a second, targeted correction to κ itself.** Independently of the Henry-Fauske ceiling, a *gated* correction to Dyer's non-equilibrium parameter κ — motivated by a limitation of κ already identified in the model's own source literature (Vargas Niño & Razavi, 2019) — was explored against the same 64-point dataset. It reduces the two-phase MAPE to as low as 1.86% in an unrestricted grid search, at the cost of perturbing the original 4-point validation subset (whose own supercharge, ~95 psi, sits inside the low-supercharge regime the correction targets). A previously undocumented interaction with discharge-coefficient calibration was also found: with the injector-specific, Waxman-measured C_d instead of a generic value, the correction does not degrade the 4-point subset — it improves it, to MAPE 1.14%. Full derivation, primary-source support, and an explicit list of what remains unverified: [`docs/reports/dyer_supercharge_correction.pdf`](docs/reports/dyer_supercharge_correction.pdf). A leave-one-curve-out validation (September 2026, `validation/kappa_correction/`, `validation/waxman_2013_results.md` Section 11) gives an **out-of-sample** two-phase MAPE of 1.4% (baseline 6.9%; 41 psi curve held out: 17.8% → 4.1%), shows that one parameter suffices (κ' ≈ κ·S/S₀, S₀ ≈ 400 psi) and that the correction is not a disguised Cd shift; with it the flashing-threshold discontinuity and the non-convergent band of Example 3 disappear. It is still exploratory: fitted to one injector geometry at 280–283 K, available in `full_system.py` only as an optional, default-off argument, and not used by the interactive tool.
 
 The `hem_critical_flow()` and `hem_critical_flow_isentropic()` functions provide the *equilibrium* two-phase choking ceiling as standalone diagnostics (Waxman 2013 Eq. 5, isenthalpic and isentropic paths respectively — they agree to within 1.3%). At Waxman conditions they give ≈42–43 g/s; the Dyer predictions (43–50 g/s) sit above this, consistent with the non-equilibrium correction accounting for partial vaporisation inside the orifice.
 
 **What is *not* validated.**
-- The **two-phase feed-line model** and the **HEM two-phase-inlet injector path** (flashing in the line) are implemented and unit tested but have not been validated against any published data. The switch from Dyer to HEM at the flashing threshold is discontinuous (HEM at vanishing vapour quality predicts roughly half the Dyer flow), and this discontinuity can also make the coupled fixed-point solver fail to converge for operating points that sit close enough to the flashing threshold — see `docs/future_work.md`, Priority 2, and `examples/example_03_flashing.md` for a worked scan showing where the non-convergent band actually sits for one line geometry.
+- The **two-phase feed-line model** and the **HEM two-phase-inlet injector path** (flashing in the line) are implemented and unit tested but have not been validated against any published data. The switch from Dyer to HEM at the flashing threshold is discontinuous (Dyer at a saturated inlet equals (SPI + HEM)/2, so Dyer/HEM = (1 + SPI/HEM)/2 at the threshold — about 1.16 at the Waxman conditions but about 1.75 in Example 3), and this discontinuity can also make the coupled fixed-point solver fail to converge for operating points that sit close enough to the flashing threshold — see `docs/future_work.md`, Priority 2, and `examples/example_03_flashing.md` for a worked scan showing where the non-convergent band actually sits for one line geometry.
 - The **coupled solver** has not been checked against a measured tank-to-chamber flow with a significant line.
 - The extended dataset (Part B/C/D) covers only injector 3 (1.5 mm, rounded inlet) at more than one supercharge; the square-edge injector-2 geometry of Part A still has only 4 points.
 - The **supercharge-gated κ correction** above is fitted to a single injector geometry and checked against only 4 points of a second geometry — see the report PDF for the full limitations list.
 
 ---
 
-> **262 automated tests** on Python 3.10/3.12 via `pytest tests/ -v` (6 test modules): `test_n2o_properties` 70, `test_feed_line` 32, `test_injector_spi` 13, `test_injector_two_phase` 55, `test_full_system` 45, `test_grain_sizing` 47. Confirmed passing with the real CoolProp package installed (September 2026).
+> **284 automated tests** on Python 3.10/3.12 via `pytest tests/ -v` (7 test modules): `test_n2o_properties` 70, `test_feed_line` 32, `test_injector_spi` 13, `test_injector_two_phase` 55, `test_full_system` 45, `test_grain_sizing` 47, `test_kappa_correction_option` 22. Confirmed passing with the real CoolProp package installed (September 2026).
 
 ## Scope and known limitations
 
@@ -156,7 +156,17 @@ n2o-hybrid-injector-sizing/
 │   ├── user_manual.md
 │   ├── references.md
 │   └── reports/
-│       └── dyer_supercharge_correction.pdf
+│       ├── dyer_supercharge_correction.tex
+│       ├── dyer_supercharge_correction.pdf
+│       └── figures/
+│           ├── make_figures.py
+│           ├── fig_baseline_bands.pdf
+│           ├── fig_factor_shapes.pdf
+│           ├── fig_forms.pdf
+│           ├── fig_limit.pdf
+│           ├── fig_loocv_bands.pdf
+│           ├── fig_loocv_folds.pdf
+│           └── fig_scan.pdf
 ├── src/
 │   ├── model/
 │   │   ├── n2o_properties.py
@@ -174,8 +184,15 @@ n2o-hybrid-injector-sizing/
 │   ├── waxman_2013_results.md
 │   ├── waxman_2013_validation.py
 │   ├── waxman_2013_fig13_comparison.png
-│   ├── waxman_2013_experimental_data.csv
 │   ├── explore_supercharge_correction.py
+│   ├── kappa_correction/
+│   │   ├── README.md
+│   │   ├── loocv_kappa_correction.py
+│   │   ├── loocv_functional_forms.py
+│   │   ├── scan_threshold_continuity.py
+│   │   ├── loocv_kappa_results.txt
+│   │   ├── loocv_functional_forms_results.txt
+│   │   └── scan_threshold_continuity_results.txt
 │   └── digitized/
 │       ├── waxman_fig11_mdot_vs_dP_single_test.csv
 │       ├── waxman_fig12_cd_vs_dP_single_test.csv
@@ -183,6 +200,8 @@ n2o-hybrid-injector-sizing/
 │       ├── waxman_fig14_cd_vs_dP_by_supercharge.csv
 │       ├── waxman_fig15_cd_vs_supercharge_injectors_1_2_5.csv
 │       └── waxman_fig16_critical_mdot_vs_supercharge.csv
+├── tools/
+│   └── audit_repo.py
 ├── tests/
 │   ├── conftest.py
 │   ├── generate_example_03.py    
@@ -191,7 +210,8 @@ n2o-hybrid-injector-sizing/
 │   ├── test_injector_spi.py
 │   ├── test_injector_two_phase.py
 │   ├── test_full_system.py
-│   └── test_grain_sizing.py
+│   ├── test_grain_sizing.py
+│   └── test_kappa_correction_option.py
 └── examples/
     ├── example_01_sizing.md
     ├── example_02_design.md

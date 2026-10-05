@@ -124,7 +124,7 @@ T_crit = 36.4 °C (309.52 K), P_crit = 72.45 bar.  (consistent with the NIST Web
 
 ## Open bibliographic points
 
-These items were flagged by the September 2026 audit and re-checked on 2026-09-30. Items 1, 2 and 4 are now closed; item 3 was resolved by removing the entry; item 5 is not blocking (the file is not read by any code).
+These items were flagged by the September 2026 audit and re-checked on 2026-09-30. Items 1, 2 and 4 are now closed; item 3 was resolved by removing the entry; item 5 was closed in v1.0.1 by removing the file.
 
 1. **Origin of the NIST viscosity correlations (Tables A.3 and A.4) — CLOSED 2026-09-30 by removing the unsupported attribution.** The project author confirmed that the NIST WebBook provides the saturated-vapour and saturated-liquid viscosity tables and that the values in `n2o_saturation_table.csv` were regenerated from it and match, so the **data source** is verified. The **correlation** behind the WebBook columns was never identified. The earlier attributions were not supportable and were removed from the CSV header:
    - *Millat, Vesovic & Wakeham (1991)*, Int. J. Thermophys. 12, 265–273 ✔ exists, but covers only the **zero-density limit** of N₂O viscosity (180–800 K) and cannot account for saturated-vapour values at finite density.
@@ -133,7 +133,7 @@ These items were flagged by the September 2026 audit and re-checked on 2026-09-3
 2. **Vargas Niño & Razavi (2019), AIAA 2019-4154** — CLOSED 2026-09-30: entry verified, and the table, figure, section and equation numbers quoted in the project's documents checked by the project author against the paper.
 3. **Waxman et al. (2014).** Earlier versions listed *"Mass flow rate and isolation pressure measurements in nitrous oxide with the Dyer injector model", AIAA 2014-3834*. The audit could not find such a paper and has removed the entry; the verified Waxman references are the 2013 AIAA paper and the 2014 PhD thesis above.
 4. **Author list of Dyer et al. (2007).** CLOSED 2026-09-30: Dyer, Doran, Dunn, Lohner, Zilliac and Cantwell, checked by the project author against the paper (the AIAA publisher record lists a different set of names; the paper's own list is used).
-5. **`waxman_2013_experimental_data.csv`** records upstream conditions P1 = 4.96 MPa, supercharge 1.26 MPa, while the validation uses P1 = 4.36 MPa, supercharge 0.62 MPa (Niño & Razavi Table 4). Both may be correct (different tests in the same paper), but the CSV is not read by any code; see `validation/waxman_2013_results.md`.
+5. **`waxman_2013_experimental_data.csv`** — CLOSED in v1.0.1 by removal. The file was not read by any code and its `m_dot_crit_exp` column was inconsistent with the digitised Fig. 16 (factor ≈4); its upstream conditions (P1 = 4.96 MPa, supercharge 1.26 MPa) also differ from those of the validation. It remains in the git history before v1.0.1.
 
 ---
 

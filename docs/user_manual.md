@@ -213,7 +213,7 @@ A caption below the cards shows the percentage by which the Dyer area exceeds th
 
 ### Non-equilibrium choking warning
 
-Immediately below that caption, the same amber choking warning described for Sizing mode can appear here too — checked at the recommended area and the tank/chamber conditions, before the combustion-stability check. **Important:** this condition is independent of the computed orifice area (both the Dyer prediction and the choking ceiling scale linearly with area), so if it appears, resizing the orifice will not resolve it — the message suggests adjusting tank or chamber pressure instead. As in Sizing mode, this is a diagnostic warning, not a correction applied to the area shown above.
+Immediately below that caption, the same amber choking warning described for Sizing mode can appear here too — checked at the recommended area and the tank/chamber conditions, before the combustion-stability check. **Important:** whether this warning appears does not depend on the orifice area (both the Dyer prediction and the choking ceiling scale linearly with it), but that does not make the target unreachable: if the real flow follows the ceiling, a proportionally larger area delivers the target. The warning therefore reports the ceiling-limited area (recommended area × target / ceiling) and a design range per hole, from the Dyer diameter up to the ceiling-limited diameter; raising tank pressure or lowering chamber pressure is the alternative. As in Sizing mode, this is a diagnostic warning, not a correction applied to the area shown above.
 
 ### Diagrams
 
