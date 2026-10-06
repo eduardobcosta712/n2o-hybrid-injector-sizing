@@ -98,4 +98,4 @@ instead of the target 500 g/s — a shortfall of about 24%.
 2. Set sidebar: T = 15 °C, P = 60 bar, Cd = 0.65, P_chamber = 20 bar.
 3. Set target: 500 g/s, 8 holes.
 4. Add feed line segments as listed above.
-5. Read the results — Dyer hole diameter should show **1.410 mm** and area increase **31.3%**. An amber choking-ceiling warning (456.2 g/s), now also reporting the ceiling-limited area (≈13.70 mm², ≈1.476 mm per hole), should appear underneath the area caption.
+5. Read the results — Dyer hole diameter should show **1.410 mm** and area increase **31.3%**. An amber choking-ceiling warning (456.2 g/s), now also reporting the ceiling-limited area (≈13.70 mm², ≈1.476 mm per hole), should appear underneath the area caption, followed by an exploratory warning with the area the supercharge-dependent kappa correction would require (not applied; see the user manual). The figures of this example are the unchanged Dyer results.

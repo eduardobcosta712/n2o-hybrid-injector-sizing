@@ -107,6 +107,8 @@ Across the band the flow changes from 193.9 g/s (53.5 bar) to 340.3 g/s (55.25 b
 2. **The jump between Steps 0 and 2 is partly a model artefact.** Dyer (liquid inlet) and HEM (two-phase inlet) are different models, and HEM at vanishing vapour quality predicts noticeably less than Dyer at the same conditions (`docs/future_work.md`, Priority 2). The qualitative message, that crossing into flashing in the line is very costly, is robust. The exact size of the jump, and the behaviour inside the non-convergent band, are not pinned down by any experimental data.
 3. **The tool's own margin guideline is 5 bar before line losses.** 56 bar gives 3.14 bar at 22 °C. If more margin is wanted, the scan above shows a converging Dyer solution at 58 bar (5.14 bar margin) for the original needle-valve geometry, 355.1 g/s; re-run the final geometry in the tool to get its own figure.
 
+4. **The exploratory supercharge-dependent correction of κ changes this example substantially.** At this tank's supercharge (3–5 bar, ≈45–70 psi) the correction (β = 1, S_ref = 400 psi; `validation/waxman_2013_results.md`, Section 11) pulls Dyer towards HEM: Step 2 would be 225.6 g/s instead of 347.7 g/s and Step 3 233.7 g/s instead of 356.2 g/s, the Henry-Fauske ceiling would no longer be exceeded, and the non-convergent band of the scan above would disappear. It was validated out of sample on one injector geometry at 280–283 K, not at 295 K nor on this geometry, so the figures above remain the tool's primary (Dyer) result and the corrected values are shown only as an exploratory warning. Read the planning range of caveat 1 (278–356 g/s) together with it: the correction would put the lower end near 226 g/s.
+
 ---
 
 ## Key lessons
@@ -130,6 +132,6 @@ Across the band the flow changes from 193.9 g/s (53.5 bar) to 340.3 g/s (55.25 b
 **Step 1 (no convergence):** change the needle valve to **Ball valve (fully open)**, keep 53.5 bar. The tool shows a "Model error: Coupled solver did not converge" message.
 
 **Corrected case:**
-1. Set P = **56 bar**, ball valve, 8 mm line: Flashing NO, Dyer, **347.7 g/s**, plus the amber choking-ceiling warning (267.8 g/s).
-2. Change the line ID to **12 mm**: **356.2 g/s**, ceiling 278.1 g/s.
+1. Set P = **56 bar**, ball valve, 8 mm line: Flashing NO, Dyer, **347.7 g/s**, plus the amber choking-ceiling warning (267.8 g/s) and the exploratory kappa-correction warning, which gives 225.6 g/s (−35 %).
+2. Change the line ID to **12 mm**: **356.2 g/s**, ceiling 278.1 g/s; exploratory warning: 233.7 g/s (−34 %).
 

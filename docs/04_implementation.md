@@ -26,7 +26,7 @@ Every other module in this project depends on this one: the subcooling margin (S
 
 ```bash
 python src/model/n2o_properties.py        # self-check against literature references
-pytest tests/ -v                          # full 262-test suite, including the legacy cross-checks
+pytest tests/ -v                          # full test suite, including the legacy cross-checks
 python validation/waxman_2013_validation.py
 ```
 
@@ -289,6 +289,10 @@ and is found by damped fixed-point iteration ($`\alpha = 0.5`$, tolerance $`10^{
 
 The Design-mode logic -- choose SPI or Dyer, and iterate the Dyer area to hit the target flow -- lives in a pure function so it can be unit tested without Streamlit. If the flow stays single-phase through the orifice ($`P_{chamber} \geq P_{sat}(T_{tank})`$) it returns the SPI area with `regime = "SPI"`; otherwise it iterates the Dyer area (all flow models scale linearly with area, so it converges in one or two steps).
 
+### Optional, default-off kappa correction
+
+`evaluate_full_system()` and `design_injector_area()` accept `kappa_correction={"beta": ..., "supercharge_ref_Pa": ...}` (default `None`: every result unchanged). In the Dyer branch the flow is then computed with `dyer_mass_flow_corrected()`, $`\kappa' = \kappa\,(S/S_{ref})^{\beta}`$ below $`S_{ref}`$ (supercharge taken at the injector inlet); the result keeps all its keys and gains `m_dot_Dyer_uncorrected`, `kappa_corrected` and `kappa_correction_factor`, and the Henry-Fauske `choked` flag is re-evaluated against the corrected flow. Exploratory: fitted to one injector geometry at 280-283 K, see `validation/waxman_2013_results.md`, Section 11. With it the Dyer and HEM branches are continuous at the flashing threshold (the correction vanishes with the supercharge), and the non-convergent band described below disappears in the tank-pressure scan of Example 3 (`validation/kappa_correction/scan_threshold_continuity.py`). Tests: `tests/test_kappa_correction_option.py`.
+
 ### The Dyer-to-HEM discontinuity and solver convergence
 
 Because `hem_mass_flow_two_phase_inlet` and `dyer_mass_flow` are genuinely different models that disagree at the flashing threshold (Section 4.4), the coupled solver can, for a tank pressure sitting close enough to the threshold for a given line geometry, alternate between predicting flashing (moving it toward the HEM branch) and predicting no flashing (moving it toward the Dyer branch) without settling. This was confirmed directly with the real CoolProp backend for the geometry originally used in `examples/example_03_flashing.md`: a narrow tank-pressure band exists there where the damped fixed-point iteration does not converge even at reduced damping, and the solver correctly raises `RuntimeError` rather than returning an arbitrary value from an unconverged state. Just outside that band, on either side, the solver converges cleanly. `examples/example_03_flashing.md` now uses tank pressures chosen to sit clearly outside this band -- see that file and `docs/future_work.md`, Priority 2.
@@ -317,6 +321,8 @@ Segment state is kept in `st.session_state`, since Streamlit re-runs the whole s
 **Flashing in the feed line.** In Sizing mode the result cards show the HEM two-phase-inlet estimate (labelled as such), and the diagnostics panel -- suggestions to remove the flashing: raise the subcooling margin to at least 5 bar, shorten the line, enlarge the diameter, replace high-K fittings, pre-cool -- is shown alongside, together with a naive-SPI reference value. In Design mode area sizing is not offered while the line flashes; the same panel is shown.
 
 **Henry-Fauske choking diagnostic.** Both modes surface a warning (amber badge and `st.warning`) whenever `dyer_mass_flow()`'s `choked` flag is `True`. Design mode's warning notes that the Dyer/ceiling ratio is independent of orifice area (both scale linearly with it), so the target is not unreachable: the warning reports the ceiling-limited area (recommended area × target / ceiling) as the conservative end of a design range. `plot_model_comparison()` draws the ceiling as a reference line, red when exceeded, and the PDF export includes the ceiling value and a note when triggered. None of this changes any displayed mass-flow number.
+
+**Exploratory kappa-correction warning.** In the Dyer regime both modes also evaluate the optional correction above (beta = 1, S_ref = 400 psi) and show what it would give: the mass flow and the range [corrected, Dyer] in Sizing mode, the required orifice area in Design mode. It is never applied: the result cards keep the original Dyer figure. When the correction changes the result by less than 2 % only a one-line caption is shown. The same note is written into the PDF export.
 
 **Design mode, SPI-valid regime.** When the chamber pressure is at or above $`P_{sat}(T_{tank})`$ the result cards show "Recommended (SPI)" and an explanatory note; the model-comparison chart is replaced by the pressure-along-line chart, and the PDF omits the Dyer rows.
 

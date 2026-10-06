@@ -168,6 +168,10 @@ Directly beneath that caption, an amber **"Non-equilibrium choking ceiling excee
 
 If the ceiling could not be computed at all, a grey caption states the reason instead of the warning. (With the CoolProp backend this no longer happens for tank temperatures up to the critical point; the former ≈307 K limit came from the older entropy tables.)
 
+### Exploratory correction of Dyer's kappa (warning only)
+
+In the Dyer regime (liquid at the injector inlet, two-phase inside the orifice) the tool also evaluates an **exploratory, supercharge-dependent correction of Dyer's non-equilibrium parameter kappa** and shows what it would give: here, the real mass flow and the range between the corrected value and the Dyer value. **It is never applied** — the numbers in the result cards stay the original Dyer result. The correction lowered the out-of-sample error of the two-phase predictions from 6.9 % to 1.4 % on the Waxman (2013) data, where Dyer over-predicted at every low-supercharge point (`validation/waxman_2013_results.md`, Section 11). But it was fitted to **one injector geometry at 280–283 K**, its parameters (beta = 1, S_ref = 400 psi) are empirical, and it has not been tested on other geometries or temperatures; read the corrected value as the lower end of a plausible range until you have cold-flow data. When it changes the result by less than 2 % only a one-line caption is shown. The same note is added to the PDF export.
+
 ### Diagrams
 
 Four interactive Plotly charts appear:
@@ -214,6 +218,10 @@ A caption below the cards shows the percentage by which the Dyer area exceeds th
 ### Non-equilibrium choking warning
 
 Immediately below that caption, the same amber choking warning described for Sizing mode can appear here too — checked at the recommended area and the tank/chamber conditions, before the combustion-stability check. **Important:** whether this warning appears does not depend on the orifice area (both the Dyer prediction and the choking ceiling scale linearly with it), but that does not make the target unreachable: if the real flow follows the ceiling, a proportionally larger area delivers the target. The warning therefore reports the ceiling-limited area (recommended area × target / ceiling) and a design range per hole, from the Dyer diameter up to the ceiling-limited diameter; raising tank pressure or lowering chamber pressure is the alternative. As in Sizing mode, this is a diagnostic warning, not a correction applied to the area shown above.
+
+### Exploratory correction of Dyer's kappa (warning only)
+
+As in Sizing mode (see above), in the Dyer regime the tool also shows the orifice area (and diameter per hole) that the exploratory kappa correction would require, next to the unchanged Dyer area. Treat the Dyer diameter as the lower end of the design range until a cold-flow test narrows it. The correction is never applied to the recommended area; it is fitted to one injector geometry at 280–283 K.
 
 ### Diagrams
 

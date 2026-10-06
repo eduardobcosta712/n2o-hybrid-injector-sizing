@@ -357,8 +357,7 @@ backbone first is the more useful order of operations.
 equation of state for N₂O, replacing the closed-form Perry P_sat/rho_l
 correlations.
 
-**Confirmed with the real package (September 2026).** The full test suite (262 tests) 
-passes, `python src/model/n2o_properties.py`'s
+**Confirmed with the real package (September 2026).** The full test suite passes, `python src/model/n2o_properties.py`'s
 self-check matches the literature reference values it targets, and
 `validation/waxman_2013_validation.py` has been re-run end to end — see
 `validation/waxman_2013_results.md` for the regenerated report.

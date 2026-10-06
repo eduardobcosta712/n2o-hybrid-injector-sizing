@@ -4,9 +4,20 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0] - 2026-10-06
 
 ### Added
+- **Exploratory warning in the interactive tool** (Sizing and Design modes, and the PDF
+  export): in the Dyer regime it shows what the supercharge-dependent kappa correction
+  would give (flow, or required orifice area), labelled as exploratory; the reported
+  Dyer result is never changed. Shown as a one-line caption when the change is < 2 %.
+- **Technical report v2** (`docs/reports/dyer_supercharge_correction.{tex,pdf}`, figures
+  reproducible with `docs/reports/figures/make_figures.py`): out-of-sample
+  (leave-one-curve-out) test of the kappa correction, functional-form comparison, and the
+  effect on the flashing threshold. 284 automated tests.
+- Documentation: user manual, `docs/04_implementation.md` and Examples 1-3 describe the
+  exploratory warning and the optional `kappa_correction` argument; Example 3 gains a
+  caveat on how the correction changes its figures.
 - Optional, default-off `kappa_correction` argument in
   `evaluate_full_system()` and `design_injector_area()` (supercharge-gated
   kappa correction, exploratory). Default behaviour is unchanged and the
@@ -115,4 +126,5 @@ checks, clean-clone check, fate of `apply_choking_limit()`) are all closed.
 - Tank temperature is a user input (no thermal model); steady-state only.
 - Grain sizing is initial (t = 0), circular ports only.
 
+[1.1.0]: https://github.com/eduardobcosta712/n2o-hybrid-injector-sizing/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/eduardobcosta712/n2o-hybrid-injector-sizing/releases/tag/v1.0.0

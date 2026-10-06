@@ -102,4 +102,4 @@ The SPI model over-predicts the mass flow by 25.0% against the Dyer estimate (an
 2. Set sidebar: T = 20 °C, P = 58 bar, Cd = 0.65, P_chamber = 22 bar.
 3. Set orifice: 6 holes, 1.5 mm diameter.
 4. Add feed line segments as listed above.
-5. Read the results — Dyer prediction should show **386.1 g/s** and SPI over-prediction **25.0%**. An amber choking-ceiling warning (322.1 g/s) should also appear underneath the Dyer caption.
+5. Read the results — Dyer prediction should show **386.1 g/s** and SPI over-prediction **25.0%**. An amber choking-ceiling warning (322.1 g/s) should also appear underneath the Dyer caption, followed by an exploratory warning about the supercharge-dependent kappa correction (not applied; see the user manual). The figures of this example are the unchanged Dyer results.

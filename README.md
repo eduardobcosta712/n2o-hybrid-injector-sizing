@@ -24,7 +24,7 @@ This project gives a hybrid propulsion team a way to predict, before testing, wh
 |---|---|
 | **Theory docs** (`docs/`) | N₂O thermodynamics, SPI model derivation, HEM and Dyer two-phase models, fuel grain sizing — written from first principles, no prior two-phase flow knowledge required |
 | **Calculation model** (`src/model/`) | Coupled iterative solver for the full tank → feed line → injector path: Darcy-Weisbach friction losses, SPI/HEM/Dyer injector models, self-consistent operating point, non-equilibrium choking diagnostic, fuel grain sizing (Marxman), validated against published data in the band described below |
-| **Interactive tool** (`src/interface/`) | Streamlit web app — two modes (Sizing and Design), live diagrams, combustion stability check, flashing diagnostics, non-equilibrium choking warning, fuel grain sizing panel, sensitivity analysis, PDF report export |
+| **Interactive tool** (`src/interface/`) | Streamlit web app — two modes (Sizing and Design), live diagrams, combustion stability check, flashing diagnostics, non-equilibrium choking warning, exploratory kappa-correction warning, fuel grain sizing panel, sensitivity analysis, PDF report export |
 | **Practical examples** (`examples/`) | Worked cases showing how to use the tool for real sizing scenarios |
 | **Reports** (`docs/reports/`) | Standalone technical reports on specific investigations, e.g. the supercharge-gated Dyer correction (see "Validation" below) |
 
@@ -87,7 +87,7 @@ The Dyer model is a weighted combination of the SPI limit ("no time to vaporise"
 
 ## N₂O properties (CoolProp)
 
-Saturation thermodynamics (P_sat, T_sat, densities, enthalpy, entropy) are computed by **CoolProp** (Lemmon & Span 2006 equation of state) instead of the earlier closed-form Perry correlations, which is more accurate (the earlier P_sat correlation carried a known error of up to ~4.8 % at low temperature — see `docs/references.md`). This has now been confirmed with the real CoolProp package installed (September 2026): `pip install CoolProp` succeeded, the full 262-test suite passes, and `validation/waxman_2013_results.md` was regenerated end to end. Viscosity (used in the feed line) still comes from NIST WebBook tables, unaffected by this change — CoolProp has no N₂O viscosity model.
+Saturation thermodynamics (P_sat, T_sat, densities, enthalpy, entropy) are computed by **CoolProp** (Lemmon & Span 2006 equation of state) instead of the earlier closed-form Perry correlations, which is more accurate (the earlier P_sat correlation carried a known error of up to ~4.8 % at low temperature — see `docs/references.md`). This has now been confirmed with the real CoolProp package installed (September 2026): `pip install CoolProp` succeeded, the full test suite passes, and `validation/waxman_2013_results.md` was regenerated end to end. Viscosity (used in the feed line) still comes from NIST WebBook tables, unaffected by this change — CoolProp has no N₂O viscosity model.
 
 ## Validation
 

@@ -10,8 +10,8 @@ authors:
   - family-names: "Costa"
     given-names: "Eduardo"
     affiliation: "Instituto Superior Técnico, Universidade de Lisboa"
-version: "1.0.0"
-date-released: "2026-09-30"
+version: "1.1.0"
+date-released: "2026-10-06"
 license: MIT
 repository-code: "https://github.com/eduardobcosta712/n2o-hybrid-injector-sizing"
 keywords:
